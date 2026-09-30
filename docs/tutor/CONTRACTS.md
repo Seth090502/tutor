@@ -493,6 +493,14 @@ first response, in practice or assessment, on an item not exposed (hint or answe
 hours. Reasons: `assisted`, `unverified`, `no_checked_response`, `instruction_mode`, `invalid_item`,
 `exposed_within_24h`. A relearning attempt still gets its FSRS review; it is not independent evidence.
 
+**Legacy entry paths** (kept for the upstream web UI and other DeepTutor surfaces, never verified):
+- C7 reviews are labelled `legacy_*` (tested in `tests/api/test_practice_attempts.py`).
+- `POST /practice/questions/{id}/check` grades without an attempt and writes nothing. Answers probed there
+  are not tracked as exposure; the desktop app does not call it.
+- Chat, Book focus-check, immersive reading and Mastery Path capture wrong answers as bank mistakes (the
+  `practice_capture_*` triggers set a due date) with no review and no study event.
+- Imports into "mistakes" set a due date the same way.
+
 **Migration and rollback.** Additive only: new tables (`learning_sessions`, `learning_attempts`,
 `learning_events`, `learning_commands`, `practice_item_status`); no existing table, column or row changes.
 An older build runs against a migrated database unchanged: it ignores the new tables, its reviews read as

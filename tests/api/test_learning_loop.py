@@ -625,3 +625,17 @@ def test_loop_tables_initialize_idempotently_on_legacy_databases(tmp_path):
         "ui",
     )
     assert result["aggregate_version"] == 1
+
+
+def test_answers_captured_elsewhere_create_items_not_evidence(env):
+    store, repo, client = env
+    # A wrong answer captured in chat, a book focus-check or immersive reading lands in the bank
+    # as a mistake (the capture trigger), with no review and no study event.
+    entry = seed(store, question_id="chat1", result="incorrect", is_correct=False, user_answer="A")
+    with repo.connect() as conn:
+        state = conn.execute(
+            "SELECT is_mistake, review_count FROM practice_review_state WHERE entry_id=?", (entry,)
+        ).fetchone()
+        assert tuple(state) == (1, 0)
+        assert conn.execute("SELECT COUNT(*) FROM practice_review_events").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM learning_events").fetchone()[0] == 0

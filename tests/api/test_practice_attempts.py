@@ -441,3 +441,41 @@ def test_all_workspace_analytics_sums_calibration_and_assistance(bank, monkeypat
     assert combined["calibration"][1] == {"level": 2, "attempts": 2, "correct": 2}
     assert combined["assistance"] == {"attempts": 2, "hinted": 2, "revealed": 0}
     assert combined["totals"]["questions"] == 2
+
+
+def test_legacy_reviews_are_labelled_and_never_verified(bank):
+    store, repo, client = bank
+    entry = seed(store)
+    rated = review(client, entry["id"], rating="easy").json()  # the web UI's client-rated review
+    assert rated["provenance"] == "legacy_client_rating"
+    essay = seed(store, question_id="q2", question_type="short_answer", options={}, hints=[])
+    attempt = start(client, essay["id"])
+    check(client, attempt, "Something")
+    judged = review(
+        client,
+        essay["id"],
+        attempt_id=attempt,
+        judged_correct=True,
+        answer="Something",
+        request_id="review_request_0002",
+    ).json()
+    assert judged["provenance"] == "legacy_self_report"
+    with repo.connect() as conn:
+        labels = {
+            row[0]
+            for row in conn.execute(
+                "SELECT json_extract(outcome_json, '$.provenance') FROM practice_review_events"
+            )
+        }
+    assert labels == {"legacy_client_rating", "legacy_self_report"}
+
+
+def test_stateless_check_writes_nothing(bank):
+    store, repo, client = bank
+    entry = seed(store)
+    assert client.post(f"/practice/questions/{entry['id']}/check", json={"answer": "B"}).json() == {
+        "correct": True
+    }
+    with repo.connect() as conn:
+        for table in ("practice_review_events", "practice_attempts", "learning_events"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
