@@ -4,7 +4,9 @@
 // Practice runs as attempts (contract C7): the server holds the answer key and the hint ladder,
 // and the model sees the answer only in check_answer's result, after the attempt is closed.
 // What the tools did is published as TutorEvents (contract C8) for the Tutor screen.
-import { BACKEND_URL, HttpError, RAG_ENGINE_URL, fetchJson } from "@/lib/backend"
+// Library search goes through DeepTutor (contract C11) with the open attempt, so the server
+// withholds passages that contain the answer or sit under a solution heading.
+import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
 
 const PRACTICE = "/api/question-notebook/practice"
 const EXCERPT_CHARS = 600
@@ -67,6 +69,9 @@ export type TutorEvent =
   | { type: "reviewed"; attempt_id: string; rating: string; next_due: string | null }
 
 const listeners = new Set<(e: TutorEvent) => void>()
+
+/** The attempt get_next_question opened and check_answer has not closed yet. */
+let openAttempt: string | null = null
 
 export function onTutorEvent(listener: (e: TutorEvent) => void): () => void {
   listeners.add(listener)
@@ -220,6 +225,7 @@ export const tutorTools = {
       question_type: entry.question_type ?? "",
       options: entry.options ?? {},
     }
+    openAttempt = attempt.attempt_id
     emit({ type: "question", ...question })
     return JSON.stringify({ ...question, rungs_available: attempt.rungs_available })
   }),
@@ -256,6 +262,7 @@ export const tutorTools = {
       body: JSON.stringify({ answer: given }),
     })
     // The check closes the attempt, so the answer key may now reach the tutor.
+    if (openAttempt === attempt) openAttempt = null
     const misconception = check.misconception || null
     emit({
       type: "checked",
@@ -313,12 +320,17 @@ export const tutorTools = {
   search_library: safe("search_library", LIBRARY_SERVICE, async ({ query, domain }) => {
     const q = text(query, "query")
     const d = optionalText(domain)
-    const { hits } = await fetchJson<{ hits: SearchHit[] }>(RAG_ENGINE_URL, "/search", {
+    const { pack } = await fetchJson<{ pack: SearchHit[] }>(BACKEND_URL, "/api/library/search", {
       method: "POST",
-      body: JSON.stringify({ query: q, k: 5, ...(d ? { domains: [d] } : {}) }),
+      body: JSON.stringify({
+        query: q,
+        k: 5,
+        ...(d ? { domains: [d] } : {}),
+        ...(openAttempt ? { attempt_id: openAttempt } : {}),
+      }),
     })
     return JSON.stringify({
-      hits: hits.map((h) => ({
+      hits: pack.map((h) => ({
         title: h.title,
         domain: h.domain,
         source_type: h.source_type,

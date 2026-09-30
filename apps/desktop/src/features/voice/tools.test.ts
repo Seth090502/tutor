@@ -7,7 +7,7 @@ type Call = { method: string; url: string; body: unknown }
 type Reply = { status?: number; body: unknown } | Error
 
 const BACKEND = "http://127.0.0.1:8001/api/question-notebook/practice"
-const RAG = "http://127.0.0.1:8811"
+const LIBRARY = "http://127.0.0.1:8001/api/library/search"
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 let calls: Call[]
@@ -372,6 +372,13 @@ describe("events", () => {
 })
 
 describe("search_library", () => {
+  // A fresh module per test: the open attempt is module state that other tests leave behind.
+  let tools: typeof tutorTools
+  beforeEach(async () => {
+    vi.resetModules()
+    tools = (await import("./tools")).tutorTools
+  })
+
   const hit = (extra: Record<string, unknown>) => ({
     chunk_id: "c",
     doc_id: "d",
@@ -384,23 +391,22 @@ describe("search_library", () => {
     heading_path: [],
     text: "short text",
     score: 1,
-    ranks: { bm25: 1, vector: null },
+    ranks: { bm25: 1, vector: null, final: 1 },
+    section: ["[c:c] short text"],
     ...extra,
   })
+  const packOf = (hits: unknown[]) => ({ pack: hits, queries: ["limits"], mode_used: "bm25", withheld: 0 })
 
-  it("posts the query and maps hits for citation, truncating excerpts to 600 chars", async () => {
+  it("posts the query to DeepTutor's library search and maps the pack, truncating excerpts to 600 chars", async () => {
     const long = "x".repeat(900)
     reply({
-      body: {
-        mode_used: "bm25",
-        hits: [hit({}), hit({ page_end: 14, text: long }), hit({ page_start: null, page_end: null })],
-      },
+      body: packOf([hit({}), hit({ page_end: 14, text: long }), hit({ page_start: null, page_end: null })]),
     })
 
-    const out = JSON.parse(await tutorTools.search_library({ query: "limits", domain: "math" }))
+    const out = JSON.parse(await tools.search_library({ query: "limits", domain: "math" }))
 
     expect(calls).toEqual([
-      { method: "POST", url: `${RAG}/search`, body: { query: "limits", k: 5, domains: ["math"] } },
+      { method: "POST", url: LIBRARY, body: { query: "limits", k: 5, domains: ["math"] } },
     ])
     expect(out.hits[0]).toEqual({
       title: "Calculus",
@@ -415,11 +421,47 @@ describe("search_library", () => {
     expect(out.hits[2].pages).toBe("")
   })
 
-  it("leaves out domains when none is given", async () => {
-    reply({ body: { mode_used: "bm25", hits: [] } })
+  it("leaves out domains and attempt_id when there are none", async () => {
+    reply({ body: packOf([]) })
 
-    expect(JSON.parse(await tutorTools.search_library({ query: "limits" }))).toEqual({ hits: [] })
+    expect(JSON.parse(await tools.search_library({ query: "limits" }))).toEqual({ hits: [] })
     expect(calls[0].body).toEqual({ query: "limits", k: 5 })
+  })
+
+  it("sends the open attempt_id while an attempt is open, and stops after check_answer closes it", async () => {
+    reply(
+      { body: [{ entry: entry(7), state: { version: 3 } }] },
+      { body: { attempt_id: "att-1", rungs_available: 2 } },
+      { body: packOf([]) },
+      { body: { correct: true, correct_answer: "B", explanation: "", misconception: null } },
+      { body: packOf([]) },
+    )
+
+    await tools.get_next_question({})
+    await tools.search_library({ query: "addition" })
+    await tools.check_answer({ attempt_id: "att-1", answer: "B" })
+    await tools.search_library({ query: "addition" })
+
+    const searches = calls.filter((c) => c.url === LIBRARY).map((c) => c.body)
+    expect(searches).toEqual([
+      { query: "addition", k: 5, attempt_id: "att-1" },
+      { query: "addition", k: 5 },
+    ])
+  })
+
+  it("keeps the open attempt when a different attempt is checked", async () => {
+    reply(
+      { body: [{ entry: entry(7), state: { version: 3 } }] },
+      { body: { attempt_id: "att-2", rungs_available: 0 } },
+      { body: { correct: false, correct_answer: "B", explanation: "", misconception: null } },
+      { body: packOf([]) },
+    )
+
+    await tools.get_next_question({})
+    await tools.check_answer({ attempt_id: "att-old", answer: "A" })
+    await tools.search_library({ query: "addition" })
+
+    expect(calls[calls.length - 1].body).toEqual({ query: "addition", k: 5, attempt_id: "att-2" })
   })
 })
 

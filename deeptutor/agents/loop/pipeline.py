@@ -920,6 +920,14 @@ class AgenticLoopPipeline:
                 return str(override).strip()
         return None
 
+    async def _checked_final_text(self, context: UnifiedContext, final_text: str) -> str | None:
+        """A corrected finish after checks that need I/O, or None to keep it as written.
+
+        Runs after ``final_text_override`` declined. Chat uses it to verify library
+        citations (Tutor fork, ``docs/tutor/CORPUS.md``); other loops keep the text.
+        """
+        return None
+
     def _has_capability_finish_guard(self, context: UnifiedContext) -> bool:
         """Whether a capability may need to inspect a tool-less finish first."""
         return any(

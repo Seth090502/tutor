@@ -613,6 +613,10 @@ class AgentLoop:
                 final_override = self.pipeline._capability_final_text_override(
                     self.context, final_text
                 )
+                if final_override is None:
+                    final_override = await self.pipeline._checked_final_text(
+                        self.context, final_text
+                    )
                 if final_override is not None:
                     await self._discard_deferred_output(result)
                     if not self.context.capability_output.answer_published:

@@ -11,7 +11,7 @@ from .compare import compare_runs, format_comparison, write_decision
 from .dataset import load_dataset, write_dataset
 from .generate import DEFAULT_DOMAINS, MIN_CHUNK_WORDS, generate
 from .paths import DEFAULT_DATASET, RUNS_DIR
-from .run_retrieval import MODES, format_report, run_retrieval
+from .run_retrieval import ARMS, MODES, format_report, run_retrieval
 from .split import DEFAULT_SEED, DEFAULT_TRAIN_FRAC, apply_split
 
 EPILOG = """\
@@ -170,7 +170,18 @@ def _add_run(sub: argparse._SubParsersAction) -> None:
         help="hits requested per query, at least 10 (default %(default)s)",
     )
     p.add_argument(
-        "--url", help="rag-engine URL (default: $RAG_ENGINE_URL or http://127.0.0.1:8811)"
+        "--arm",
+        choices=sorted(ARMS),
+        help=(
+            "run through DeepTutor library search with this CORPUS.md Stage 0 arm's settings: "
+            "A raw BM25, B A's settings on the fields/tokenizer engine build, C plus rewrites "
+            "and RRF, D plus rerank, E plus agentic search (needs --k 10-12)"
+        ),
+    )
+    p.add_argument(
+        "--url",
+        help="rag-engine URL (default: $RAG_ENGINE_URL or http://127.0.0.1:8811); with --arm, "
+        "the DeepTutor URL (default: $DEEPTUTOR_URL or http://127.0.0.1:8001)",
     )
     p.add_argument(
         "--config",
@@ -285,6 +296,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         mode=args.mode,
         k=args.k,
         url=args.url,
+        arm=args.arm,
         runs_dir=args.runs_dir,
         baseline=args.baseline,
         extra_config=config,
