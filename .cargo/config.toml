@@ -1,0 +1,4 @@
+[env]
+# LanceDB's lance crates (used by crates/rag-engine) run prost-build, which needs protoc.
+# crates/rag-engine/README.md says how to put a prebuilt protoc there. An existing PROTOC wins.
+PROTOC = { value = "crates/rag-engine/vendor/protoc/bin/protoc.exe", relative = true, force = false }
