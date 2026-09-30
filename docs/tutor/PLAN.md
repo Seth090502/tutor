@@ -107,6 +107,13 @@ Layout map: `TUTOR.md`. Local commits only; nothing is pushed anywhere.
 - **Corpus licences:** CC BY-SA, GFDL and CC BY-NC-SA material is allowed in the private, never-shared
   corpus. OpenStax stays excluded (its terms ban LLM ingestion).
 - **Country:** United States. Public domain means published before 1931.
+- **Library use (2026-09-30):** indexing stays local.
+  - Keyword search runs now; embeddings and OCR run on the owner's second desktop once it exists
+    (contract C9).
+  - The tutor takes full advantage of the corpus: cited passages in lessons, questions generated from
+    the books, extracted concept and prerequisite maps, and guided reading of chapters and papers.
+  - The corpus is expected to grow by orders of magnitude.
+- **First foreign languages:** Spanish, French, German, Japanese, Mandarin.
 
 ## Pending owner decisions
 

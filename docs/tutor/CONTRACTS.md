@@ -257,3 +257,30 @@ export function onTutorEvent(listener: (e: TutorEvent) => void): () => void
   practice API directly.
 - **After the check:** the card flips to show the explanation and misconception only after a `checked`
   event.
+
+## C9. rag-engine: remote host, library browsing, scale
+
+For the owner's second desktop, which will hold the library and do embedding and OCR locally, and for a
+corpus that will grow by orders of magnitude.
+
+- **Bind and token:**
+  - `rag-engine serve ... [--bind <ip>]`, default `127.0.0.1`.
+  - With `RAG_ENGINE_TOKEN` set, every route except `GET /health` requires
+    `Authorization: Bearer <token>`, or it returns 401 `{"error": "…"}`.
+  - A non-loopback `--bind` without a token refuses to start.
+  - CORS keeps the four app origins and allows the `Authorization` header.
+- **`GET /documents?domain=&source_type=&q=&sort=title|added|pages&limit=50&offset=0`** returns
+  `{"total": int, "documents": [Doc]}`.
+  - `Doc = {doc_id, path, title, domain, source_type, pages, chunks, bytes, added_at, ocr_pending}`.
+  - `q` filters by title or path substring.
+- **`GET /documents/{doc_id}`** returns `Doc` plus
+  `"outline": [{"heading_path": [...], "page_start", "page_end", "chunk_id"}]`: distinct heading paths in
+  reading order.
+- **`GET /documents/{doc_id}/chunks?from=<ordinal>&limit=20`** returns
+  `{"chunks": [{"chunk_id", "ordinal", "text", "page_start", "page_end", "heading_path"}], "next": int | null}`,
+  in reading order (guided reading).
+- **Clients:** the DeepTutor adapter sends the token from `RAG_ENGINE_TOKEN` when it is set. The desktop
+  gets a configurable engine URL and token when the second desktop exists. Until then it uses
+  `127.0.0.1:8811`.
+- **Scale:** ingest chunks and tokenises documents in parallel with bounded memory, and search latency
+  stays interactive (p95 under 300 ms for BM25 at 10M chunks is the target).
