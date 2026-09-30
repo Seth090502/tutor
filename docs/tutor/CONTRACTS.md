@@ -84,7 +84,10 @@ One JSON file per run in `evals/runs/<run_id>.json` (gitignored). Datasets live 
  "per_domain": {"math": {"train": {"n": 0, "metrics": {}}, "test": {"n": 0, "metrics": {}}}},
  "decision": "baseline", "cost_usd": 0.0}
 ```
-`decision` is `baseline` | `keep` | `revert` | `pending`.
+`decision` is `baseline` | `keep` | `revert` | `pending`. A compare whose gain is inside the noise
+floor records `revert`, since only `keep` keeps a change. Per-question results for the paired
+bootstrap sit beside each run in `evals/runs/<run_id>.questions.jsonl`; readers of run files glob
+`*.json` only.
 
 ## C3. Tauri commands (Rust shell to webview)
 

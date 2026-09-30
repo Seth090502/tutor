@@ -197,7 +197,7 @@ def _add_compare(sub: argparse._SubParsersAction) -> None:
             "questions. Verdict: keep only if train AND test improve and both lower CI bounds "
             "on the delta are above 0; revert if either split gets worse; otherwise noise "
             "(do not keep). --write-decision records it in the newer run (keep->keep, "
-            "revert->revert, noise->pending)."
+            "revert->revert, noise->revert)."
         ),
     )
     p.add_argument("baseline", help="baseline run: a file path or a run_id in --runs-dir")

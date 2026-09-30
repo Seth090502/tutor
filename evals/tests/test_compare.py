@@ -117,12 +117,15 @@ def test_decide_rule_directly():
 
 
 def test_write_decision_maps_verdicts_onto_c2_decisions(tmp_path):
-    for diffs, expected in (
-        ((jitter(60, 0.02, 0.08, 1), jitter(60, 0.02, 0.08, 2)), "keep"),
-        ((jitter(60, 0.02, 0.08, 1), jitter(60, -0.08, -0.02, 2)), "revert"),
-        ((alternating(26, 24), alternating(26, 24)), "pending"),
+    for i, (diffs, expected) in enumerate(
+        (
+            ((jitter(60, 0.02, 0.08, 1), jitter(60, 0.02, 0.08, 2)), "keep"),
+            ((jitter(60, 0.02, 0.08, 1), jitter(60, -0.08, -0.02, 2)), "revert"),
+            # Noise is not kept, so it is recorded as a revert.
+            ((alternating(26, 24), alternating(26, 24)), "revert"),
+        )
     ):
-        d = tmp_path / expected
+        d = tmp_path / str(i)
         result = verdict_for(d, *diffs)
         assert write_decision(result) == expected
         assert load_run(d / "new.json")["decision"] == expected  # still a valid C2 file

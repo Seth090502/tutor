@@ -26,7 +26,7 @@ from .runfile import (
 from .stats import bootstrap_ci
 
 EPS = 1e-12  # float dust is not a regression
-VERDICT_TO_DECISION = {"keep": "keep", "revert": "revert", "noise": "pending"}
+VERDICT_TO_DECISION = {"keep": "keep", "revert": "revert", "noise": "revert"}  # noise is not kept
 
 
 def decide(deltas: dict[str, tuple[float, float, float]]) -> str:

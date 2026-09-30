@@ -45,7 +45,7 @@ rag-engine must be serving (`rag-engine serve ...`, default `http://127.0.0.1:88
    - **keep**: train AND test both improve and both lower CI bounds on the delta are above 0.
    - **revert**: either split got worse.
    - **noise**: neither got worse, but the gain is not clear of the noise floor. Do not keep it.
-     `--write-decision` records it as `pending`, since contract C2 has no `noise` decision.
+     `--write-decision` records it as `revert`, because the change is not kept.
 8. **Keep or revert** the change in the engine accordingly. The next baseline is the last kept run.
 
 ## Commands and files
