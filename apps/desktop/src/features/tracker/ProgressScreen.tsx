@@ -9,6 +9,8 @@ import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
 import { ActivityChart, ReviewDiscs } from "@/features/progress/Activity"
 import { Hero } from "@/features/progress/Hero"
 import { AssistancePanel, CalibrationPanel } from "@/features/progress/Learning"
+import { PlanSection } from "@/features/progress/Plan"
+import { SkillsSection } from "@/features/progress/Skills"
 import { MasteryMap, TopicList } from "@/features/progress/Mastery"
 import { DAYS, errorText, type Analytics, type Summary, type Topic } from "@/features/progress/model"
 import { Notice, Quiet, ScreenBoundary, StateBlock } from "@/features/progress/parts"
@@ -165,6 +167,13 @@ function ProgressBody({ data, loading, onRefresh }: { data: Loaded; loading: boo
           )}
         </>
       )}
+
+      <Rise i={8}>
+        <PlanSection refreshKey={at.getTime()} />
+      </Rise>
+      <Rise i={9}>
+        <SkillsSection refreshKey={at.getTime()} />
+      </Rise>
     </>
   )
 }
