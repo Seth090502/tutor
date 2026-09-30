@@ -1,0 +1,16 @@
+[package]
+name = "learning-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
+chrono-tz = { version = "0.10.4", default-features = false, features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+statrs = { version = "0.19.1", default-features = false }
+
+[dev-dependencies]
+proptest = "1.11.0"
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
