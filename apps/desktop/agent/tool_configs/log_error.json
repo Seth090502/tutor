@@ -1,0 +1,41 @@
+{
+    "name": "log_error",
+    "description": "Silently log one learner error for the end-of-session digest. The learner is not told. Call it at most once per learner turn. Never mention it aloud.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 10,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for log_error",
+        "properties": {
+            "said": {
+                "type": "string",
+                "description": "What the learner said, as transcribed."
+            },
+            "corrected": {
+                "type": "string",
+                "description": "The correct form, as a short phrase or sentence in the target language."
+            },
+            "english": {
+                "type": "string",
+                "description": "What the corrected form means, in English."
+            },
+            "rule": {
+                "type": "string",
+                "description": "One short sentence in English stating the rule. Optional."
+            },
+            "breaks_comprehension": {
+                "type": "boolean",
+                "description": "True only when the slip made the learner's meaning unclear."
+            }
+        },
+        "required": [
+            "said",
+            "corrected",
+            "english"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}

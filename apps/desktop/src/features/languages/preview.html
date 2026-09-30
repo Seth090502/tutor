@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Languages states</title>
+  </head>
+
+  <body>
+    <!-- Dev-only page: Vite builds index.html only. Every Languages tab and state inside the real shell, with a
+         fake backend and fake speech (fixtures.ts). Served at /src/features/languages/preview.html
+         ?tab=practice|listen|read|speak  &lang=es|fr|de|ja|zh  &scenario=ready|notauri|nokey|noagent|offline|nocards|novoices|nogloss
+         &view=live|digest (Speak tab)  &theme=dark|light -->
+    <div id="root"></div>
+    <script type="module">
+      import { mountLanguagesPreview } from "/src/features/languages/Preview.tsx"
+      mountLanguagesPreview(document.getElementById("root"))
+    </script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+{
+    "name": "show_gloss",
+    "description": "Show English on the learner's screen. Use kind gloss after the learner presses the English help button (their message starts with English help), and kind rule for a one or two sentence explicit rule in accuracy mode. The English appears on screen only; never say it aloud.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 10,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for show_gloss",
+        "properties": {
+            "english": {
+                "type": "string",
+                "description": "The English gloss or rule to show. Short: one or two sentences at most."
+            },
+            "for_text": {
+                "type": "string",
+                "description": "The target-language word, phrase or sentence the English is about."
+            },
+            "kind": {
+                "type": "string",
+                "description": "gloss for a learner-requested translation, rule for a tutor-initiated explicit rule. Defaults to gloss."
+            }
+        },
+        "required": [
+            "english"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}
