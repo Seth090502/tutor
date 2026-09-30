@@ -42,6 +42,16 @@ def test_python_launch_point_wires_serving_flags(
         assert flag in source, f"{relpath} launches uvicorn without {flag}"
 
 
+@pytest.mark.parametrize(("relpath", "marker", "flags"), _LAUNCH_POINTS)
+def test_python_launch_point_binds_loopback(
+    relpath: str, marker: str, flags: tuple[str, ...]
+) -> None:
+    """Native launches serve localhost only; containers keep their own bind."""
+    source = (_REPO / relpath).read_text(encoding="utf-8")
+    assert '"0.0.0.0"' not in source, f"{relpath} binds every interface"
+    assert '"127.0.0.1"' in source, f"{relpath} no longer binds loopback"
+
+
 def test_dockerfile_launch_points_wire_serving_flags() -> None:
     """Both container stages (production entrypoint + dev supervisord)."""
     lines = [

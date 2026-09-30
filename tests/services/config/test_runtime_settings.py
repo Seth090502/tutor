@@ -64,6 +64,13 @@ def test_runtime_settings_creates_defaults_without_reading_dotenv(tmp_path: Path
     assert _read_json(service.path_for("auth"))["enabled"] is False
 
 
+def test_subprocess_sandbox_defaults_to_disabled(tmp_path) -> None:
+    """Host-level exec fallback is an explicit opt-in, never a default."""
+    service = RuntimeSettingsService(tmp_path / "settings")
+
+    assert service.load_system(include_process_overrides=False)["sandbox_allow_subprocess"] is False
+
+
 def test_capability_routing_defaults_to_disabled(tmp_path) -> None:
     service = RuntimeSettingsService(tmp_path / "settings")
 

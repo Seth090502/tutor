@@ -27,7 +27,8 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from deeptutor.services.config import load_auth_settings
+from deeptutor.services.config import load_auth_settings, load_system_settings
+from deeptutor.services.config.origins import app_origins, normalize_origin
 
 # SameSite=None lets the cookie work when the browser accesses the frontend via
 # 127.0.0.1 and the backend via localhost (different origins on the same machine).
@@ -552,7 +553,14 @@ async def ws_require_auth(ws: WebSocket) -> _CtxToken | _WsAuthFailed:
             ...
         finally:
             reset_current_user(user_token)
+
+    Browsers apply no CORS to WebSockets, so a handshake carrying a foreign
+    Origin is refused (4003). Non-browser clients send no Origin.
     """
+    origin = ws.headers.get("origin")
+    if origin is not None and normalize_origin(origin) not in app_origins(load_system_settings()):
+        await ws.close(code=4003)
+        return ws_auth_failed
     payload = None
     if AUTH_ENABLED:
         token = ws.query_params.get("token") or ws.cookies.get(_COOKIE_NAME)

@@ -33,7 +33,7 @@ DEFAULT_SYSTEM_SETTINGS: dict[str, Any] = {
     # Default on so document generation works out of the box across all
     # deployment shapes; a stronger backend (runner sidecar / bwrap) still
     # takes precedence when available. Set false to disable host-side exec.
-    "sandbox_allow_subprocess": True,
+    "sandbox_allow_subprocess": False,
     # Conservative chat -> deep_question routing. Explicit requests only, and
     # callers can still pass config.auto_route=false for a single turn.
     "capability_routing_enabled": False,
@@ -730,7 +730,7 @@ class RuntimeSettingsService:
             # browser itself only ever talks to the frontend origin.
             #
             # The fallback is the IPv4 loopback, not "localhost": on a dual-stack
-            # host that name resolves to ::1 first, while uvicorn binds 0.0.0.0
+            # host that name resolves to ::1 first, while uvicorn binds 127.0.0.1
             # (IPv4 only), so every rewritten /api/* request fails to connect.
             # The launcher passes the same literal (see runtime/launcher.py), so
             # both deployment paths agree.
@@ -1259,7 +1259,7 @@ class RuntimeSettingsService:
             "disable_ssl_verify": _coerce_bool(settings.get("disable_ssl_verify"), False),
             "chat_attachment_dir": _string(settings.get("chat_attachment_dir")),
             "sandbox_allow_subprocess": _coerce_bool(
-                settings.get("sandbox_allow_subprocess"), True
+                settings.get("sandbox_allow_subprocess"), False
             ),
             "capability_routing_enabled": _coerce_bool(
                 settings.get("capability_routing_enabled"), False

@@ -7,9 +7,11 @@ from fastapi.testclient import TestClient
 from deeptutor.api import main as api_main
 
 
-def test_cors_allows_remote_http_origins_when_auth_disabled(
+def test_cors_stays_explicit_when_auth_disabled(
     monkeypatch,
 ) -> None:
+    """With auth off every request is the local admin, so any-origin CORS would
+    let any web page drive the backend. Only the app's own origins are allowed."""
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
     monkeypatch.delenv("CORS_ORIGIN", raising=False)
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
@@ -17,7 +19,8 @@ def test_cors_allows_remote_http_origins_when_auth_disabled(
 
     settings = api_main._build_cors_settings()
 
-    assert settings["allow_origin_regex"] == r"https?://.*"
+    assert settings["allow_origin_regex"] is None
+    assert settings["mode"] == "explicit"
     assert "http://localhost:3782" in settings["allow_origins"]
     assert "http://127.0.0.1:3782" in settings["allow_origins"]
 

@@ -53,3 +53,21 @@ def normalize_origins(value: Any) -> list[str]:
             origins.append(origin)
             seen.add(origin)
     return origins
+
+
+def app_origins(system_settings: dict[str, Any]) -> list[str]:
+    """Origins the app's own UI is served from, plus configured ``cors_origin(s)``.
+
+    The single allowlist for both CORS and the WebSocket Origin check.
+    """
+    port = system_settings["frontend_port"]
+    return normalize_origins(
+        [
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            system_settings["cors_origin"],
+            system_settings["cors_origins"],
+        ]
+    )

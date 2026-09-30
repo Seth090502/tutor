@@ -11,10 +11,9 @@ from deeptutor.logging import configure_logging
 from deeptutor.services.config import (
     ensure_runtime_settings_files,
     export_runtime_settings_to_env,
-    load_auth_settings,
     load_system_settings,
 )
-from deeptutor.services.config.origins import normalize_origins
+from deeptutor.services.config.origins import app_origins
 from deeptutor.services.path_service import get_path_service
 
 ensure_runtime_settings_files()
@@ -71,33 +70,16 @@ def validate_tool_consistency():
 
 
 def _build_cors_settings() -> dict[str, object]:
-    """Build CORS settings for both localhost and remote Docker deployments."""
-    system_settings = load_system_settings()
-    auth_settings = load_auth_settings()
-    frontend_port = str(system_settings["frontend_port"])
-    extra_origins = normalize_origins(
-        [system_settings["cors_origin"], system_settings["cors_origins"]]
-    )
-    origins = [
-        f"http://localhost:{frontend_port}",
-        f"http://127.0.0.1:{frontend_port}",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    for origin in extra_origins:
-        if origin not in origins:
-            origins.append(origin)
+    """Build CORS settings: the app's own origins plus explicit CORS_ORIGIN(S).
 
-    # Auth is disabled by default. In that local/single-user mode, mirror the
-    # pre-v1.3.8 behavior and allow remote Docker/LAN origins out of the box.
-    # When auth is enabled, require explicit CORS_ORIGIN(S) for credentialed
-    # cross-origin requests.
-    allow_origin_regex = None if auth_settings["enabled"] else r"https?://.*"
-    mode = "explicit" if auth_settings["enabled"] else "permissive"
+    Never permissive, even with auth disabled: then every request is the local
+    admin, so an any-origin policy would let any web page drive the backend.
+    Remote Docker/LAN front-ends must be listed in CORS_ORIGIN(S).
+    """
     return {
-        "allow_origins": origins,
-        "allow_origin_regex": allow_origin_regex,
-        "mode": mode,
+        "allow_origins": app_origins(load_system_settings()),
+        "allow_origin_regex": None,
+        "mode": "explicit",
     }
 
 
