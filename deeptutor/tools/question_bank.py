@@ -110,6 +110,9 @@ def _render_entry(entry: dict[str, Any]) -> str:
     expected = _truncate(entry.get("correct_answer", ""), MAX_ANSWER_PREVIEW)
     if given or expected:
         line += f"\n    answered: {given or '—'} | correct: {expected or '—'}"
+    misconception = _truncate(entry.get("misconception") or "", MAX_QUESTION_PREVIEW)
+    if misconception and not entry.get("is_correct"):
+        line += f"\n    misconception: {misconception}"
     cats = [str(c.get("name", "")) for c in (entry.get("categories") or []) if c.get("name")]
     line += f"\n    filed in: {', '.join(cats)}" if cats else "\n    filed in: (nothing yet)"
     return line

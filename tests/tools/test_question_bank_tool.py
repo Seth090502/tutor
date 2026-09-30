@@ -69,6 +69,38 @@ async def test_list_wrong_exposes_ids_for_filing(store: SQLiteSessionStore) -> N
 
 
 @pytest.mark.asyncio
+async def test_list_shows_the_misconception_only_for_misses(store: SQLiteSessionStore) -> None:
+    session = await store.create_session(title="Drill")
+    await store.upsert_notebook_entries(
+        session["id"],
+        [
+            {
+                "turn_id": "t1",
+                "question_id": "q1",
+                "question": "Derivative of sin(x)?",
+                "correct_answer": "cos(x)",
+                "user_answer": "-cos(x)",
+                "misconception": "Mixes up the derivative of sin with that of cos.",
+                "is_correct": False,
+            },
+            {
+                "turn_id": "t1",
+                "question_id": "q2",
+                "question": "Integral of 1/x?",
+                "correct_answer": "ln|x| + C",
+                "user_answer": "ln|x| + C",
+                "misconception": "Forgets the absolute value.",
+                "is_correct": True,
+            },
+        ],
+    )
+    outcome = await run_question_bank(action="list", store=store)
+    assert outcome.ok
+    assert "misconception: Mixes up the derivative of sin with that of cos." in outcome.text
+    assert "Forgets the absolute value." not in outcome.text
+
+
+@pytest.mark.asyncio
 async def test_organize_creates_the_category_it_is_given(store: SQLiteSessionStore) -> None:
     await _seed(store)
     listing = await run_question_bank(action="list", filter_mode="wrong", store=store)
