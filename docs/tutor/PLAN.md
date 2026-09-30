@@ -96,19 +96,28 @@ Layout map: `TUTOR.md`. Local commits only; nothing is pushed anywhere.
 - **P14 Model audit:** answer-leak rate, sycophancy, and proof, mechanism and numeric errors for Opus 5.5,
   Sonnet 5.5 and Muse Spark 1.3 on the owner's problems. Gates prompt changes.
 
+## Owner decisions (2026-09-30)
+
+- **English:** first language. The English track aims at advanced literature, linguistics, rhetoric and
+  writing.
+- **Foreign languages:** added as a fifth subject, with ElevenLabs for pronunciation models and speaking
+  practice. Research pass pending.
+- **Science:** physics, biology, earth and space, and neuroscience and cognitive science, including the
+  evidence on what does and does not raise intelligence and cognition (taught honestly; no gain claims).
+- **Corpus licences:** CC BY-SA, GFDL and CC BY-NC-SA material is allowed in the private, never-shared
+  corpus. OpenStax stays excluded (its terms ban LLM ingestion).
+- **Country:** United States. Public domain means published before 1931.
+
 ## Pending owner decisions
 
 1. **Keys:** ElevenLabs, OpenCode, Anthropic and Voyage, entered in Settings.
 2. **Voice model:** the voice agent's LLM is `claude-opus-4-8` at low reasoning, for latency. ElevenLabs'
    API also accepts `claude-opus-5-5`: stronger, but slower.
 3. **Muse tier:** Go contributor (trains on prompts, cheaper) or Zen standard (default).
-4. **Corpus scope:**
-   - Where the library lives (disk).
-   - Country of residence (public-domain rules).
-   - Whether restricted-copy PDFs you own may be indexed.
-   - Whether BY-SA, GFDL and NC-SA material may enter the private corpus.
-5. **Learner profile:** English as first language or not; which sciences; what "PhD level" means per
-   subject (target programmes or qualifying exams).
+4. **Corpus scope:** where the library lives (disk), and whether restricted-copy PDFs you own may be
+   indexed.
+5. **Learner profile:** which foreign languages; what "PhD level" means per subject (target programmes or
+   qualifying exams). A curriculum research pass proposes defaults.
 6. **Vector storage:** float32 needs about 41 GB per 10M vectors; float16 or int8 would cut it.
 
 ## Known issues
