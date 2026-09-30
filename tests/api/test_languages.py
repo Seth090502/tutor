@@ -1,4 +1,4 @@
-"""Languages API (contract C10): coverage, graded texts with a mocked LLM, and cards."""
+"""Languages API (contract C10): coverage, graded texts and glosses with a mocked LLM, and cards."""
 
 import json
 import sys
@@ -145,6 +145,33 @@ def test_graded_text_fails_clearly_when_no_draft_is_usable(api, llm_replies):
     assert response.status_code == 502
     bad_band = client.post("/api/languages/graded-text", json={"lang": "es", "band": "D1"})
     assert bad_band.status_code == 422
+
+
+def test_gloss_returns_the_first_line_of_the_models_reply(api, llm_replies):
+    _, client = api
+    replies, prompts = llm_replies
+    replies += ['"the cat"\nIt is the subject.', "   "]
+    body = {"lang": "es", "word": "gato", "sentence": "El gato come."}
+    response = client.post("/api/languages/gloss", json=body)
+    assert response.status_code == 200
+    assert response.json() == {"gloss": "the cat"}
+    assert "Spanish" in prompts[0] and "gato" in prompts[0] and "El gato come." in prompts[0]
+    assert client.post("/api/languages/gloss", json=body).json() == {"gloss": None}
+    assert client.post("/api/languages/gloss", json={**body, "word": ""}).status_code == 422
+
+
+def test_gloss_reports_a_model_failure(api, monkeypatch):
+    _, client = api
+
+    async def failing(*args, **kwargs):
+        raise llm.LLMError("provider down")
+
+    monkeypatch.setattr(llm, "complete", failing)
+    response = client.post(
+        "/api/languages/gloss", json={"lang": "fr", "word": "chat", "sentence": "Le chat dort."}
+    )
+    assert response.status_code == 502
+    assert "provider down" in response.json()["detail"]
 
 
 def test_cards_route_creates_and_is_idempotent(api):

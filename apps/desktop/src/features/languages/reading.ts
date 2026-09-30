@@ -1,5 +1,5 @@
 // Helpers for the Read tab: splitting a sentence into tappable words, and the coverage meter's bands.
-import type { TargetLanguage } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
 
 /** Known-word coverage to aim for when reading (LANGUAGES.md item 7). */
 export const COVERAGE_LOW = 0.95

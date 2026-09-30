@@ -1,5 +1,6 @@
 //! Non-secret settings, as JSON in the app config dir.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,17 @@ pub const FILE_NAME: &str = "config.json";
 #[serde(default)]
 pub struct Config {
     pub elevenlabs_agent_id: Option<String>,
+    /// `agent_<lang>` (ElevenLabs agent id) and `voice_<lang>` (comma-separated voice ids) per
+    /// target language (C10), stored as top-level keys.
+    #[serde(flatten)]
+    pub languages: BTreeMap<String, String>,
+}
+
+const TARGET_LANGUAGES: [&str; 5] = ["es", "fr", "de", "ja", "zh"];
+
+fn is_language_key(key: &str) -> bool {
+    let lang = key.strip_prefix("agent_").or_else(|| key.strip_prefix("voice_"));
+    lang.is_some_and(|lang| TARGET_LANGUAGES.contains(&lang))
 }
 
 /// A missing file is the default config; a malformed one is an error, not silently reset.
@@ -27,6 +39,14 @@ pub fn set(path: &Path, key: &str, value: &str) -> Result<(), String> {
     let value = Some(value.trim().to_string()).filter(|v| !v.is_empty());
     match key {
         "elevenlabs_agent_id" => config.elevenlabs_agent_id = value,
+        key if is_language_key(key) => match value {
+            Some(value) => {
+                config.languages.insert(key.to_string(), value);
+            }
+            None => {
+                config.languages.remove(key);
+            }
+        },
         _ => return Err(format!("unknown setting {key:?}")),
     }
     save(path, &config)
@@ -68,11 +88,28 @@ mod tests {
     fn serializes_the_contract_shape() {
         let config = Config {
             elevenlabs_agent_id: None,
+            languages: BTreeMap::new(),
         };
         assert_eq!(
             serde_json::to_value(&config).unwrap(),
             serde_json::json!({"elevenlabs_agent_id": null})
         );
+    }
+
+    #[test]
+    fn stores_per_language_agent_and_voice_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        set(&path, "agent_ja", " agent_9 ").unwrap();
+        set(&path, "voice_ja", "v1,v2").unwrap();
+        assert_eq!(
+            serde_json::to_value(load(&path).unwrap()).unwrap(),
+            serde_json::json!({"elevenlabs_agent_id": null, "agent_ja": "agent_9", "voice_ja": "v1,v2"})
+        );
+        set(&path, "agent_ja", "").unwrap();
+        assert_eq!(load(&path).unwrap().languages.get("agent_ja"), None);
+        assert!(set(&path, "agent_ko", "x").is_err());
+        assert!(set(&path, "voice_", "x").is_err());
     }
 
     #[test]

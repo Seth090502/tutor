@@ -6,7 +6,7 @@ import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "rea
 import { BookOpen, Headphones, Mic, PenLine, type LucideIcon } from "lucide-react"
 
 import { Eyebrow } from "@/components/kit"
-import { LANGUAGES, useLanguage, type TargetLanguage } from "./_pending/language"
+import { LANGUAGES, useLanguage, type TargetLanguage } from "@/lib/language"
 import { useAudioEnv } from "./hooks"
 import { ListenTab } from "./ListenTab"
 import { Segmented } from "./parts"
@@ -59,7 +59,7 @@ export function LanguagesFrame({
           onChange={onLanguage}
           options={LANGUAGES.map((l) => ({
             id: l.id,
-            lang: l.tag,
+            lang: l.bcp47,
             hint: l.english,
             label: (
               <span className="flex items-baseline gap-2">

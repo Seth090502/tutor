@@ -7,7 +7,7 @@ import { BookOpen, Loader2, Plus, ServerOff } from "lucide-react"
 
 import { Eyebrow, Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
-import { languageMeta, type TargetLanguage } from "./_pending/language"
+import { languageMeta, type TargetLanguage } from "@/lib/language"
 import { addCards, errorText, gradedText, isOffline, type GradedText } from "./api"
 import { BANDS, type Band } from "./agent"
 import type { AudioEnv } from "./hooks"

@@ -1,7 +1,7 @@
 // Screen-level lookups: whether audio can work, the language's agent id and its chosen voices.
 import { useCallback, useEffect, useState } from "react"
 
-import type { TargetLanguage } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
 import { formatVoiceIds, parseVoiceIds } from "./hvpt"
 import { platform, type Voice } from "./platform"
 

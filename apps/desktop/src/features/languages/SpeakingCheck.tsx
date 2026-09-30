@@ -6,7 +6,7 @@ import { Loader2, Mic, Square } from "lucide-react"
 
 import { Eyebrow, Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
-import { languageMeta, type TargetLanguage } from "./_pending/language"
+import { languageMeta, type TargetLanguage } from "@/lib/language"
 import { errorText } from "./api"
 import type { AudioEnv } from "./hooks"
 import { appendLog, LOG_KEYS } from "./logs"

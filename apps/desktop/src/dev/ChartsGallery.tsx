@@ -208,7 +208,7 @@ function ModeLinks() {
     <div className="mt-6 flex flex-wrap items-center gap-2">
       {["light", "dark"].map((t) => link("theme", t, t === theme))}
       <span aria-hidden="true" className="bg-hairline-strong mx-2 h-4 w-px" />
-      {["neutral", "math", "english", "science", "chemistry"].map((w) => link("world", w, w === world))}
+      {["neutral", "math", "english", "science", "chemistry", "languages"].map((w) => link("world", w, w === world))}
     </div>
   )
 }

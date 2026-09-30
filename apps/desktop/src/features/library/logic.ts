@@ -51,6 +51,7 @@ const SUBJECT_ACCENT: Record<string, string> = {
   english: "var(--acc-english)",
   science: "var(--acc-science)",
   chemistry: "var(--acc-chemistry)",
+  languages: "var(--acc-languages)",
 }
 
 /** A subject's accent for its documents; every other shelf (unsorted, unknown) stays neutral. */

@@ -8,7 +8,7 @@ import { KeyRound, Loader2, Mic, PhoneCall } from "lucide-react"
 
 import { Eyebrow, Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
-import { languageMeta, type TargetLanguage } from "./_pending/language"
+import { languageMeta, type TargetLanguage } from "@/lib/language"
 import { addCards, errorText } from "./api"
 import {
   BANDS,

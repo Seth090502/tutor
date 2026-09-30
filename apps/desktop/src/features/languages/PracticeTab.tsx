@@ -7,8 +7,8 @@ import { ArrowRight, BookOpenCheck, Lightbulb, Loader2, RefreshCw, ServerOff } f
 import { Eyebrow, KbdHint, Kbd, KeycapGroup, Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import type { TargetLanguage } from "./_pending/language"
-import { languageMeta } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
+import { languageMeta } from "@/lib/language"
 import { checkAnswer, errorText, isOffline, loadQueue, openCard, requestHint, sendConfidence, starterDeckCommand, submitReview, type QueueItem } from "./api"
 import {
   assistanceNote,

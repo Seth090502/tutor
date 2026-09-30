@@ -4,7 +4,7 @@
 // This is an intelligibility probe, never a pronunciation score (LANGUAGES.md item 8). A recogniser
 // can quietly repair slips, so a match can flatter the learner and a miss can be the machine's, and
 // the screen says both. There is deliberately no percentage or grade here.
-import type { TargetLanguage } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
 
 export const SPEAKING_TARGETS: Record<TargetLanguage, string[]> = {
   es: ["¿Dónde está la estación de tren?", "Quisiera un café con leche, por favor.", "Me llamo Ana y vivo en Madrid.", "Ayer fuimos al mercado."],

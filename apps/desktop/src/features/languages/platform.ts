@@ -1,11 +1,9 @@
 // The one seam between the Languages screen and the outside world: the Tauri shell (speech, secrets,
-// config). The screen never imports the shell directly, so the lead switches to the real
-// `shell.ttsAudio` and friends by editing `realPlatform` here, and the preview page and the tests
-// swap in fixtures with `setPlatform`. HTTP to the backend goes through `api.ts` and `fetch`.
-import { inTauri, shell as appShell } from "@/lib/backend"
-import type { TargetLanguage } from "./_pending/language"
-import { lookupGloss } from "./_pending/gloss"
-import { shell as pending, type SttResult, type TtsOptions, type Voice } from "./_pending/shell"
+// config). The screen never imports the shell directly, so the preview page and the tests swap in
+// fixtures with `setPlatform`. HTTP to the backend goes through `api.ts` and `fetch`.
+import { inTauri, shell as appShell, type SttResult, type TtsOptions, type TtsVoice as Voice } from "@/lib/backend"
+import type { TargetLanguage } from "@/lib/language"
+import { lookupGloss } from "./api"
 
 export type { SttResult, TtsOptions, Voice }
 
@@ -23,17 +21,14 @@ export type Platform = {
   gloss(lang: TargetLanguage, word: string, sentence: string): Promise<string | null>
 }
 
-const toBuffer = (raw: ArrayBuffer | number[]): ArrayBuffer =>
-  Array.isArray(raw) ? new Uint8Array(raw).buffer : raw
-
 const realPlatform: Platform = {
   inTauri,
   hasElevenLabsKey: async () => (await appShell.secretsStatus()).elevenlabs,
-  configValue: (key) => pending.configValue(key),
+  configValue: async (key) => (await appShell.configGet())[key] ?? null,
   configSet: (key, value) => appShell.configSet(key, value),
-  ttsAudio: async (text, lang, opts) => toBuffer(await pending.ttsAudio(text, lang, opts)),
-  ttsVoices: async (lang) => (await pending.ttsVoices(lang)).voices,
-  sttTranscribe: (audio, lang) => pending.sttTranscribe(audio, lang),
+  ttsAudio: (text, lang, opts) => appShell.ttsAudio(text, lang, opts),
+  ttsVoices: async (lang) => (await appShell.ttsVoices(lang)).voices,
+  sttTranscribe: (audio, lang) => appShell.sttTranscribe(audio, lang),
   conversationToken: async (agentId) => (await appShell.elevenlabsConversationToken(agentId)).token,
   gloss: lookupGloss,
 }

@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { LanguageProvider } from "./lib/language";
 import { startQualityGovernor } from "./lib/motion";
 import { WorldProvider } from "./lib/world";
 
@@ -17,7 +18,9 @@ startQualityGovernor();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <WorldProvider>
-      <App />
+      <LanguageProvider>
+        <App />
+      </LanguageProvider>
     </WorldProvider>
   </React.StrictMode>,
 );

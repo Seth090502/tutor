@@ -1,7 +1,7 @@
 // The backend routes the Languages screen calls: the C7 practice attempts (used directly, not through
 // the voice tools) and the C10 language routes. Shapes are the contracts in docs/tutor/CONTRACTS.md.
 import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
-import type { TargetLanguage } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
 import type { Band } from "./agent"
 import { cardMeta, orderQueue, type Card, type CardKind, type CheckResult, type Confidence, type HintRung, type ReviewResult } from "./drill"
 
@@ -145,6 +145,15 @@ export const gradedText = (lang: TargetLanguage, band: Band, topic?: string) =>
     method: "POST",
     body: JSON.stringify({ lang, band, ...(topic?.trim() ? { topic: topic.trim() } : {}) }),
   })
+
+/** An English gloss for a tapped word in its sentence, from the lesson LLM; shown on screen only. */
+export const lookupGloss = async (lang: TargetLanguage, word: string, sentence: string) =>
+  (
+    await fetchJson<{ gloss: string | null }>(BACKEND_URL, "/api/languages/gloss", {
+      method: "POST",
+      body: JSON.stringify({ lang, word, sentence }),
+    })
+  ).gloss
 
 export const addCards = (lang: TargetLanguage, items: { text: string; meaning: string; example?: string }[]) =>
   fetchJson<{ created: number; entry_ids: number[] }>(BACKEND_URL, "/api/languages/cards", {

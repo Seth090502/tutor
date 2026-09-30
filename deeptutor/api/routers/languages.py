@@ -1,4 +1,4 @@
-"""Languages (contract C10): coverage, graded texts and language cards."""
+"""Languages (contract C10): coverage, graded texts, word glosses and language cards."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from deeptutor.services.languages.cards import add_cards
 from deeptutor.services.languages.coverage import coverage as measure_coverage
 from deeptutor.services.languages.coverage import known_forms
+from deeptutor.services.languages.gloss import gloss as gloss_word
 from deeptutor.services.languages.graded import GradedTextError, graded_text
 from deeptutor.services.languages.text import LanguageSupportMissing
 from deeptutor.services.llm import LLMError
@@ -54,6 +55,16 @@ class GradedText(BaseModel):
     questions: list[ComprehensionQuestion]
 
 
+class GlossRequest(BaseModel):
+    lang: TargetLanguage
+    word: str = Field(min_length=1, max_length=100)
+    sentence: str = Field(min_length=1, max_length=2000)
+
+
+class GlossResult(BaseModel):
+    gloss: str | None
+
+
 class CardItem(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     meaning: str = Field(min_length=1, max_length=500)
@@ -95,6 +106,14 @@ async def graded(payload: GradedTextRequest):
     except LanguageSupportMissing as exc:
         raise HTTPException(503, str(exc)) from exc
     except (GradedTextError, LLMError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post("/gloss", response_model=GlossResult)
+async def gloss(payload: GlossRequest):
+    try:
+        return {"gloss": await gloss_word(payload.lang, payload.word, payload.sentence)}
+    except LLMError as exc:
         raise HTTPException(502, str(exc)) from exc
 
 

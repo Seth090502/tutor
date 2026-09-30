@@ -41,7 +41,7 @@ import {
  * (and &quality=rich|lite).
  */
 
-const WORLDS = ["neutral", "math", "english", "science", "chemistry"] as const
+const WORLDS = ["neutral", "math", "english", "science", "chemistry", "languages"] as const
 
 function applyQuery() {
   const q = new URLSearchParams(window.location.search)

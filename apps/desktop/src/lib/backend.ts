@@ -70,7 +70,9 @@ export const shell = {
   secretDelete: (name: SecretName) => invoke<void>("secret_delete", { name }),
   elevenlabsConversationToken: (agentId: string) =>
     invoke<{ token: string }>("elevenlabs_conversation_token", { agentId }),
-  configGet: () => invoke<{ elevenlabs_agent_id: string | null }>("config_get"),
+  /** Also `agent_<lang>` and `voice_<lang>` for the target languages (C10), when set. */
+  configGet: () =>
+    invoke<{ elevenlabs_agent_id: string | null } & Partial<Record<string, string | null>>>("config_get"),
   configSet: (key: string, value: string) => invoke<void>("config_set", { key, value }),
   evalsRuns: () => invoke<{ runs: EvalRun[]; warnings: string[] }>("evals_runs"),
   planMarkdown: () => invoke<{ markdown: string }>("plan_markdown"),

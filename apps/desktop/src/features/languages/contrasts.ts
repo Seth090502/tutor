@@ -5,7 +5,7 @@
 // pairs are near-minimal (a plural against its singular), and the TTS voices have not been checked
 // on any of them. Flip `verified` to true for a contrast only after a native speaker has gone
 // through its pairs and listened to the audio.
-import type { TargetLanguage } from "./_pending/language"
+import type { TargetLanguage } from "@/lib/language"
 
 /** One word: `text` is what the voice says, `label` is what the choice button shows. */
 export type Token = { text: string; label: string }
