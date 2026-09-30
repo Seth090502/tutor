@@ -145,7 +145,14 @@ async def test_network_errors_do_not_leak_credentials(monkeypatch, error, status
 async def test_route_resolves_draft_secrets_by_id_without_writes(monkeypatch, connection):
     from deeptutor.api.routers import settings as router
 
-    entry = {"id": "saved", "api_key": "live-key", "extra_headers": {"X-Key": "live-header"}}
+    # The saved entry names the server it was saved for: a masked key is only restored for that
+    # same server (key-to-host binding, C3).
+    entry = {
+        "id": "saved",
+        "base_url": "https://example.test/v1",
+        "api_key": "live-key",
+        "extra_headers": {"X-Key": "live-header"},
+    }
     live = {"connections": [entry], "services": {"llm": {"profiles": [entry]}}}
     draft = deepcopy(live)
     for item in [draft["connections"][0], draft["services"]["llm"]["profiles"][0]]:
