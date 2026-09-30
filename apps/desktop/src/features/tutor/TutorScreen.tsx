@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { useMicVolume } from "./useMicVolume"
 
 // Color presets from ElevenLabs' own Orb demo (github.com/elevenlabs/ui, MIT).
-const VOICES: { name: string; colors: [string, string] }[] = [
+export const VOICES: { name: string; colors: [string, string] }[] = [
   { name: "Sky", colors: ["#CADCFC", "#A0B9D1"] },
   { name: "Sand", colors: ["#F6E7D8", "#E0CFC2"] },
   { name: "Slate", colors: ["#E5E7EB", "#9CA3AF"] },
@@ -21,7 +21,7 @@ const STATES: { label: string; value: AgentState }[] = [
 ]
 
 /** The inset ring ElevenLabs frames the orb with in their demo. */
-function OrbFrame({ className, children }: { className: string; children: ReactNode }) {
+export function OrbFrame({ className, children }: { className: string; children: ReactNode }) {
   return (
     <div
       className={cn(

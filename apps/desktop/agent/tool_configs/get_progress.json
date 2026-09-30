@@ -1,0 +1,16 @@
+{
+    "name": "get_progress",
+    "description": "Get the learner's practice summary: total questions, due now, overdue, mistakes, reviewed today, and when the next review is due.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for get_progress",
+        "properties": {},
+        "required": []
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}

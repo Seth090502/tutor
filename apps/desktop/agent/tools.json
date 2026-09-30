@@ -1,0 +1,24 @@
+{
+    "tools": [
+        {
+            "type": "client",
+            "config": "tool_configs/get_next_question.json"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/check_answer.json"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/record_review.json"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/search_library.json"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/get_progress.json"
+        }
+    ]
+}

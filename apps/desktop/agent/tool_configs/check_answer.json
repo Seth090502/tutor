@@ -1,0 +1,28 @@
+{
+    "name": "check_answer",
+    "description": "Grade the learner's answer to a practice question. Call it before saying anything about whether the answer is right. Returns correct (true, false, or null for open-ended questions), correct_answer, explanation and, when recorded, misconception.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for check_answer",
+        "properties": {
+            "question_id": {
+                "type": "integer",
+                "description": "The question_id returned by get_next_question."
+            },
+            "answer": {
+                "type": "string",
+                "description": "The learner's answer as given: an option letter, letters such as A,C for multi-select, true or false, or their words."
+            }
+        },
+        "required": [
+            "question_id",
+            "answer"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}
