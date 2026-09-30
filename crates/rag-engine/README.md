@@ -4,13 +4,14 @@ Rust retrieval engine for the tutor's library of textbooks, papers and notes. It
 commands:
 
 - `survey` measures a corpus (files, duplicates, pages needing OCR, tokens per GB).
-- `serve` runs the local HTTP service of contract C1 (`docs/tutor/CONTRACTS.md`).
+- `serve` runs the HTTP service of contracts C1 and C9 (`docs/tutor/CONTRACTS.md`).
 - `ingest` builds and updates the indexes incrementally.
 - `search` queries them from the command line.
 
 It is built for a 50-250 GB library (up to about 10M chunks) on a machine with about 20 GB of
-usable RAM. Work is streamed one document at a time and committed in batches. Indexes live on
-disk, and the corpus is only ever read.
+usable RAM. Documents are extracted and chunked in parallel with a bounded number in memory,
+stored in order, and committed in batches. Indexes live on disk, and the corpus is only ever
+read.
 
 ## Setup
 
@@ -55,6 +56,10 @@ $exe = "target/release/rag-engine"
 # The service on http://127.0.0.1:8811 (--port 0 picks a free port; the address is logged).
 & $exe serve --corpus corpus --notes content/notes --data data/rag
 
+# On the library machine, reachable from the LAN: a token is required.
+$env:RAG_ENGINE_TOKEN = "<long random secret>"
+& $exe serve --corpus corpus --notes content/notes --data data/rag --bind 0.0.0.0
+
 # One ingest in the foreground; prints a JSON summary. --root limits the walk to one folder.
 & $exe ingest --corpus corpus --notes content/notes --data data/rag [--root corpus/math] [--rebuild]
 
@@ -66,11 +71,26 @@ Logs go to stderr. Only one process may ingest into a data directory at a time, 
 tantivy's writer lock refuses a second one. Stop `serve` before running `ingest` from the
 command line on the same `--data`.
 
-## Service (contract C1)
+## Service (contracts C1 and C9)
 
-`serve` binds `127.0.0.1` only and allows CORS for exactly the app's four origins:
-`http://localhost:1420`, `http://127.0.0.1:1420`, `http://tauri.localhost` and
-`tauri://localhost` (methods `GET` and `POST`, header `Content-Type`).
+`serve` binds `127.0.0.1` unless `--bind <ip>` names another address. It allows CORS for
+exactly the app's four origins: `http://localhost:1420`, `http://127.0.0.1:1420`,
+`http://tauri.localhost` and `tauri://localhost` (methods `GET` and `POST`, headers
+`Content-Type` and `Authorization`).
+
+**Token.** With `RAG_ENGINE_TOKEN` set (surrounding whitespace is ignored; empty means unset),
+every route except `GET /health` needs `Authorization: Bearer <token>`, including unknown
+routes, or it answers `401 {"error": ...}`.
+
+- The token is compared as BLAKE3 digests, which is constant-time and does not reveal its
+  length.
+- It is never logged. The log says only whether a token is required.
+- CORS runs before the check, so browser preflights, which carry no token, still succeed, and
+  a 401 still carries the CORS headers.
+- A `--bind` that is not a loopback address (for example `0.0.0.0` or a LAN address) refuses to
+  start without a token.
+- The token is the only protection: the service speaks plain HTTP, so on an untrusted network
+  put it behind TLS (a reverse proxy or a VPN such as Tailscale).
 
 | Endpoint | Behaviour |
 |---|---|
@@ -81,6 +101,37 @@ command line on the same `--data`.
 | `POST /ingest {"root"?, "rebuild"?}` | starts an ingest job; `root` must be a folder inside the corpus or notes root |
 | `GET /jobs/{job_id}` | `{"job_id", "kind", "state", "progress": {"done", "total"}, "started_at", "finished_at", "error"}` |
 | `POST /search` | `{"query", "k"?, "domains"?, "source_types"?, "mode"?}`; see Search |
+| `GET /documents` | `?domain=&source_type=&q=&sort=title\|added\|pages&limit=50&offset=0`; `{"total", "documents": [Doc]}` |
+| `GET /documents/{doc_id}` | `Doc` plus `outline: [{"heading_path", "page_start", "page_end", "chunk_id"}]` |
+| `GET /documents/{doc_id}/chunks` | `?from=<ordinal>&limit=20`; `{"chunks": [{"chunk_id", "ordinal", "text", "page_start", "page_end", "heading_path"}], "next"}` |
+
+### Library browsing (`src/library.rs`)
+
+- `Doc` is `{doc_id, path, title, domain, source_type, pages, chunks, bytes, added_at,
+  ocr_pending}`.
+  - `pages` is 0 for EPUB, Markdown and text.
+  - `added_at` is when the document's current content was indexed (epoch seconds).
+  - `ocr_pending` is the number of its pages waiting for OCR.
+- Only indexed documents are listed. Unreadable ones are counted in `/status` `errors`, and a
+  document being ingested appears once its batch is committed.
+- `GET /documents` filters and sorts:
+  - `domain` and `source_type` filter exactly. The domain ignores case.
+  - `q` keeps documents whose title or stored path contains it, ignoring ASCII case; `%` and
+    `_` are literal.
+  - `sort=title` (the default) sorts A to Z ignoring ASCII case, `added` newest first, and
+    `pages` most pages first. Ties are broken by title, then `doc_id`, so pages are stable.
+  - `limit` is 1-200 (default 50) and `offset` counts from 0. `total` counts every match.
+  - Empty values mean "not given".
+- `outline` lists each distinct, non-empty heading path of the document's chunks, in reading
+  order. Each entry gives the first chunk under the path, and pages from that chunk to the end
+  of its run. Chunks before the first heading are not listed, and a path that recurs later
+  keeps its first entry.
+- `/chunks` returns chunks with `ordinal >= from` in reading order. `limit` is 1-200 (default
+  20). `next` is the `from` for the next page, or `null` after the last chunk.
+- These routes use the indexes `documents(state, title COLLATE NOCASE)`,
+  `documents(state, indexed_at)`, `documents(state, pages)` and `chunks(doc_id, ordinal)`. The
+  last one replaces `chunks(doc_id)`, and is built once when an existing database is first
+  opened.
 
 One job runs at a time. A second `POST /survey` or `POST /ingest` gets
 `409 {"error": "job <id> is still running"}`. Jobs are stored in SQLite, so finished jobs stay
@@ -90,9 +141,11 @@ the documents, then any OCR pages, then the chunks to embed.
 
 Errors are `{"error": "<message>"}`. The statuses are:
 
-- 400: invalid JSON, unknown fields, an empty query, `k` outside 1..100, an unknown
-  `source_type`, or a `root` outside the roots.
-- 404: an unknown job, route or survey.
+- 400: invalid JSON, unknown fields or query parameters, an empty query, `k` outside 1..100,
+  a `limit` outside 1..200, an unknown `sort` or `source_type`, or a `root` outside the roots.
+- 401: a token is configured and the request does not carry it (every route but
+  `GET /health`).
+- 404: an unknown job, route, survey or document.
 - 409: a job is already running, or `mode: "vector"` was asked for without vectors.
 - 502: the embedding provider failed on the query.
 - 500: anything else.
@@ -128,6 +181,7 @@ canonical path, which decides the metadata, is the first of its paths in sorted 
 | `RAG_EMBED_PRICE_PER_MTOK` | USD per million tokens, used for spend accounting. Unset: tokens are recorded and spend shows $0 (a warning is logged). |
 | `RAG_OCR_PROVIDER` | OCR provider. None is implemented yet, so any value is rejected at startup. Unset: pages stay queued. |
 | `PDFIUM_DYNAMIC_LIB_PATH` | PDFium library or folder (same as `--pdfium`). |
+| `RAG_ENGINE_TOKEN` | Bearer token that `serve` requires on every route but `GET /health`. Needed for a non-loopback `--bind`. Read directly, so it never appears in `--help`. |
 
 A configuration error, such as a provider without a model, stops the service at startup
 rather than being ignored. Corpus text goes only to the configured provider. Check its
@@ -145,11 +199,18 @@ out.
 3. **Move**: a document whose canonical path changed keeps its chunks and embeddings. Its
    domain and source type are rewritten in both indexes, so sorting a book out of `inbox/`
    costs no re-embedding.
-4. **Index** new documents one at a time:
+4. **Index** new documents in a pipeline:
    - Extract the PDF text layer (with page triage), the EPUB spine documents, or Markdown or
-     plain text.
-   - Chunk the text, then store the document, its chunks and its OCR-queue pages in one SQLite
-     transaction.
+     plain text. PDFs are extracted in path order on one thread, because PDFium is not
+     thread-safe. Everything else is extracted on worker threads.
+   - Chunk (and tokenise) the text on the worker threads. By default there is one worker per
+     core, minus two for the writer and the PDF thread, up to 16.
+   - At most two documents per worker are in memory. A document takes a permit before it is
+     extracted and returns it once it is stored.
+   - On the ingest thread, in path order, store the document, its chunks and its OCR-queue
+     pages in one SQLite transaction. The result is the same as a serial ingest: a test
+     compares every stored chunk and document row.
+   - A parser or chunker panic becomes that document's error.
    - Add the chunks to the BM25 batch. The batch is committed every 64 documents or 20,000
      chunks.
    - A document stays `indexing` until its batch is committed and then becomes `indexed`. An
@@ -228,16 +289,28 @@ The service refuses a `--data` inside `--corpus` or `--notes`.
 
 ## Scale and memory
 
-- Documents are processed one at a time. Memory holds one document's text, one BM25 batch, and
-  up to 1,024 vectors. The tantivy writer has a 256 MB budget, and SQLite has a 64 MB page
-  cache. The file list (one small entry per file) is the only structure that grows with the
-  corpus.
+- Memory holds the documents in flight (at most two per worker thread, each with its text and
+  chunks), one BM25 batch, and up to 1,024 vectors. The tantivy writer has a 256 MB budget,
+  and SQLite has a 64 MB page cache. The file list (one small entry per file) is the only
+  structure that grows with the corpus.
 - `/status` sums per-document counters instead of counting chunk rows, so it stays fast at
   10M chunks. Chunks waiting for embeddings are counted through a partial index.
 - There is no per-page table. Only pages that need OCR get a row.
 - BM25 stores no term positions, and the chunk text lives once, in SQLite.
 - Vectors stay on disk in LanceDB. With the IVF-PQ index, searches do not scan all vectors.
-- PDFium is not thread-safe, so extraction runs on one thread. Hashing is parallel.
+- PDFium is not thread-safe, so PDF text extraction runs on one thread. Other extraction,
+  chunking and hashing are parallel. For a PDF-heavy library, that one thread is the likely
+  limit; this has not been measured on real books yet.
+- **Throughput** (release build, 16-core Windows 11 machine, BM25 only, no embeddings). The
+  corpus is `bench/synthetic_corpus.py`: 200 Markdown books, 33.7 MB, 38,648 chunks. Each
+  ingest started from an empty `--data`, and the numbers are two runs each:
+
+  | Build | Ingest time | Throughput | Peak working set |
+  |---|---|---|---|
+  | Serial (before C9) | 23.3-23.4 s | 1.44 MB/s | 149-164 MB |
+  | Parallel (14 workers) | 5.0-5.1 s | 6.6-6.7 MB/s | 159-174 MB |
+
+  Both builds stored the same 38,648 chunks.
 
 ## What survey measures
 
@@ -300,6 +373,10 @@ cargo clippy -p rag-engine --all-targets
   - RRF fusion and request validation;
   - incremental ingest: unchanged, changed, moved, deleted, duplicate, scoped, interrupted,
     rebuild and unreadable documents;
+  - parallel ingest stores the same chunk, document and OCR-queue rows and BM25 hits as serial
+    ingest, over every fixture type plus Markdown of uneven sizes;
+  - the pipeline stores in order and stops promptly when storing fails;
+  - library listing filters, sorts, paging and escaping, the outline, and chunk pages;
   - embedding batching, retries and spend, including the Voyage and OpenAI-compatible request
     shapes against a local fake server;
   - the OCR queue with a mock provider, the job lifecycle, LanceDB operations, and triage and
@@ -312,12 +389,17 @@ cargo clippy -p rag-engine --all-targets
   - that every chunk of the distinct-text documents ranks first for a query built from its own
     text;
   - hit fields, filters in both engines, and error statuses;
+  - `/documents` (filters, sort, paging and 400s), `/documents/{doc_id}` with its outline, and
+    `/chunks` followed page by page through a whole document;
   - CORS for allowed and refused origins, and that the library files are unchanged;
+  - with `RAG_ENGINE_TOKEN`: 401 on every route but `GET /health` without it, or with a wrong
+    token or scheme; success with it; preflights allowed; and the token absent from the log;
+  - that a non-loopback `--bind` without a token exits before creating anything;
   - hybrid and vector search against a local fake OpenAI-compatible embeddings server, which
     holds its first request to keep a job running.
 
-  The tests remove every `RAG_*` and `VOYAGE_API_KEY` variable from the server's environment,
-  so they cannot reach a paid API.
+  The tests remove every `RAG_*` and `VOYAGE_API_KEY` variable (including `RAG_ENGINE_TOKEN`)
+  from the server's environment, so they cannot reach a paid API.
 
 PDFium must be in place for the binary tests. The fixtures are generated by
 `tests/fixtures/make_fixtures.py` (reportlab and Pillow).

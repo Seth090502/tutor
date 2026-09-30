@@ -3,7 +3,8 @@
 The owner's books, papers and notes (50-250 GB) are ingested and indexed by the
 separate rag-engine service (``docs/tutor/CONTRACTS.md``, C1), not by DeepTutor.
 A ``tutor_library`` KB is a pointer: :meth:`TutorLibraryPipeline.search` calls
-``POST {RAG_ENGINE_URL}/search`` in hybrid mode and maps the hits into the
+``POST {RAG_ENGINE_URL}/search`` in hybrid mode (with ``Authorization: Bearer
+{RAG_ENGINE_TOKEN}`` when that is set, contract C9) and maps the hits into the
 ``{title, content, source, page, chunk_id, score}`` sources the ``rag`` tool
 cites. Optional ``domains`` / ``source_types`` filters come from the search call,
 else from the KB entry written at connect time. Nothing is copied or indexed
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 PROVIDER = "tutor_library"
 RAG_ENGINE_URL_ENV = "RAG_ENGINE_URL"
+RAG_ENGINE_TOKEN_ENV = "RAG_ENGINE_TOKEN"
 DEFAULT_RAG_ENGINE_URL = "http://127.0.0.1:8811"
 TIMEOUT_SECONDS = 10.0
 DEFAULT_TOP_K = 10
@@ -56,6 +58,12 @@ def _rag_engine_url() -> str:
             "not_configured",
         )
     return url
+
+
+def _auth_headers() -> dict[str, str]:
+    """The bearer token header from ``RAG_ENGINE_TOKEN``, or none when it is unset."""
+    token = (os.environ.get(RAG_ENGINE_TOKEN_ENV) or "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def _string_list(values: Any) -> list[str]:
@@ -195,7 +203,9 @@ class TutorLibraryPipeline:
             async with httpx.AsyncClient(
                 timeout=TIMEOUT_SECONDS, transport=self._transport
             ) as client:
-                response = await client.post(f"{base_url}/search", json=payload)
+                response = await client.post(
+                    f"{base_url}/search", json=payload, headers=_auth_headers()
+                )
         except httpx.TimeoutException as exc:
             raise _RagEngineError(
                 f"Tutor library (rag-engine) did not answer within {TIMEOUT_SECONDS:g} s "
@@ -211,6 +221,16 @@ class TutorLibraryPipeline:
                 f"Tutor library (rag-engine) request to {base_url} failed: {exc}"
             ) from exc
 
+        if response.status_code == 401:
+            if _auth_headers():
+                reason = (
+                    f"rejected {RAG_ENGINE_TOKEN_ENV}; check that it matches the engine's token"
+                )
+            else:
+                reason = f"requires a token; set {RAG_ENGINE_TOKEN_ENV} to the engine's token"
+            raise _RagEngineError(
+                f"Tutor library (rag-engine) at {base_url} {reason}.", "not_configured"
+            )
         if response.status_code >= 400:
             raise _RagEngineError(
                 f"Tutor library (rag-engine) search failed (HTTP {response.status_code}): "

@@ -60,6 +60,7 @@ C1_RESPONSE = {
 @pytest.fixture(autouse=True)
 def _default_rag_engine_url(monkeypatch):
     monkeypatch.delenv("RAG_ENGINE_URL", raising=False)
+    monkeypatch.delenv("RAG_ENGINE_TOKEN", raising=False)
 
 
 def _kb_base(tmp_path: Path, entry: dict | None = None) -> str:
@@ -213,6 +214,54 @@ def test_rag_engine_url_comes_from_env(tmp_path: Path, monkeypatch) -> None:
     _search(pipeline)
 
     assert str(requests[0].url) == "http://127.0.0.1:9911/search"
+
+
+def test_no_authorization_header_without_a_token(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    pipeline = TutorLibraryPipeline(_kb_base(tmp_path), transport=_recording_transport(requests))
+
+    _search(pipeline)
+
+    assert "authorization" not in requests[0].headers
+
+
+def test_token_from_env_is_sent_as_bearer(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("RAG_ENGINE_TOKEN", "  s3cret-token \n")
+    requests: list[httpx.Request] = []
+    pipeline = TutorLibraryPipeline(_kb_base(tmp_path), transport=_recording_transport(requests))
+
+    result = _search(pipeline)
+
+    assert "error_type" not in result
+    assert requests[0].headers["authorization"] == "Bearer s3cret-token"
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        (None, "requires a token; set RAG_ENGINE_TOKEN"),
+        ("wrong-token", "rejected RAG_ENGINE_TOKEN"),
+    ],
+)
+def test_unauthorized_is_a_clear_error(
+    tmp_path: Path, monkeypatch, token: str | None, expected: str
+) -> None:
+    if token is not None:
+        monkeypatch.setenv("RAG_ENGINE_TOKEN", token)
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(401, json={"error": "invalid bearer token"})
+    )
+    pipeline = TutorLibraryPipeline(_kb_base(tmp_path), transport=transport)
+
+    result = _search(pipeline)
+
+    assert result["error_type"] == "not_configured"
+    assert "Tutor library (rag-engine)" in result["answer"]
+    assert expected in result["answer"]
+    assert "http://127.0.0.1:8811" in result["answer"]
+    assert result["sources"] == []
+    if token is not None:
+        assert token not in result["answer"]
 
 
 def test_invalid_rag_engine_url_is_reported_without_a_request(tmp_path: Path, monkeypatch) -> None:

@@ -27,7 +27,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 /// Variables the engine reads. They are removed from the child's environment so a test can
 /// never reach a real (paid) provider, then set explicitly where a test needs them.
-const ENGINE_VARS: [&str; 7] = [
+const ENGINE_VARS: [&str; 8] = [
     "RAG_EMBED_PROVIDER",
     "RAG_EMBED_MODEL",
     "RAG_EMBED_API_KEY",
@@ -35,6 +35,7 @@ const ENGINE_VARS: [&str; 7] = [
     "RAG_EMBED_BASE_URL",
     "RAG_EMBED_PRICE_PER_MTOK",
     "RAG_OCR_PROVIDER",
+    "RAG_ENGINE_TOKEN",
 ];
 
 const ALLOWED: [&str; 4] = ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"];
@@ -48,28 +49,37 @@ struct Server {
     base: String,
     log: Arc<Mutex<String>>,
     data: PathBuf,
+    /// Sent as the bearer token by `call` when the server was started with one.
+    token: Option<String>,
+}
+
+/// `rag-engine serve` on the test library with a fresh data directory and a free port.
+fn serve_command(data: &Path, env: &[(&str, String)]) -> Command {
+    let lib = library();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rag-engine"));
+    cmd.arg("serve")
+        .arg("--corpus")
+        .arg(lib.join("corpus"))
+        .arg("--notes")
+        .arg(lib.join("notes"))
+        .arg("--data")
+        .arg(data)
+        .args(["--port", "0"]);
+    for var in ENGINE_VARS {
+        cmd.env_remove(var);
+    }
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd
 }
 
 impl Server {
     fn start(name: &str, env: &[(&str, String)]) -> Server {
         let data = std::env::temp_dir().join(format!("rag-engine-service-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&data);
-        let lib = library();
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_rag-engine"));
-        cmd.arg("serve")
-            .arg("--corpus")
-            .arg(lib.join("corpus"))
-            .arg("--notes")
-            .arg(lib.join("notes"))
-            .arg("--data")
-            .arg(&data)
-            .args(["--port", "0"]);
-        for var in ENGINE_VARS {
-            cmd.env_remove(var);
-        }
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
+        let mut cmd = serve_command(&data, env);
+        let token = env.iter().find(|(key, _)| *key == "RAG_ENGINE_TOKEN").map(|(_, value)| value.clone());
         let mut child = cmd.stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
         let stderr = child.stderr.take().unwrap();
         let log = Arc::new(Mutex::new(String::new()));
@@ -90,7 +100,7 @@ impl Server {
             .recv_timeout(Duration::from_secs(60))
             .unwrap_or_else(|_| panic!("the server did not start:\n{}", log.lock().unwrap()));
         assert!(base.starts_with("http://127.0.0.1:"), "{base}");
-        Server { child, base, log, data }
+        Server { child, base, log, data, token }
     }
 
     fn log(&self) -> String {
@@ -99,6 +109,9 @@ impl Server {
 
     async fn call(&self, method: Method, path: &str, body: Option<&Value>) -> (StatusCode, Value) {
         let mut request = reqwest::Client::new().request(method, format!("{}{path}", self.base));
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
         if let Some(body) = body {
             request = request.json(body);
         }
@@ -241,6 +254,80 @@ async fn service_contract_with_bm25_only() {
     assert_eq!(stats["spend_usd"], json!({"embedding": 0.0, "ocr": 0.0}));
     assert_eq!(stats["active_job"], Value::Null);
 
+    // Library browsing (C9): indexed documents only, title order by default.
+    let (status, listing) = server.get("/documents").await;
+    assert_eq!(status, StatusCode::OK, "{listing}");
+    assert_eq!(listing["total"], 7, "{listing}");
+    let docs = listing["documents"].as_array().unwrap();
+    let titles: Vec<String> = docs.iter().map(|d| d["title"].as_str().unwrap().to_lowercase()).collect();
+    assert!(titles.windows(2).all(|w| w[0] <= w[1]), "{titles:?}");
+    assert!(docs.iter().all(|d| d["path"] != "corpus/chemistry/papers/locked.pdf"), "error documents are not listed");
+    let by_path = |path: &str| docs.iter().find(|d| d["path"] == path).unwrap_or_else(|| panic!("{path} missing: {listing}")).clone();
+    let limits_doc = by_path("corpus/math/books/limits.md");
+    let mut keys: Vec<&str> = limits_doc.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, ["added_at", "bytes", "chunks", "doc_id", "domain", "ocr_pending", "pages", "path", "source_type", "title"]);
+    assert_eq!(
+        (&limits_doc["title"], &limits_doc["domain"], &limits_doc["source_type"], &limits_doc["pages"], &limits_doc["bytes"]),
+        (&json!("Chapter 3 Limits"), &json!("math"), &json!("book"), &json!(0), &json!(fs::metadata(library().join("corpus/math/books/limits.md")).unwrap().len()))
+    );
+    assert!(limits_doc["added_at"].as_f64().unwrap() > 1.7e9);
+    assert_eq!((&by_path("corpus/inbox/scan.pdf")["ocr_pending"], &by_path("corpus/math/books/algebra.pdf")["ocr_pending"]), (&json!(1), &json!(1)));
+    assert_eq!(by_path("corpus/science/books/biology.pdf")["pages"], 3);
+    let (_, math) = server.get("/documents?domain=math&sort=pages&limit=2&offset=0").await;
+    assert_eq!(math["total"], 3, "{math}");
+    assert_eq!(math["documents"].as_array().unwrap().len(), 2);
+    assert_eq!(math["documents"][0]["path"], "corpus/math/books/algebra.pdf", "most pages first: {math}");
+    let (_, found) = server.get("/documents?q=BIOLOGY&domain=&source_type=").await;
+    assert_eq!((&found["total"], &found["documents"][0]["path"]), (&json!(1), &json!("corpus/science/books/biology.pdf")));
+    let (_, notes) = server.get("/documents?source_type=note").await;
+    assert_eq!((&notes["total"], &notes["documents"][0]["path"]), (&json!(1), &json!("notes/chemistry/redox.md")));
+    for bad in ["/documents?limit=201", "/documents?limit=0", "/documents?sort=size", "/documents?source_type=books", "/documents?page=2", "/documents?offset=-1"] {
+        let (status, body) = server.get(bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad} -> {body}");
+        assert!(body["error"].is_string(), "{bad} -> {body}");
+    }
+
+    // One document with its outline, then its chunks page by page in reading order.
+    let limits_id = limits_doc["doc_id"].as_str().unwrap();
+    let (status, detail) = server.get(&format!("/documents/{limits_id}")).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["title"], "Chapter 3 Limits");
+    let outline = detail["outline"].as_array().unwrap();
+    assert!(!outline.is_empty(), "{detail}");
+    assert_eq!(outline[0]["heading_path"][0], "Chapter 3 Limits", "{detail}");
+    assert!(outline.iter().all(|e| e["chunk_id"].as_str().unwrap().starts_with(&format!("{limits_id}:")) && e["page_start"].is_null()));
+    let paths: Vec<&Value> = outline.iter().map(|e| &e["heading_path"]).collect();
+    assert!(paths.iter().enumerate().all(|(i, p)| !paths[..i].contains(p)), "distinct heading paths: {detail}");
+    let mut ordinals = Vec::new();
+    let mut texts = Vec::new();
+    let mut from = Some(0);
+    while let Some(start) = from {
+        let (status, page) = server.get(&format!("/documents/{limits_id}/chunks?from={start}&limit=1")).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        for c in page["chunks"].as_array().unwrap() {
+            ordinals.push(c["ordinal"].as_u64().unwrap());
+            texts.push(c["text"].as_str().unwrap().to_string());
+            assert_eq!(c["chunk_id"], format!("{limits_id}:{}", c["ordinal"]));
+            assert!(c["heading_path"].is_array() && c["page_start"].is_null() && c["page_end"].is_null());
+        }
+        from = page["next"].as_u64();
+    }
+    assert_eq!(ordinals, (0..limits_doc["chunks"].as_u64().unwrap()).collect::<Vec<_>>());
+    assert!(ordinals.len() >= 2, "limits.md has several chunks");
+    let (_, all) = server.get(&format!("/documents/{limits_id}/chunks")).await;
+    assert_eq!(all["next"], Value::Null);
+    let all_texts: Vec<&str> = all["chunks"].as_array().unwrap().iter().map(|c| c["text"].as_str().unwrap()).collect();
+    assert_eq!(all_texts, texts);
+    let (_, biology) = server.get(&format!("/documents/{}", by_path("corpus/science/books/biology.pdf")["doc_id"].as_str().unwrap())).await;
+    assert_eq!(biology["pages"], 3);
+    for missing in ["/documents/nope", "/documents/nope/chunks"] {
+        let (status, body) = server.get(missing).await;
+        assert_eq!((status, body["error"].is_string()), (StatusCode::NOT_FOUND, true), "{missing}");
+    }
+    let (status, _) = server.get(&format!("/documents/{limits_id}/chunks?limit=500")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     // Every chunk of the distinct-text documents ranks first for a query from its own text.
     let math = server.search(json!({"query": "limit limits function series", "domains": ["math"], "mode": "bm25", "k": 100})).await;
     let own: Vec<&Value> = hits(&math)
@@ -371,6 +458,78 @@ async fn service_contract_with_bm25_only() {
 
     // The corpus and notes were only read.
     assert_eq!(snapshot(&library()), before);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bearer_token_guards_every_route_but_health() {
+    const TOKEN: &str = "test-token-3f9a7c1e5b";
+    let server = Server::start("auth", &[("RAG_ENGINE_TOKEN", TOKEN.into())]);
+    let client = reqwest::Client::new();
+    let url = |path: &str| format!("{}{path}", server.base);
+
+    let health = client.get(url("/health")).send().await.unwrap();
+    assert_eq!(health.status(), StatusCode::OK, "health needs no token");
+    for (method, path) in [
+        (Method::GET, "/status"),
+        (Method::GET, "/documents"),
+        (Method::GET, "/documents/x"),
+        (Method::GET, "/documents/x/chunks"),
+        (Method::GET, "/jobs/x"),
+        (Method::GET, "/survey/latest"),
+        (Method::POST, "/search"),
+        (Method::POST, "/ingest"),
+        (Method::POST, "/survey"),
+        (Method::GET, "/nowhere"),
+        (Method::POST, "/health"),
+    ] {
+        for auth in [None, Some("Bearer wrong-token"), Some(&*format!("Basic {TOKEN}")), Some(TOKEN), Some("Bearer")] {
+            let mut request = client.request(method.clone(), url(path));
+            if let Some(auth) = auth {
+                request = request.header("Authorization", auth);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{method} {path} with {auth:?}");
+            assert!(response.json::<Value>().await.unwrap()["error"].is_string());
+        }
+    }
+    let (status, body) = server.get("/status").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = server.get("/documents").await;
+    assert_eq!((status, &body), (StatusCode::OK, &json!({"total": 0, "documents": []})));
+    let lower = client.get(url("/status")).header("Authorization", format!("bearer {TOKEN}")).send().await.unwrap();
+    assert_eq!(lower.status(), StatusCode::OK, "the scheme is case-insensitive");
+    let (status, body) = server.post("/search", json!({"query": "limits"})).await;
+    assert_eq!((status, &body["hits"]), (StatusCode::OK, &json!([])));
+
+    // Browsers preflight without the token; the Authorization header is allowed, and a 401 still
+    // carries CORS headers so the app can read it.
+    let preflight = client
+        .request(Method::OPTIONS, url("/documents"))
+        .header("Origin", ALLOWED[0])
+        .header("Access-Control-Request-Method", "GET")
+        .header("Access-Control-Request-Headers", "authorization")
+        .send()
+        .await
+        .unwrap();
+    assert!(preflight.status().is_success(), "{}", preflight.status());
+    assert!(preflight.headers()["access-control-allow-headers"].to_str().unwrap().contains("authorization"));
+    let refused = client.get(url("/status")).header("Origin", ALLOWED[0]).send().await.unwrap();
+    assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(refused.headers()["access-control-allow-origin"], ALLOWED[0]);
+
+    assert!(!server.log().contains(TOKEN), "the token was logged:\n{}", server.log());
+}
+
+#[test]
+fn a_non_loopback_bind_needs_a_token() {
+    let data = std::env::temp_dir().join(format!("rag-engine-service-bind-{}", std::process::id()));
+    for bind in ["0.0.0.0", "192.168.1.20", "::"] {
+        let out = serve_command(&data, &[("RAG_ENGINE_TOKEN", "  ".into())]).args(["--bind", bind]).output().unwrap();
+        assert!(!out.status.success(), "{bind}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(&format!("refusing to listen on {bind} without RAG_ENGINE_TOKEN")), "{stderr}");
+    }
+    assert!(!data.exists(), "nothing is created before the bind is checked");
 }
 
 const DIMS: usize = 64;
