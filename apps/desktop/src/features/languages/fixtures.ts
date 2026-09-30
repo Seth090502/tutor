@@ -2,6 +2,7 @@
 // secrets, config), so every tab and state can be drawn and driven without services or keys. Nothing here is
 // imported by the app.
 import { setPlatform } from "./platform"
+import { createStudyBackend, type FixtureCard } from "./studyFixture"
 
 export type Scenario =
   | "ready"
@@ -13,19 +14,7 @@ export type Scenario =
   | "novoices"
   | "nogloss"
 
-type Card = {
-  id: number
-  lang: string
-  kind: "production" | "recognition" | "listening"
-  question: string
-  answer: string
-  hints: string[]
-  explanation: string
-  misconception?: string
-  free?: boolean
-}
-
-const CARDS: Card[] = [
+export const CARDS: FixtureCard[] = [
   {
     id: 101,
     lang: "es",
@@ -127,11 +116,6 @@ const GLOSSES: Record<string, string> = {
   市场: "market",
 }
 
-const strip = (s: string) => s.normalize("NFD").replace(/\p{M}+/gu, "")
-const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, " ").trim()
-
-type AttemptState = { card: Card; hints: number; wrong: boolean }
-
 /** A short sine tone as a WAV, so the audio path really plays something in the preview. */
 function tone(freq: number): ArrayBuffer {
   const rate = 16000
@@ -156,8 +140,7 @@ function tone(freq: number): ArrayBuffer {
 }
 
 export function installFixtures(scenario: Scenario) {
-  const attempts = new Map<string, AttemptState>()
-  let nextAttempt = 1
+  const study = createStudyBackend(scenario === "nocards" ? [] : CARDS)
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -168,54 +151,7 @@ export function installFixtures(scenario: Scenario) {
     if (scenario === "offline") throw new TypeError("Failed to fetch")
     const path = url.replace("http://127.0.0.1:8001", "")
 
-    if (path.startsWith("/api/question-notebook/practice/queue")) {
-      if (scenario === "nocards") return json([])
-      return json(
-        CARDS.map((c) => ({
-          entry: { id: c.id, question: c.question, question_type: "short_answer", correct_answer: c.answer, hints: c.hints, categories: [{ name: `lang:${c.lang}` }, { name: `card:${c.kind}` }] },
-          state: { version: 1 },
-        })),
-      )
-    }
-    let m = /\/questions\/(\d+)\/attempts$/.exec(path)
-    if (m && method === "POST") {
-      const card = CARDS.find((c) => c.id === Number(m![1]))!
-      const id = `att-${nextAttempt++}`
-      attempts.set(id, { card, hints: 0, wrong: false })
-      return json({ attempt_id: id, rungs_available: card.hints.length })
-    }
-    m = /\/attempts\/([^/]+)\/confidence$/.exec(path)
-    if (m) return json({ ok: true })
-    m = /\/attempts\/([^/]+)\/hint$/.exec(path)
-    if (m) {
-      const a = attempts.get(decodeURIComponent(m[1]))!
-      const text = a.card.hints[a.hints] ?? null
-      a.hints++
-      return json({ rung: a.hints, text, is_answer: false })
-    }
-    m = /\/attempts\/([^/]+)\/check$/.exec(path)
-    if (m) {
-      const a = attempts.get(decodeURIComponent(m[1]))!
-      const given = String(body.answer ?? "")
-      const exact = norm(given) === norm(a.card.answer)
-      const accent = !exact && norm(strip(given)) === norm(strip(a.card.answer))
-      a.wrong = !exact && !a.card.free
-      return json({
-        correct: a.card.free ? null : exact,
-        correct_answer: a.card.answer,
-        explanation: a.card.explanation,
-        misconception: a.card.misconception ?? null,
-        ...(accent ? { diagnostic: "accent" } : {}),
-      })
-    }
-    m = /\/questions\/(\d+)$/.exec(path)
-    if (m && method === "GET") return json({ entry: { id: Number(m[1]) }, state: { version: 1 } })
-    m = /\/questions\/(\d+)\/review$/.exec(path)
-    if (m) {
-      const a = attempts.get(body.attempt_id)!
-      const rating = a.wrong || a.hints >= 4 ? "again" : a.hints >= 2 ? "hard" : "good"
-      return json({ rating, due_at: Date.now() / 1000 + 3 * 86400 })
-    }
+    if (path.startsWith("/api/study/")) return study.fetch(input, init)
     if (path === "/api/languages/graded-text") {
       await new Promise((r) => setTimeout(r, 250))
       return json({ ...(TEXTS[body.lang] ?? TEXTS.es), text: (TEXTS[body.lang] ?? TEXTS.es).sentences.join(" ") })

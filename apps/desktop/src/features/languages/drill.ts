@@ -1,193 +1,61 @@
-// The typed drill over language cards: a pure state machine for one card, plus the small helpers
-// around it. The routes are contract C7 (attempts, confidence, hint ladder, check, review); the
-// language tags and the accent diagnostic are contract C10.
-//
-// The rules it enforces, from PEDAGOGY.md and LANGUAGES.md:
-//  - attempt first: a hint needs a typed attempt, and each further rung needs a new one;
-//  - the answer rung (5) is never requested from the screen;
-//  - confidence is chosen before the check and cannot change after it;
-//  - the learner's self-judgement is asked for only when the check could not decide (correct: null);
-//  - the rating is never computed here: the server returns it.
+// Pure helpers for the Practice tab over C12 study sessions. The session (src/lib/study.ts) is the state
+// machine: the server decides each attempt's status and what may be shown. Nothing here computes a verdict
+// or a rating; it reads the accepted snapshot and words it. The language tags (`lang:<code>`,
+// `card:production|recognition|listening`) are contract C10.
+import type { StudyAttempt, StudyCheck, StudyQueueItem } from "@/lib/study"
 
-export type Confidence = 1 | 2 | 3 | 4
 export type CardKind = "production" | "recognition" | "listening" | "unknown"
 
 /** The highest hint rung the screen will ask for: 1 nudge, 2 hint, 3 key step, 4 worked example. */
 export const MAX_RUNG = 4
 
-export type Card = {
-  questionId: number
-  attemptId: string
-  prompt: string
-  kind: CardKind
-  /** From the server when the attempt opened (0-4). */
-  rungsAvailable: number
-}
-
-export type HintRung = { rung: number; text: string | null; isAnswer: boolean }
-
-export type CheckResult = {
-  correct: boolean | null
-  correctAnswer: string
-  explanation: string
-  misconception: string | null
-  /** "accent" when only accents or diacritics differ (contract C10). */
-  diagnostic: string | null
-}
-
-export type ReviewResult = { rating: string; nextDue: string | null }
-
-export type DrillState = {
-  phase: "attempt" | "checked" | "done"
-  card: Card
-  draft: string
-  confidence: Confidence | null
-  hints: HintRung[]
-  /** The attempt that was on screen when the last hint was asked for. */
-  hintDraft: string | null
-  pending: "hint" | "check" | "review" | null
-  error: string | null
-  check: CheckResult | null
-  /** The learner's own verdict, asked for only when `check.correct` is null. */
-  judged: boolean | null
-  review: ReviewResult | null
-}
-
-export type DrillAction =
-  | { type: "draft"; text: string }
-  | { type: "confidence"; level: Confidence }
-  | { type: "hint:start" }
-  | { type: "hint:done"; hint: HintRung }
-  | { type: "check:start" }
-  | { type: "check:done"; result: CheckResult }
-  | { type: "judge"; correct: boolean }
-  | { type: "review:start" }
-  | { type: "review:done"; result: ReviewResult }
-  | { type: "failed"; message: string }
-
-export function newDrill(card: Card): DrillState {
-  return {
-    phase: "attempt",
-    card,
-    draft: "",
-    confidence: null,
-    hints: [],
-    hintDraft: null,
-    pending: null,
-    error: null,
-    check: null,
-    judged: null,
-    review: null,
-  }
-}
-
-const attemptText = (s: DrillState) => s.draft.trim()
-
-export function canHint(s: DrillState): boolean {
-  if (s.phase !== "attempt" || s.pending) return false
-  if (s.hints.length >= Math.min(MAX_RUNG, s.card.rungsAvailable)) return false
-  if (s.hints.some((h) => h.isAnswer)) return false
-  const attempt = attemptText(s)
-  return attempt !== "" && attempt !== s.hintDraft
-}
-
-/** Why the hint button is off, in words; null when it is on. */
-export function hintBlocker(s: DrillState): string | null {
-  if (s.phase !== "attempt") return null
-  if (s.card.rungsAvailable === 0) return "This card has no hints."
-  if (s.hints.length >= Math.min(MAX_RUNG, s.card.rungsAvailable)) return "No more hints for this card."
-  if (attemptText(s) === "") return "Type an attempt first."
-  if (attemptText(s) === s.hintDraft) return "Change your attempt before the next hint."
-  return null
-}
-
-export function canCheck(s: DrillState): boolean {
-  return s.phase === "attempt" && !s.pending && attemptText(s) !== "" && s.confidence !== null
-}
-
-/** The check could not decide, so the learner says whether they had it. */
-export function needsJudgement(s: DrillState): boolean {
-  return s.phase === "checked" && s.check !== null && s.check.correct === null && s.judged === null
-}
-
-export function canReview(s: DrillState): boolean {
-  return s.phase === "checked" && !s.pending && s.check !== null && (s.check.correct !== null || s.judged !== null)
-}
-
-/** Any hint makes the attempt assisted: FSRS learns only from unassisted retrieval. */
-export const assisted = (s: DrillState) => s.hints.length > 0
-
-export function drillReducer(s: DrillState, a: DrillAction): DrillState {
-  switch (a.type) {
-    case "draft":
-      return s.phase === "attempt" ? { ...s, draft: a.text, error: null } : s
-    case "confidence":
-      return s.phase === "attempt" && !s.pending ? { ...s, confidence: a.level } : s
-    case "hint:start":
-      return canHint(s) ? { ...s, pending: "hint", hintDraft: attemptText(s), error: null } : s
-    case "hint:done":
-      return s.pending === "hint" ? { ...s, pending: null, hints: [...s.hints, a.hint] } : s
-    case "check:start":
-      return canCheck(s) ? { ...s, pending: "check", error: null } : s
-    case "check:done":
-      return s.pending === "check" ? { ...s, pending: null, phase: "checked", check: a.result } : s
-    case "judge":
-      return s.phase === "checked" && s.check?.correct === null && s.judged === null ? { ...s, judged: a.correct } : s
-    case "review:start":
-      return canReview(s) ? { ...s, pending: "review", error: null } : s
-    case "review:done":
-      return s.pending === "review" ? { ...s, pending: null, phase: "done", review: a.result } : s
-    case "failed":
-      return { ...s, pending: null, error: a.message }
-    default:
-      return s
-  }
-}
-
 // ---- cards from the queue ----------------------------------------------------------------------
 
-type Tagged = {
-  categories?: ({ name?: string } | string)[] | null
-  tags?: ({ name?: string } | string)[] | null
-}
-
-/** Tag names (`lang:es`, `card:production`) from an entry's categories or tags. */
-function tagNames(entry: Tagged): string[] {
-  const names: string[] = []
-  for (const list of [entry.categories, entry.tags]) {
-    for (const t of list ?? []) {
-      const name = typeof t === "string" ? t : t?.name
-      if (typeof name === "string") names.push(name.trim().toLowerCase())
-    }
-  }
-  return names
-}
-
-export function cardMeta(entry: Tagged): { lang: string | null; kind: CardKind } {
-  const names = tagNames(entry)
-  const lang = names.find((n) => n.startsWith("lang:"))?.slice(5) ?? null
-  const kind = names.find((n) => n.startsWith("card:"))?.slice(5)
-  return {
-    lang,
-    kind: kind === "production" || kind === "recognition" || kind === "listening" ? kind : "unknown",
-  }
+export function cardMeta(item: Pick<StudyQueueItem, "tags">): { kind: CardKind } {
+  const kind = item.tags
+    .map((t) => t.trim().toLowerCase())
+    .find((t) => t.startsWith("card:"))
+    ?.slice(5)
+  return { kind: kind === "production" || kind === "recognition" || kind === "listening" ? kind : "unknown" }
 }
 
 const KIND_ORDER: Record<CardKind, number> = { production: 0, recognition: 1, listening: 2, unknown: 3 }
 
-/** The language's cards only, production first (the default format), otherwise in queue order. */
-export function orderQueue<T extends { entry: Tagged }>(items: T[], lang: string): T[] {
+/** Production cards first (the default format), otherwise in queue order. The server already chose the language. */
+export function orderQueue<T extends Pick<StudyQueueItem, "tags">>(items: T[]): T[] {
   return items
-    .map((item, i) => ({ item, i, meta: cardMeta(item.entry) }))
-    .filter((x) => x.meta.lang === lang)
-    .sort((x, y) => KIND_ORDER[x.meta.kind] - KIND_ORDER[y.meta.kind] || x.i - y.i)
+    .map((item, i) => ({ item, i, kind: cardMeta(item).kind }))
+    .sort((x, y) => KIND_ORDER[x.kind] - KIND_ORDER[y.kind] || x.i - y.i)
     .map((x) => x.item)
 }
 
-/** The target-language sentence to speak once the card is checked. */
-export function targetSentence(card: Card, check: CheckResult): string {
-  return card.kind === "production" ? check.correctAnswer : card.prompt
+/** The next card to open: the first in queue order that this tab has not finished and is not on screen. */
+export function nextEntry(queue: StudyQueueItem[], done: readonly number[], shown: StudyAttempt | null): StudyQueueItem | undefined {
+  return queue.find((q) => !done.includes(q.entry_id) && q.entry_id !== shown?.entry_id)
 }
+
+// ---- reading an attempt ------------------------------------------------------------------------
+
+/** The ladder rungs given so far; other assistance (a gloss, a source) has no rung. */
+export const hintsGiven = (a: StudyAttempt) => a.assistance.filter((x) => x.rung !== null)
+
+const hintCap = (a: StudyAttempt) => Math.min(MAX_RUNG, a.item.rungs_available)
+
+/** Hints open once the first answer has been checked and missed; the first answer is already sealed by then. */
+export const canHint = (a: StudyAttempt) => a.status === "remediating" && hintsGiven(a).length < hintCap(a)
+
+/** Why the hint button is off, in words; null when it is on or does not apply. */
+export function hintBlocker(a: StudyAttempt): string | null {
+  if (a.status !== "remediating") return null
+  if (a.item.rungs_available === 0) return "This card has no hints."
+  if (hintsGiven(a).length >= hintCap(a)) return "No more hints for this card."
+  return null
+}
+
+export const latestCheck = (a: StudyAttempt): StudyCheck | null => a.checks[a.checks.length - 1] ?? null
+
+/** The target-language sentence to speak once the answer is released. */
+export const targetSentence = (kind: CardKind, prompt: string, answer: string) => (kind === "production" ? answer : prompt)
 
 // ---- feedback ----------------------------------------------------------------------------------
 
@@ -211,17 +79,61 @@ export function diffChars(answer: string, target: string): Segment[] {
   return out
 }
 
-/** One plain sentence naming what the check found. */
-export function feedbackLine(check: CheckResult): string {
-  if (check.correct === true) return "Your answer matches the reference."
-  if (check.correct === false && check.diagnostic === "accent")
-    return "The letters are right but an accent or diacritic is wrong."
-  if (check.correct === false) return "Yours does not match the reference."
+/** One plain sentence naming what the check found. The reference answer is not released while a miss is open. */
+export function feedbackLine(check: Pick<StudyCheck, "verdict" | "diagnostic">): string {
+  if (check.verdict === "correct") return "Your answer matches the reference."
+  if (check.verdict === "incorrect" && check.diagnostic === "accent")
+    return "Check your accents: the letters are right but an accent or diacritic is wrong."
+  if (check.verdict === "incorrect") return "Yours does not match. Try again from what you know, ask for a hint, or give up to see the answer."
   return "This one cannot be checked automatically. Compare it with the reference and say whether you had it."
+}
+
+export function verdictWord(check: Pick<StudyCheck, "verdict" | "diagnostic">): string {
+  if (check.verdict === "correct") return "Correct"
+  if (check.verdict === "incorrect") return check.diagnostic === "accent" ? "Accent slip" : "Not quite"
+  return "Compare"
+}
+
+/** How a closed attempt ended, as a word and whether it counts as a success (null: neither). */
+export function outcomeOf(a: StudyAttempt): { word: string; ok: boolean | null } {
+  const reason = a.closure?.reason
+  if (reason === "correct") return { word: a.checks[0]?.verdict === "correct" ? "Correct" : "Correct on a repair", ok: true }
+  if (reason === "revealed") return { word: "Answer shown", ok: false }
+  if (reason === "self_assessed") {
+    const had = a.self_assessment?.judged === "correct"
+    return { word: had ? "You had it" : "You missed it", ok: had }
+  }
+  if (reason === "invalidated") return { word: "Set aside", ok: null }
+  return { word: "Skipped", ok: null }
+}
+
+const RATING_WORD: Record<string, string> = { good: "Good", again: "Again" }
+
+const PROVENANCE: Record<string, string> = {
+  verified: "The app checked your first answer and you had no help before it.",
+  assisted: "You had help before answering, so this counts as assisted.",
+  self_report: "The app could not check this answer, so the rating is your own judgement.",
+}
+
+/** The rating and where it came from, in words. */
+export function ratingLine(a: StudyAttempt): { rating: string | null; why: string } {
+  const d = a.closure?.scheduler_disposition
+  if (!d || d.rating === null) return { rating: null, why: "No review was recorded for this card." }
+  return { rating: RATING_WORD[d.rating] ?? d.rating, why: (d.provenance && PROVENANCE[d.provenance]) || "" }
+}
+
+/** The next review time from an applied review (epoch seconds), in the learner's time zone. */
+export function formatDue(epochSeconds: number | null | undefined): string | null {
+  if (epochSeconds == null) return null
+  return new Date(epochSeconds * 1000).toLocaleString("en-US", {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
 }
 
 /** The hint-ladder note shown beside the rating. */
 export function assistanceNote(hints: number): string {
   if (hints === 0) return "No hints used."
-  return `${hints} hint${hints === 1 ? "" : "s"} used. The schedule learns only from unassisted recall, so the rating is lower.`
+  return `${hints} hint${hints === 1 ? "" : "s"} used after your first answer.`
 }
