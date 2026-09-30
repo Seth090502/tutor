@@ -1,0 +1,61 @@
+question,question_type,A,B,C,D,correct_answer,explanation,difficulty,tags,misconception
+Simplify: 7 + 3*(4 - 1).,single_choice,16,30,19,12,A,Parentheses first: 4-1=3; 3*3=9; 7+9=16.,easy,"math,arithmetic-laws,id:math-01",Left-to-right without order of operations gives 30.
+Which equals 3*(x + 4)?,single_choice,3x+4,3x+12,x+12,12x,B,Distribute: 3*x + 3*4 = 3x+12.,easy,"math,arithmetic-laws,id:math-02",Forgetting to multiply the constant term.
+1/2 + 1/3 = ?,single_choice,2/5,5/6,1/6,2/6,B,Common denominator 6: 3/6+2/6=5/6.,easy,"math,fractions,id:math-03",Adding numerators and denominators: 2/5.
+20% of 250 = ?,single_choice,25,50,75,125,B,0.20*250=50.,medium,"math,fractions,id:math-04",Confusing 20% with 1/20 of nothing; decimal slip.
+Solve: 3x + 5 = 20.,single_choice,3,5,15,25/3,B,"3x=15, x=5.",easy,"math,linear-equations,id:math-05",Subtracting wrong side or dividing before subtracting.
+Solve: 2(x - 3) = 4x + 2.,single_choice,-4,4,-2,8,A,2x-6=4x+2 -> -8=2x -> x=-4.,medium,"math,linear-equations,id:math-06",Sign error when moving terms.
+Roots of x^2 - 5x + 6 = 0?,single_choice,"2,3","-2,-3","1,6","5,6",A,Factor: (x-2)(x-3)=0.,medium,"math,quadratics,id:math-07","Sign flip: using +2,+3 factors for -5x."
+Discriminant of 2x^2 + 3x + 1?,single_choice,1,5,9,17,A,9 - 8 = 1.,medium,"math,quadratics,id:math-08",b^2-4ac with dropped coefficient: 9-4=5.
+"x = [-b +- sqrt(D)]/2a with a=1,b=-4,c=3 gives?",single_choice,"1,3","-1,-3","4,0","2,2",A,[4 +- 2]/2 = 3 or 1.,hard,"math,quadratics,id:math-09",Dropping the +- branch gives only one root.
+"If f(x)=2x+1, f(4)=?",single_choice,7,8,9,12,C,2*4+1=9.,easy,"math,functions,id:math-10",Order slip: (2*4)+1 vs 2*(4+1).
+Inverse of f(x)=3x-6?,single_choice,(x+6)/3,3x+6,x/3+6,(x-6)/3,A,y=3x-6 -> x=3y-6 -> y=(x+6)/3.,medium,"math,functions,id:math-11",Swapping without solving gives x-6/3 ambiguity.
+2^3 * 2^2 = ?,single_choice,2^6,2^5,4^5,12,B,Add exponents: 3+2=5.,medium,"math,exponents-logs,id:math-12",Multiplying exponents instead of adding.
+log10(1000) = ?,single_choice,2,3,10,100,B,10^3=1000.,medium,"math,exponents-logs,id:math-13",Counting zeros wrong (2 for 1000).
+"Right triangle legs 3,4. Hypotenuse?",single_choice,5,6,7,12,A,sqrt(9+16)=5.,easy,"math,geometry-basics,id:math-14",Adding legs: 3+4=7.
+Interior angles of a triangle sum to?,single_choice,90,180,270,360,B,Euclidean triangle: 180 degrees.,medium,"math,geometry-basics,id:math-15",Confusing with quadrilateral (360).
+Choose correct: 'Neither of the answers ___ correct.',single_choice,are,is,be,were,B,'Neither' is singular: is.,easy,"english,grammar-core,id:eng-01",Proximity agreement with plural 'answers'.
+Identify the verb: 'She writes clearly.',single_choice,She,writes,clearly,She writes,B,Verb = writes; clearly is adverb.,easy,"english,grammar-core,id:eng-02",Calling the adverb the verb.
+Choose correct possessive: 'the ___ tail'.,single_choice,dogs,dogs',dog's,"dog,s",C,Singular possessive: dog's.,easy,"english,punctuation,id:eng-03",Plural dogs without apostrophe.
+Which uses the comma correctly?,single_choice,"After dinner we, left.","After dinner, we left.","After, dinner we left.","After dinner we left,",B,Intro phrase + comma + main clause.,medium,"english,punctuation,id:eng-04",Splitting subject and verb with comma.
+Strongest thesis?,single_choice,This essay is about dogs.,Dogs are nice.,"Cities should fund shelters because they cut strays, disease, and costs.",I like dogs a lot.,C,Claim + because + roadmap (3 reasons).,easy,"english,thesis,id:eng-05",Topic announcement is not an argument.
+Best topic sentence?,single_choice,Another thing.,Solar cuts bills by replacing peak grid power.,This paragraph is good.,In conclusion things.,B,Specific claim the paragraph will prove.,medium,"english,thesis,id:eng-06",Vague filler openers.
+Which citation habit is correct?,single_choice,"Drop quote, no explanation.","Claim, quote, explain link.",Quote only.,Explain without claim.,B,CEA: claim-evidence-analysis.,medium,"english,evidence,id:eng-07",Quote-dropping without analysis.
+Paraphrase vs quote: when to quote?,single_choice,Always.,For key wording/data you will analyze.,Never.,To fill space.,B,Quote load-bearing language; paraphrase rest.,medium,"english,evidence,id:eng-08",Over-quoting filler.
+"'Everyone agrees, so it must be true' is?",single_choice,logos,bandwagon fallacy,evidence,thesis,B,"Appeal to popularity, not proof.",medium,"english,rhetoric,id:eng-09",Consensus equals correctness.
+Ethos appeals to?,single_choice,emotion,credibility,logic,humor only,B,Ethos = speaker credibility.,medium,"english,rhetoric,id:eng-10",Mixing ethos (cred) with pathos (emotion).
+'They ___ going to the lab.',single_choice,is,are,am,be,B,They + are.,medium,"english,grammar-core,id:eng-11",Singular 'is' with plural subject.
+Correct colon use?,single_choice,She bought: apples.,"She bought three things: apples, oats, soap.",She: bought apples.,She bought apples: yesterday.,B,Colon after complete clause introducing list.,medium,"english,punctuation,id:eng-12",Colon splitting verb from object.
+Which paragraph order is strongest?,single_choice,weakest->strongest,random,strongest->weakest,longest first,A,Build: save strongest for recency + clincher.,hard,"english,thesis,id:eng-13",Leading with best buries momentum.
+Strongest analysis move?,single_choice,repeat quote,explain mechanism + implication,add new claim,summarize loosely,B,Show how evidence proves claim and why it matters.,hard,"english,evidence,id:eng-14",Summary restates instead of proving.
+Strawman is?,single_choice,attacking a distorted version of the argument,citing data,conceding a point,telling a story,A,Misrepresent then attack.,hard,"english,rhetoric,id:eng-15",Any rebuttal is a strawman.
+A testable statement is a?,single_choice,hypothesis,rumor,anecdote,slogan,A,Hypothesis makes falsifiable prediction.,easy,"science,scientific-method,id:sci-01",Any guess counts even if untestable.
+Control group is for?,single_choice,decoration,baseline comparison,extra data,blinding only,B,Isolates the variable's effect.,easy,"science,scientific-method,id:sci-02",More groups always = better without design.
+Powerhouse of the cell?,single_choice,nucleus,ribosome,mitochondria,wall,C,Mitochondria make ATP.,easy,"science,cells,id:sci-03",Nucleus 'controls' so must make energy.
+Diffusion moves molecules?,single_choice,"low->high, needs energy","high->low, no energy","high->low, needs ATP",randomly only in blood,B,"Down gradient, passive.",medium,"science,cells,id:sci-04",All transport needs energy.
+Photosynthesis equation?,single_choice,6CO2+6H2O->C6H12O6+6O2,C6H12O6->CO2+H2O,O2+glucose->ATP,N2+O2->NOx,A,Fixes carbon using light.,easy,"science,photosynthesis,id:sci-05",Confusing with respiration (reverse).
+O2 released comes from?,single_choice,CO2,H2O,glucose,ATP,B,Photolysis splits water.,medium,"science,photosynthesis,id:sci-06",CO2 provides the O2.
+Aa x Aa cross: P(aa)?,single_choice,1/4,1/2,3/4,1,A,"Punnett: 1 AA, 2 Aa, 1 aa.",easy,"science,genetics,id:sci-07",Recessive appears 3/4 (that's dominant phenotype).
+Dominant phenotype in Aa x Aa?,single_choice,1/4,1/2,3/4,0,C,AA+Aa = 3/4 show dominant trait.,medium,"science,genetics,id:sci-08",Genotype ratio = phenotype ratio.
+F=ma. 2 kg at 3 m/s^2 needs?,single_choice,5 N,6 N,1.5 N,9 N,B,2*3=6 N.,easy,"science,newton,id:sci-09",Adding m+a instead of multiplying.
+Action-reaction pairs?,single_choice,cancel on same object,act on different objects,only in space,need friction,B,Equal/opposite on the other body.,medium,"science,newton,id:sci-10",They cancel so motion is impossible.
+SI unit of force?,single_choice,joule,watt,newton,pascal,C,Newton = kg m/s^2.,medium,"science,scientific-method,id:sci-11",Joule (energy) for force.
+Plant-only structure?,single_choice,mitochondria,chloroplast+wall,nucleus,membrane,B,Chloroplasts + cell wall.,medium,"science,cells,id:sci-12",All cells have walls.
+AaBb x aabb: P(AaBb)?,single_choice,1/4,1/2,9/16,1/16,A,1/2 * 1/2 = 1/4 (independent).,hard,"science,genetics,id:sci-13",Using 9:3:3:1 for testcross.
+1 kWh equals?,single_choice,3.6 MJ,3.6 kJ,1000 W,1 N,A,1000W*3600s=3.6e6 J.,hard,"science,newton,id:sci-14","kWh is power, not energy."
+Calvin cycle needs?,single_choice,light directly,ATP+NADPH+CO2,O2 only,glucose input,B,Uses light-reaction products to fix CO2.,hard,"science,photosynthesis,id:sci-15",Light directly drives Calvin.
+Atomic number = ?,single_choice,neutrons,protons,mass,electrons+neutrons,B,Protons define element.,easy,"chemistry,atoms,id:chem-01",Mass number = atomic number.
+"Na+ has? (Na: 11 p, 11 e)",single_choice,11e,10e,12e,11p+12e,B,Lost 1 electron: 10 e.,easy,"chemistry,atoms,id:chem-02",Ion changes protons.
+NaCl bonding?,single_choice,covalent,ionic,metallic,hydrogen,B,Metal + nonmetal electron transfer.,easy,"chemistry,bonding,id:chem-03",Sharing = ionic.
+H2O shape/bond?,single_choice,linear ionic,bent polar covalent,tetrahedral ionic,linear nonpolar,B,"Bent, O-H polar covalent.",medium,"chemistry,bonding,id:chem-04",Symmetric linear water.
+Balance: H2 + O2 -> H2O. Coefficient of H2O?,single_choice,1,2,3,4,B,2H2+O2->2H2O.,easy,"chemistry,reactions,id:chem-05",Changing subscripts instead of coefficients.
+AgNO3+NaCl->AgCl+NaNO3 is?,single_choice,synthesis,double displacement,combustion,redox only,B,"Swap partners, precipitate AgCl.",medium,"chemistry,reactions,id:chem-06",Single displacement.
+Moles in 36 g H2O (M=18)?,single_choice,1,2,3,0.5,B,36/18=2.,medium,"chemistry,stoichiometry,id:chem-07",Inverting mass/molar mass.
+2H2+O2->2H2O. 4 mol H2 + 3 mol O2: limiting?,single_choice,H2,O2,neither,H2O,A,4 H2 needs 2 O2; H2 runs out first for max water.,hard,"chemistry,stoichiometry,id:chem-08",Larger moles always excess.
+pH 3 vs pH 5: acid strength?,single_choice,equal,2x stronger,100x stronger,weaker,C,pH log scale: 10^2=100.,easy,"chemistry,acids-bases,id:chem-09",Linear pH (2x).
+Neutralization makes?,single_choice,salt+water,acid only,metal,precipitate only,A,H+ + OH- -> H2O + salt.,medium,"chemistry,acids-bases,id:chem-10",Neutral = no products.
+Group 1 elements tend to?,single_choice,gain 1e,lose 1e,share 4e,stay inert,B,Lose ns1 to reach octet.,medium,"chemistry,atoms,id:chem-11",Gain to fill shell.
+Diamond vs graphite difference?,single_choice,different elements,"same C, different lattice",isotopes,ions,B,Allotropes: bonding network differs.,medium,"chemistry,bonding,id:chem-12",Different atoms.
+CH4+2O2->CO2+2H2O is?,single_choice,precipitation,combustion,acid-base,decomposition only,B,Hydrocarbon + O2 -> CO2+H2O.,hard,"chemistry,reactions,id:chem-13",Any gas reaction = decomposition.
+Avogadro's number?,single_choice,3.00e8,6.022e23,1.602e-19,9.11e-31,B,Particles per mole.,hard,"chemistry,stoichiometry,id:chem-14",Mixing with c or e constants.
+"[H+]=1e-4 M, pH?",single_choice,4,10,-4,1,A,pH=-log[H+]=4.,hard,"chemistry,acids-bases,id:chem-15",Dropping the negative sign logic.
