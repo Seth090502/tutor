@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Train states</title>
+  </head>
+
+  <body>
+    <!-- Dev-only page: Vite builds index.html only. Every Train state inside the real shell, with fixtures.
+         ?view=setup|run|run-letter|run-feedback|rest|rest-void|summary|history|transfer|calibration|real
+         &theme=dark|light &world=math|english|science|chemistry|neutral -->
+    <div id="root"></div>
+    <script type="module">
+      import { mountTrainPreview } from "/src/features/train/TrainPreview.tsx"
+      mountTrainPreview(document.getElementById("root"))
+    </script>
+  </body>
+</html>

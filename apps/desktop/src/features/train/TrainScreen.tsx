@@ -1,30 +1,44 @@
 // Train: Dual N-Back (docs/tutor/NBACK.md, contract C6). Setup, timing check, the run, a check-in
 // and history. Training works in a plain browser; saving and history need the desktop app.
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
+import { LedStatus } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { inTauri } from "@/lib/backend"
 import { audioContext, loadClips, type Clips } from "./audio"
 import { CalibrationPanel } from "./Calibration"
-import { CheckinForm, SessionSummary } from "./Checkin"
+import { CheckinForm } from "./Checkin"
 import { weekMinutes } from "./engine/history"
 import { newSeed } from "./engine/prng"
 import { DEFAULT_SETTINGS, TRANSFER_SETTINGS, transferLevel, type SessionConfig } from "./engine/session"
-import { HistoryPanel } from "./History"
+import { HistoryPanel, TransferChecks } from "./History"
 import { RunView } from "./Run"
-import { SetupPanel } from "./Setup"
+import { SetupPanel, TransferStart, type TrainMode } from "./Setup"
 import { loadCalibration, nbackStore, type Calibration } from "./storage"
+import { SessionSummary } from "./Summary"
 import type { Checkin, Mode, NBackSession, NBackSummary, Settings } from "./types"
+import { daysSince, transferStatus } from "./view"
+import "./train.css"
 
 type Levels = Partial<Record<Mode, number>>
 type Save = { state: "saving" | "saved" | "error" | "unavailable"; detail?: string }
+
+/** Scroll the nearest scrolling ancestor to the top, so a new view (run, summary) starts at its header. */
+function scrollParentToTop(el: HTMLElement | null) {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    if (p.scrollHeight > p.clientHeight && /auto|scroll/.test(getComputedStyle(p).overflowY)) {
+      p.scrollTop = 0
+      return
+    }
+  }
+}
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** A session's level at its end: the last block's next level. */
 const finalLevel = (s: NBackSession) => s.blocks[s.blocks.length - 1]?.next_n
 
 export function TrainScreen() {
-  const [mode, setMode] = useState<Mode>("dual")
+  const [mode, setMode] = useState<TrainMode>("dual")
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [startN, setStartN] = useState<number | null>(null)
   const [calibration, setCalibration] = useState<Calibration | null>(loadCalibration)
@@ -69,21 +83,28 @@ export function TrainScreen() {
     void refresh()
   }, [refresh])
 
-  const level = levels.dual ?? 1
-  const n = startN ?? (mode === "transfer" ? level : (levels[mode] ?? 1))
+  // A new view (the run, then the summary) starts at its top, not where Start or the last field was.
+  const top = useRef<HTMLDivElement>(null)
+  const view = run ? "run" : record ? "summary" : "setup"
+  useEffect(() => scrollParentToTop(top.current), [view])
 
-  const start = async () => {
+  const level = levels.dual ?? 1
+  const days = daysSince(sessions.find((s) => s.mode === "transfer")?.started_at ?? null, Date.now() / 1000)
+  const transferDetail = transferStatus(days).detail
+  const n = startN ?? levels[mode] ?? 1
+
+  const start = async (m: Mode) => {
     const ctx = audioContext() // the one AudioContext, created inside the Start click
     setStarting(true)
     setStartError(null)
     try {
       const clips = await loadClips()
-      const transfer = mode === "transfer"
+      const transfer = m === "transfer"
       setRun({
         ctx,
         clips,
         config: {
-          mode,
+          mode: m,
           settings: transfer ? { ...TRANSFER_SETTINGS, keys: settings.keys } : settings,
           seed: newSeed(),
           startN: transfer ? transferLevel(level) : n,
@@ -144,7 +165,7 @@ export function TrainScreen() {
 
   if (run) {
     return (
-      <div className="p-8">
+      <div ref={top}>
         <RunView
           config={run.config}
           ctx={run.ctx}
@@ -157,22 +178,21 @@ export function TrainScreen() {
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-5 p-8">
-      {record && (
+    <div ref={top} className="mx-auto flex max-w-4xl flex-col gap-5 px-6 py-6">
+      {record ? (
         <>
           <SessionSummary record={record} />
           <SaveStatus save={save} onRetry={() => void persist(record)} />
           {!checkedIn && <CheckinForm onSubmit={submitCheckin} saving={save?.state === "saving"} />}
           {checkedIn && (
             <div>
-              <Button variant="outline" onClick={() => setRecord(null)}>
+              <Button variant="outline" size="lg" className="h-10 px-5 text-[15px]" onClick={() => setRecord(null)}>
                 Done
               </Button>
             </div>
           )}
         </>
-      )}
-      {!record && (
+      ) : (
         <>
           <SetupPanel
             mode={mode}
@@ -184,26 +204,27 @@ export function TrainScreen() {
             setSettings={setSettings}
             startN={n}
             setStartN={setStartN}
-            level={level}
-            lastTransferAt={sessions.find((s) => s.mode === "transfer")?.started_at ?? null}
+            lastLevel={levels[mode] ?? null}
+            week={week}
             starting={starting}
             error={startError}
-            onStart={() => void start()}
+            onStart={() => void start(mode)}
           />
           <CalibrationPanel calibration={calibration} onChange={setCalibration} />
           {inTauri ? (
-            <HistoryPanel
-              sessions={sessions}
-              week={week}
-              error={historyError}
-              exported={exported}
-              onExport={() => void exportCsv()}
-            />
+            <HistoryPanel sessions={sessions} error={historyError} exported={exported} onExport={() => void exportCsv()} />
           ) : (
-            <p className="border-hairline text-ink-2 rounded-xl border p-5 text-sm">
+            <p className="text-ink-2 border-hairline-strong rounded-2xl border border-dashed p-5 text-sm leading-relaxed">
               History, saving and CSV export need the desktop app. Training works here, but sessions are not stored.
             </p>
           )}
+          <TransferChecks
+            checks={sessions.filter((s) => s.mode === "transfer")}
+            days={days}
+            available={inTauri}
+          >
+            <TransferStart level={level} detail={transferDetail} starting={starting} onStart={() => void start("transfer")} />
+          </TransferChecks>
         </>
       )}
     </div>
@@ -213,15 +234,25 @@ export function TrainScreen() {
 function SaveStatus({ save, onRetry }: { save: Save | null; onRetry: () => void }) {
   if (!save) return null
   if (save.state === "unavailable")
-    return <p className="text-warn text-sm">Not saved: saving needs the desktop app. This session is not stored.</p>
+    return (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+        <LedStatus tone="warn" state="Not saved" />
+        <span className="text-ink-2 text-sm">Saving needs the desktop app. This session is not stored.</span>
+      </div>
+    )
   if (save.state === "error")
     return (
-      <p className="text-bad flex items-center gap-3 text-sm">
-        Not saved: {save.detail}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1" role="alert">
+        <LedStatus tone="bad" state="Not saved" />
+        <span className="text-ink-2 text-sm">{save.detail}</span>
         <Button size="sm" variant="outline" onClick={onRetry}>
           Retry
         </Button>
-      </p>
+      </div>
     )
-  return <p className="text-ink-3 text-sm">{save.state === "saving" ? "Saving…" : "Saved."}</p>
+  return (
+    <div className="px-1" role="status">
+      <LedStatus tone={save.state === "saved" ? "ok" : "off"} state={save.state === "saved" ? "Saved" : "Saving"} />
+    </div>
+  )
 }

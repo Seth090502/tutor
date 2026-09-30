@@ -2,7 +2,6 @@
 // or an audio device change, 10 s rests with a block-end summary, then the finished record.
 import { useEffect, useMemo, useRef, useState } from "react"
 
-import { Button } from "@/components/ui/button"
 import { latencies, toBuffer, type Clips } from "./audio"
 import { ruleText } from "./engine/adapt"
 import {
@@ -17,10 +16,11 @@ import {
   type SessionConfig,
   type SessionMachine,
 } from "./engine/session"
-import { errors } from "./engine/scoring"
-import { Grid, Keycap, MetricsTable, ShapeStage, streamLabels } from "./parts"
+import { streamLabels } from "./parts"
 import { BlockRunner, type Feedback, type Stream } from "./runner"
-import type { Block, NBackSession } from "./types"
+import { RunStage } from "./Stage"
+import { BlockSummary } from "./Summary"
+import type { NBackSession } from "./types"
 
 const EMPTY_CHECKIN = { expectation: null, sleep_hours: null, exercise: null, fatigue: null, strategy: null }
 
@@ -39,6 +39,7 @@ export function RunView({
 }) {
   const [machine, setMachine] = useState<SessionMachine>(() => startSession(config))
   const [shown, setShown] = useState<number | null>(null)
+  const [trialNo, setTrialNo] = useState(0) // trials started in this block, for the progress rule
   const [pressed, setPressed] = useState<Record<Stream, boolean>>({ position: false, letter: false })
   const [marks, setMarks] = useState<Record<Stream, boolean | null>>({ position: null, letter: null })
   const [restLeft, setRestLeft] = useState(0)
@@ -70,7 +71,10 @@ export function RunView({
       stimuli: current.stimuli,
       sounds,
       sessionZero: meta.current.zero,
-      onShow: setShown,
+      onShow: (i) => {
+        setShown(i)
+        if (i !== null) setTrialNo(i + 1)
+      },
       onFeedback: feedback,
       onDone: (trials) => {
         runner.current = null
@@ -78,6 +82,7 @@ export function RunView({
       },
     })
     runner.current = r
+    setTrialNo(0)
     r.start()
 
     const voidWith = (reason: string) => {
@@ -169,102 +174,26 @@ export function RunView({
   const last = machine.blocks[machine.blocks.length - 1]
 
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="flex w-full max-w-2xl flex-wrap items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-4">
-          <span className="font-mono text-3xl font-semibold">n = {n}</span>
-          <span className="text-ink-2 text-sm">
-            {machine.phase === "rest" ? "Rest · next: block " : "Block "}
-            {Math.min(blockNo, settings.blocks)} of {settings.blocks}
-            {transfer && " · measurement"}
-          </span>
-        </div>
-        <Button variant="outline" size="sm" onClick={stop}>
-          Stop session
-        </Button>
-      </div>
-      <p className="text-ink-3 w-full max-w-2xl text-xs">
-        {transfer
-          ? `Fixed level: n stays at ${n} for this check. No adaptation.`
-          : `Rule: ${ruleText(settings)}`}{" "}
-        Press when the {streams.position && labels.position.toLowerCase()}
-        {streams.position && streams.letter && " or "}
-        {streams.letter && labels.letter.toLowerCase()} matches the one {n} back.
-      </p>
-
-      {machine.phase === "rest" && last ? (
-        <BlockSummary block={last} labels={labels} transfer={transfer} restLeft={restLeft} settings={settings} />
-      ) : transfer ? (
-        <ShapeStage shape={stim?.position ?? null} />
-      ) : (
-        <Grid active={streams.position ? (stim?.position ?? null) : null} dim={!streams.position} />
-      )}
-
-      <div className="flex gap-4">
-        {streams.position && (
-          <Keycap
-            code={settings.keys.position}
-            label={`${labels.position} match`}
-            pressed={pressed.position}
-            mark={marks.position}
-            onPress={(t) => press("position", t)}
-          />
-        )}
-        {streams.letter && (
-          <Keycap
-            code={settings.keys.letter}
-            label={`${labels.letter} match`}
-            pressed={pressed.letter}
-            mark={marks.letter}
-            onPress={(t) => press("letter", t)}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-export function BlockSummary({
-  block,
-  labels,
-  transfer,
-  restLeft,
-  settings,
-}: {
-  block: Block
-  labels: { position: string; letter: string }
-  transfer: boolean
-  restLeft: number
-  settings: { up_max_errors: number; down_min_errors: number }
-}) {
-  const errs = [block.metrics.position, block.metrics.letter].flatMap((m) => (m ? [errors(m)] : []))
-  const change = block.next_n > block.n ? "up" : block.next_n < block.n ? "down" : "same"
-  const why = block.void
-    ? `Void (${block.void_reason}): logged but not scored, and the level stays at ${block.n}.`
-    : transfer
-      ? `Fixed level ${block.n}.`
-      : change === "up"
-        ? `Next block: n = ${block.next_n}. Every stream had ${settings.up_max_errors} or fewer errors.`
-        : change === "down"
-          ? `Next block: n = ${block.next_n}. A stream had ${settings.down_min_errors} or more errors.`
-          : `Next block: n = ${block.next_n}. Errors per stream: ${errs.join(" and ")}.`
-  return (
-    <div className="border-hairline bg-card w-full max-w-2xl rounded-xl border p-5" aria-live="polite">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold">
-          Block {block.index + 1} at n = {block.n}
-        </h2>
-        <span className="text-ink-3 font-mono text-xs">rest {restLeft}s</span>
-      </div>
-      {!block.void && (
-        <MetricsTable
-          rows={[
-            { label: labels.position, m: block.metrics.position },
-            { label: labels.letter, m: block.metrics.letter },
-          ]}
-        />
-      )}
-      <p className={block.void ? "text-warn mt-3 text-sm" : "text-ink-2 mt-3 text-sm"}>{why}</p>
-    </div>
+    <RunStage
+      mode={config.mode}
+      n={n}
+      blockNo={blockNo}
+      blocks={settings.blocks}
+      phase={machine.phase === "rest" ? "rest" : "block"}
+      trial={trialNo}
+      trials={current?.stimuli.length ?? 0}
+      lit={stim?.position ?? null}
+      keys={settings.keys}
+      pressed={pressed}
+      marks={marks}
+      onPress={press}
+      onStop={stop}
+      restLeft={restLeft}
+      restTotal={Math.ceil(REST_MS / 1000)}
+      rule={ruleText(settings)}
+      summary={
+        last && <BlockSummary block={last} labels={labels} transfer={transfer} restLeft={restLeft} settings={settings} />
+      }
+    />
   )
 }
