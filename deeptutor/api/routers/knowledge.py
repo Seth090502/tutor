@@ -76,6 +76,7 @@ from deeptutor.services.rag.factory import (
     LIGHTRAG_PROVIDER,
     PAGEINDEX_OSS_PROVIDER,
     PAGEINDEX_PROVIDER,
+    TUTOR_LIBRARY_PROVIDER,
     normalize_provider_name,
     provider_uses_embedding_versions,
 )
@@ -2646,6 +2647,30 @@ async def search_kiwix_articles(
     }
 
 
+class ConnectTutorLibraryRequest(BaseModel):
+    name: str
+    domains: list[str] = Field(default_factory=list)
+    source_types: list[str] = Field(default_factory=list)
+
+
+@router.post("/knowledge-bases/connect-tutor-library", dependencies=[Depends(require_admin)])
+async def connect_tutor_library_route(payload: ConnectTutorLibraryRequest) -> dict[str, Any]:
+    """Bind a KB to the tutor library in rag-engine; nothing is copied or indexed."""
+    try:
+        entry = get_kb_manager().register_tutor_library_kb(
+            payload.name, domains=payload.domains, source_types=payload.source_types
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "connected",
+        "name": entry["path"],
+        "rag_provider": entry["rag_provider"],
+        "domains": entry["domains"],
+        "source_types": entry["source_types"],
+    }
+
+
 @router.post("/knowledge-bases/probe-ima")
 async def probe_ima_route(payload: ProbeImaRequest):
     """Test-connect to a Tencent IMA knowledge base before binding a KB to it.
@@ -3491,6 +3516,16 @@ async def _create_knowledge_base_owned(
             raise HTTPException(status_code=400, detail=f"Knowledge base '{name}' already exists")
 
         rag_provider = _validate_registered_provider(rag_provider)
+        if rag_provider == TUTOR_LIBRARY_PROVIDER:
+            # This route copies uploads into raw/; the library must never be copied.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "The tutor library is indexed by rag-engine, not by DeepTutor. Connect it "
+                    "with POST /api/knowledge-bases/connect-tutor-library and add books from "
+                    "the desktop app's Library screen."
+                ),
+            )
         embedding_selection, embedding_config = _resolve_embedding_form(
             embedding_model, rag_provider
         )

@@ -15,7 +15,7 @@ from pathlib import Path
 import shutil
 import stat
 import sys
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from deeptutor.knowledge.kb_types import (
@@ -25,6 +25,7 @@ from deeptutor.knowledge.kb_types import (
     MARGINNOTE4_KB_TYPE,
     OBSIDIAN_KB_TYPE,
     SUBAGENT_KB_TYPE,
+    TUTOR_LIBRARY_KB_TYPE,
     WEKNORA_KB_TYPE,
     external_root_of,
     is_connected_kb,
@@ -40,6 +41,7 @@ from deeptutor.services.rag.factory import (
     LIGHTRAG_SERVER_PROVIDER,
     PAGEINDEX_OSS_PROVIDER,
     PAGEINDEX_PROVIDER,
+    TUTOR_LIBRARY_PROVIDER,
     WEKNORA_PROVIDER,
     has_ready_provider_index,
     normalize_provider_name,
@@ -1183,6 +1185,40 @@ class KnowledgeBaseManager:
             "zim_name": zim_name,
             "zim_title": zim_title[:300],
             "description": f"Kiwix archive: {zim_title or zim_name}",
+            "status": "ready",
+            "needs_reindex": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+        bases[name] = entry
+        self._save_config()
+        return entry
+
+    def register_tutor_library_kb(
+        self,
+        name: str,
+        *,
+        domains: Sequence[str] = (),
+        source_types: Sequence[str] = (),
+    ) -> dict:
+        """Register a pointer KB that searches the tutor library through rag-engine."""
+        from deeptutor.services.rag.pipelines.tutor_library.pipeline import clean_filters
+
+        name = validate_knowledge_base_name(name)
+        _assert_move_id_available(self.base_dir, name)
+        domains, source_types = clean_filters(domains, source_types)
+        self.config = self._load_config()
+        bases = self.config.setdefault("knowledge_bases", {})
+        if name in bases:
+            raise ValueError(f"A knowledge base named '{name}' already exists.")
+        now = datetime.now().isoformat()
+        entry = {
+            "path": name,
+            "type": TUTOR_LIBRARY_KB_TYPE,
+            "rag_provider": TUTOR_LIBRARY_PROVIDER,
+            "domains": domains,
+            "source_types": source_types,
+            "description": "Tutor library (rag-engine)",
             "status": "ready",
             "needs_reindex": False,
             "created_at": now,

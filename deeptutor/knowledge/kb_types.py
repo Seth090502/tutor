@@ -37,6 +37,9 @@ flavours exist today:
 * ``kiwix`` — a pointer (``server_url`` + ``zim_name``) to one searchable ZIM
   served by kiwix-serve. Retrieval reads matched articles over its public HTTP
   API; DeepTutor neither copies the archive nor builds a second index.
+* ``tutor_library`` — a pointer (optional ``domains`` / ``source_types``
+  filters) to the owner's library indexed by the local rag-engine service at
+  ``RAG_ENGINE_URL``. See ``services/rag/pipelines/tutor_library``.
 
 All connected flavours share the same lifecycle quirks: no on-disk folder under
 ``base_dir``, no embedding reconcile, and deletion must never touch the
@@ -98,6 +101,10 @@ MARGINNOTE4_KB_TYPE = "marginnote4"
 # DeepTutor stores only its URL and ZIM name.
 KIWIX_KB_TYPE = "kiwix"
 
+# The owner's tutor library. rag-engine owns ingestion and the index; DeepTutor
+# stores only optional search filters.
+TUTOR_LIBRARY_KB_TYPE = "tutor_library"
+
 # Every pointer/connected KB type. Membership here is what makes the manager
 # skip the index pipeline, the orphan prune and the embedding reconcile.
 CONNECTED_KB_TYPES = frozenset(
@@ -110,6 +117,7 @@ CONNECTED_KB_TYPES = frozenset(
         WEKNORA_KB_TYPE,
         MARGINNOTE4_KB_TYPE,
         KIWIX_KB_TYPE,
+        TUTOR_LIBRARY_KB_TYPE,
     }
 )
 
@@ -171,6 +179,7 @@ __all__ = [
     "WEKNORA_KB_TYPE",
     "MARGINNOTE4_KB_TYPE",
     "KIWIX_KB_TYPE",
+    "TUTOR_LIBRARY_KB_TYPE",
     "CONNECTED_KB_TYPES",
     "NON_RETRIEVABLE_KB_TYPES",
     "is_connected_kb",
