@@ -55,6 +55,24 @@ def analytics(
                 {"source": row["source"], "questions": 0, "mistakes": 0, "reviews": 0},
             )
             source[metric] += row["count"]
+    # Attempts count once checked, in the window of their check (contract C7).
+    # Calibration needs a verdict, so answers graded by hand are left out of it.
+    attempts = f"""FROM practice_attempts a JOIN notebook_entries n ON n.id=a.entry_id
+        LEFT JOIN sessions s ON s.id=n.session_id
+        WHERE {scope} AND a.closed_at>=? AND a.closed_at<=?"""  # nosec B608 - internal scope
+    calibration = {level: {"level": level, "attempts": 0, "correct": 0} for level in range(1, 5)}
+    for row in conn.execute(
+        f"""SELECT a.confidence AS level, COUNT(*) AS attempts, SUM(a.correct) AS correct
+            {attempts} AND a.confidence IS NOT NULL AND a.correct IS NOT NULL
+            GROUP BY a.confidence""",  # nosec B608 - internal scope
+        [*params, start, now],
+    ):
+        calibration[row["level"]].update(attempts=row["attempts"], correct=row["correct"])
+    assistance = conn.execute(
+        f"""SELECT COUNT(*) AS attempts, COALESCE(SUM(a.hint_rung_max > 0), 0) AS hinted,
+            COALESCE(SUM(a.revealed), 0) AS revealed {attempts}""",  # nosec B608 - internal scope
+        [*params, start, now],
+    ).fetchone()
     return {
         "timezone": timezone,
         "days": days,
@@ -64,4 +82,6 @@ def analytics(
         "daily": [{"date": date, **counts} for date, counts in daily.items()],
         "sources": sorted(sources.values(), key=lambda row: row["source"]),
         "totals": {key: sum(row[key] for row in daily.values()) for key in queries},
+        "calibration": list(calibration.values()),
+        "assistance": dict(assistance),
     }

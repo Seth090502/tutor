@@ -5,10 +5,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import secrets
 import sqlite3
 import time
 import uuid
 
+from .answers import check_answer
+from .attempts import ANSWER_RUNG, attempt_rating
 from .scheduler import DAY, Rating, day_bounds, replay, schedule
 
 # Legacy correct or manually mastered questions start with a three-day interval.
@@ -29,6 +32,22 @@ _FSRS_COLUMNS = (
 
 class ReviewConflict(ValueError):
     """A different tab or source changed this question since it was opened."""
+
+
+class AttemptConflict(ValueError):
+    """The attempt is past the step this request needs (checked, revealed or reviewed)."""
+
+
+# The attempt with the question fields its steps need, if the question is visible.
+_ATTEMPT_SQL = """SELECT a.*, n.question_type, n.options_json, n.correct_answer, n.explanation,
+        n.misconception, n.hints_json
+    FROM practice_attempts a JOIN notebook_entries n ON n.id=a.entry_id
+    LEFT JOIN sessions s ON s.id=n.session_id
+    WHERE a.attempt_id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)"""
+
+
+def _hints(row: sqlite3.Row) -> list[str]:
+    return json.loads(row["hints_json"] or "[]")
 
 
 def initialize_practice(conn: sqlite3.Connection) -> None:
@@ -59,6 +78,19 @@ def initialize_practice(conn: sqlite3.Connection) -> None:
             outcome_json TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_practice_history ON practice_review_events(entry_id, reviewed_at);
+        CREATE TABLE IF NOT EXISTS practice_attempts (
+            attempt_id TEXT PRIMARY KEY,
+            entry_id INTEGER NOT NULL REFERENCES notebook_entries(id) ON DELETE CASCADE,
+            started_at REAL NOT NULL,
+            confidence INTEGER,
+            hint_rung_max INTEGER NOT NULL DEFAULT 0,
+            revealed INTEGER NOT NULL DEFAULT 0,
+            answer TEXT,
+            correct INTEGER,
+            closed_at REAL,
+            reviewed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_practice_attempts_closed ON practice_attempts(closed_at);
         CREATE TABLE IF NOT EXISTS practice_imports (
             token TEXT PRIMARY KEY,
             filename TEXT NOT NULL,
@@ -243,12 +275,15 @@ class PracticeStore:
         entry_id: int,
         request_id: str,
         version: int,
-        rating: Rating,
+        rating: Rating | None,
         answer: str,
         now: float | None = None,
         *,
         self_report: bool = False,
+        attempt_id: str | None = None,
+        judged_correct: bool | None = None,
     ) -> dict:
+        """Record one review. With ``attempt_id`` the rating comes from that checked attempt."""
         now = time.time() if now is None else now
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -256,16 +291,19 @@ class PracticeStore:
                 "SELECT * FROM practice_review_events WHERE request_id=?", (request_id,)
             ).fetchone()
             if previous:
+                outcome = json.loads(previous["outcome_json"])
                 if (
                     previous["entry_id"] != entry_id
-                    or previous["rating"] != rating
                     or previous["answer"] != answer
-                    or bool(json.loads(previous["outcome_json"]).get("self_report")) != self_report
+                    or outcome.get("attempt_id") != attempt_id
+                    or outcome.get("judged_correct") != judged_correct
+                    or (attempt_id is None and previous["rating"] != rating)
+                    or (attempt_id is None and bool(outcome.get("self_report")) != self_report)
                 ):
                     raise ReviewConflict(
                         "This submission ID was already used for a different answer"
                     )
-                return json.loads(previous["outcome_json"])
+                return outcome
             entry = conn.execute(
                 """SELECT n.* FROM notebook_entries n LEFT JOIN sessions s ON s.id=n.session_id
                 WHERE n.id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)""",
@@ -281,12 +319,39 @@ class PracticeStore:
                 raise ReviewConflict(
                     "This question changed in another tab. Reload it before reviewing again."
                 )
-            # Objective answers are checked again at the transaction boundary.
-            from .answers import check_answer
-
-            correct = None if self_report else check_answer(dict(entry), answer)
-            if correct is False and rating != "again":
-                raise ValueError("An incorrect answer must be reviewed again")
+            if attempt_id is None:
+                # Objective answers are checked again at the transaction boundary.
+                correct = None if self_report else check_answer(dict(entry), answer)
+                if correct is False and rating != "again":
+                    raise ValueError("An incorrect answer must be reviewed again")
+            else:
+                attempt = conn.execute(
+                    "SELECT * FROM practice_attempts WHERE attempt_id=? AND entry_id=?",
+                    (attempt_id, entry_id),
+                ).fetchone()
+                if not attempt:
+                    raise LookupError("Attempt not found for this question")
+                if attempt["closed_at"] is None:
+                    raise AttemptConflict("Check the answer before reviewing the attempt")
+                if attempt["reviewed"]:
+                    raise AttemptConflict("This attempt was already reviewed")
+                if answer != attempt["answer"]:
+                    raise ValueError("The answer does not match the checked attempt")
+                correct = None if attempt["correct"] is None else bool(attempt["correct"])
+                # Only an answer the checker cannot grade is judged by the learner.
+                self_report = correct is None
+                if self_report and judged_correct is None:
+                    raise ValueError("judged_correct is required for an answer checked by hand")
+                if not self_report and judged_correct is not None:
+                    raise ValueError("This answer was checked automatically; omit judged_correct")
+                rating = attempt_rating(
+                    judged_correct if self_report else correct,
+                    attempt["hint_rung_max"],
+                    bool(attempt["revealed"]),
+                )
+                conn.execute(
+                    "UPDATE practice_attempts SET reviewed=1 WHERE attempt_id=?", (attempt_id,)
+                )
             if state.get("fsrs_state") is None:
                 # Scheduled before FSRS (or never reviewed): rebuild the memory
                 # state from the retained history; none means a new card.
@@ -346,11 +411,82 @@ class PracticeStore:
                 "self_report": self_report,
                 "mastered": rating in {"good", "easy"},
             }
+            if attempt_id is not None:
+                outcome.update(attempt_id=attempt_id, judged_correct=judged_correct)
             conn.execute(
                 "INSERT INTO practice_review_events VALUES(?, ?, ?, ?, ?, ?)",
                 (request_id, entry_id, rating, answer, now, json.dumps(outcome)),
             )
         return outcome
+
+    def open_attempt(self, entry_id: int) -> dict:
+        with self.connect() as conn:
+            entry = conn.execute(
+                """SELECT n.hints_json FROM notebook_entries n LEFT JOIN sessions s ON s.id=n.session_id
+                WHERE n.id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)""",
+                (entry_id,),
+            ).fetchone()
+            if not entry:
+                raise LookupError("Question not found")
+            attempt_id = secrets.token_hex(16)
+            conn.execute(
+                "INSERT INTO practice_attempts(attempt_id, entry_id, started_at) VALUES(?, ?, ?)",
+                (attempt_id, entry_id, time.time()),
+            )
+        return {"attempt_id": attempt_id, "rungs_available": min(len(_hints(entry)), 4)}
+
+    @staticmethod
+    def _open_attempt(conn: sqlite3.Connection, attempt_id: str) -> sqlite3.Row:
+        """The attempt, locked for this transaction; it must not be checked yet."""
+        conn.execute("BEGIN IMMEDIATE")
+        attempt = conn.execute(_ATTEMPT_SQL, (attempt_id,)).fetchone()
+        if not attempt:
+            raise LookupError("Attempt not found")
+        if attempt["closed_at"] is not None:
+            raise AttemptConflict("This attempt was already checked")
+        return attempt
+
+    def set_confidence(self, attempt_id: str, level: int) -> None:
+        with self.connect() as conn:
+            self._open_attempt(conn, attempt_id)
+            conn.execute(
+                "UPDATE practice_attempts SET confidence=? WHERE attempt_id=?", (level, attempt_id)
+            )
+
+    def next_hint(self, attempt_id: str) -> dict:
+        with self.connect() as conn:
+            attempt = self._open_attempt(conn, attempt_id)
+            rung = attempt["hint_rung_max"] + 1
+            if rung > ANSWER_RUNG:
+                raise AttemptConflict("The answer was already revealed")
+            if rung == ANSWER_RUNG:
+                text = attempt["correct_answer"] or ""
+            else:
+                hints = _hints(attempt)
+                text = hints[rung - 1] if rung <= len(hints) else None
+            conn.execute(
+                "UPDATE practice_attempts SET hint_rung_max=?, revealed=? WHERE attempt_id=?",
+                (rung, int(rung == ANSWER_RUNG), attempt_id),
+            )
+        return {"rung": rung, "text": text, "is_answer": rung == ANSWER_RUNG}
+
+    def check_attempt(self, attempt_id: str, answer: str) -> dict:
+        with self.connect() as conn:
+            attempt = self._open_attempt(conn, attempt_id)
+            correct = check_answer(dict(attempt), answer)
+            conn.execute(
+                "UPDATE practice_attempts SET answer=?, correct=?, closed_at=? WHERE attempt_id=?",
+                (answer, None if correct is None else int(correct), time.time(), attempt_id),
+            )
+        return {
+            "correct": correct,
+            "rating": None
+            if correct is None
+            else attempt_rating(correct, attempt["hint_rung_max"], bool(attempt["revealed"])),
+            "correct_answer": attempt["correct_answer"] or "",
+            "explanation": attempt["explanation"] or "",
+            "misconception": attempt["misconception"] or None,
+        }
 
     def stage_import(
         self, filename: str, target: str, questions: list[dict], course_id: str = ""
@@ -401,10 +537,10 @@ class PracticeStore:
                     """
                     INSERT OR IGNORE INTO notebook_entries(
                         session_id, origin_type, origin_ref, question_id, question, question_type,
-                        options_json, correct_answer, explanation, misconception, difficulty,
-                        user_answer, source, result, assessment_type, created_at, updated_at,
-                        material_title, material_id)
-                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
+                        options_json, correct_answer, explanation, misconception, hints_json,
+                        difficulty, user_answer, source, result, assessment_type, created_at,
+                        updated_at, material_title, material_id)
+                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
                 """,
                     (
                         origin_ref,
@@ -416,6 +552,7 @@ class PracticeStore:
                         question["explanation"],
                         # Previews staged before this field existed lack the key.
                         question.get("misconception"),
+                        json.dumps(question.get("hints") or [], ensure_ascii=False),
                         question["difficulty"],
                         question["user_answer"],
                         "incorrect" if staged["target"] == "mistakes" else "ungraded",

@@ -127,8 +127,10 @@ def test_store_migrates_legacy_notebook_review_columns(tmp_path: Path) -> None:
     # The origin rebuild copies an explicit column list; misconception must
     # still exist afterwards, and reopening must not add it twice.
     assert entry["misconception"] is None
+    assert entry["hints"] == []
     SQLiteSessionStore(db_path=db_path)
     assert _notebook_columns(db_path).count("misconception") == 1
+    assert _notebook_columns(db_path).count("hints_json") == 1
 
 
 def _notebook_columns(db_path: Path) -> list[str]:
@@ -163,6 +165,36 @@ def test_misconception_column_migrates_fresh_and_rebuilt_dbs_idempotently(
         assert (entry["question"], entry["misconception"]) == ("Kept?", None)
     asyncio.run(store.upsert_notebook_entries(None, [{**item, "misconception": "Stored."}]))
     assert asyncio.run(store.get_notebook_entry(entry["id"]))["misconception"] == "Stored."
+
+
+def test_hints_column_migrates_fresh_and_rebuilt_dbs_idempotently(tmp_path: Path) -> None:
+    fresh = tmp_path / "fresh.db"
+    for _ in range(2):
+        SQLiteSessionStore(db_path=fresh)
+        assert _notebook_columns(fresh).count("hints_json") == 1
+
+    # A DB that already went through the origin rebuild, before this column.
+    rebuilt = tmp_path / "rebuilt.db"
+    item = {
+        "origin_type": "external_import",
+        "origin_ref": "notes",
+        "question_id": "q1",
+        "question": "Kept?",
+    }
+    first = SQLiteSessionStore(db_path=rebuilt)
+    asyncio.run(first.upsert_notebook_entries(None, [item]))
+    (original,) = asyncio.run(first.list_notebook_entries())["items"]
+    with sqlite3.connect(rebuilt) as conn:
+        conn.execute("ALTER TABLE notebook_entries DROP COLUMN hints_json")
+    assert "hints_json" not in _notebook_columns(rebuilt)
+    for _ in range(2):
+        store = SQLiteSessionStore(db_path=rebuilt)
+        assert _notebook_columns(rebuilt).count("hints_json") == 1
+        (entry,) = asyncio.run(store.list_notebook_entries())["items"]
+        assert (entry["id"], entry["question"], entry["hints"]) == (original["id"], "Kept?", [])
+    asyncio.run(store.upsert_notebook_entries(None, [{**item, "hints": ["Nudge"]}]))
+    stored = asyncio.run(store.get_notebook_entry(original["id"]))
+    assert stored["hints"] == ["Nudge"]
 
 
 def test_store_migrates_legacy_workspace_ownership_without_reordering(
@@ -504,6 +536,29 @@ def test_upsert_keeps_updates_and_clears_misconception(store: SQLiteSessionStore
     assert stored()["misconception"] is None
     asyncio.run(store.upsert_notebook_entries(sid, _make_items(("q2", "Q2?", False))))
     assert asyncio.run(store.find_notebook_entry(sid, "q2"))["misconception"] is None
+
+
+def test_upsert_keeps_updates_and_clears_hints(store: SQLiteSessionStore) -> None:
+    sid = asyncio.run(store.create_session())["id"]
+    base = {"question_id": "q1", "question": "1/2 + 1/3?", "is_correct": False}
+
+    def stored() -> dict:
+        return asyncio.run(store.find_notebook_entry(sid, "q1"))
+
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "hints": [" Common base? ", ""]}]))
+    assert stored()["hints"] == ["Common base?"]
+    # An answer save that does not carry the field keeps the stored rungs.
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "user_answer": "2/5"}]))
+    assert stored()["hints"] == ["Common base?"]
+    rungs = ["Common base?", "Sixths.", "3/6 + 2/6.", "5/6."]
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "hints": rungs}]))
+    assert stored()["hints"] == rungs
+    assert asyncio.run(store.list_notebook_entries())["items"][0]["hints"] == rungs
+    # An explicit empty list clears them; entries without any serialize to [].
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "hints": []}]))
+    assert stored()["hints"] == []
+    asyncio.run(store.upsert_notebook_entries(sid, _make_items(("q2", "Q2?", False))))
+    assert asyncio.run(store.find_notebook_entry(sid, "q2"))["hints"] == []
 
 
 def test_upsert_skips_blank_questions(store: SQLiteSessionStore) -> None:

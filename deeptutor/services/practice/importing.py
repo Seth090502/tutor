@@ -20,6 +20,7 @@ ALIASES = {
     "correct_answer": ("correct_answer", "answer", "答案", "正确答案"),
     "explanation": ("explanation", "解析"),
     "misconception": ("misconception", "误区"),
+    "hints": ("hints", "提示"),
     "difficulty": ("difficulty", "难度"),
     "tags": ("tags", "标签", "分类"),
     "user_answer": ("user_answer", "我的答案", "作答"),
@@ -179,6 +180,11 @@ def normalize_question(raw: dict) -> dict:
     tags = list(dict.fromkeys(_cell(tag) for tag in tags if _cell(tag)))
     if len(tags) > 20 or any(len(tag) > 100 for tag in tags):
         raise ValueError("Use at most 20 tags, each up to 100 characters")
+    hints_value = fields["hints"]
+    hints = hints_value if isinstance(hints_value, list) else _cell(hints_value).split("|")
+    hints = [_cell(hint) for hint in hints if _cell(hint)]
+    if len(hints) > 4:
+        raise ValueError("Use at most 4 hints (rungs 1-4), separated by |")
     result = dict(
         question=question,
         question_type=kind,
@@ -186,6 +192,7 @@ def normalize_question(raw: dict) -> dict:
         correct_answer=answer,
         explanation=_cell(fields["explanation"]),
         misconception=_cell(fields["misconception"]) or None,
+        hints=hints,
         difficulty=_cell(fields["difficulty"]),
         user_answer=_cell(fields["user_answer"]),
         tags=tags,

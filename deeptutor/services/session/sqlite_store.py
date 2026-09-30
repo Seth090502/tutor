@@ -363,6 +363,7 @@ class SQLiteSessionStore:
                     correct_answer TEXT DEFAULT '',
                     explanation TEXT DEFAULT '',
                     misconception TEXT,
+                    hints_json TEXT DEFAULT '[]',
                     difficulty TEXT DEFAULT '',
                     user_answer TEXT DEFAULT '',
                     user_answer_images_json TEXT DEFAULT '[]',
@@ -496,6 +497,7 @@ class SQLiteSessionStore:
             self._migrate_notebook_entries_add_assessment_v2(conn)
             self._migrate_notebook_entry_origins(conn)
             self._migrate_notebook_entries_add_misconception(conn)
+            self._migrate_notebook_entries_add_hints(conn)
             self._migrate_assessment_attempt_origins(conn)
             self._migrate_assessment_attempt_link_state(conn)
             self._migrate_turn_runtime_columns(conn)
@@ -976,6 +978,17 @@ class SQLiteSessionStore:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(notebook_entries)").fetchall()}
         if cols and "misconception" not in cols:
             conn.execute("ALTER TABLE notebook_entries ADD COLUMN misconception TEXT")
+
+    @staticmethod
+    def _migrate_notebook_entries_add_hints(conn: sqlite3.Connection) -> None:
+        """Add the per-question hint ladder (a JSON list of rung texts).
+
+        Must run after ``_migrate_notebook_entry_origins`` for the same reason
+        as ``_migrate_notebook_entries_add_misconception``.
+        """
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(notebook_entries)").fetchall()}
+        if cols and "hints_json" not in cols:
+            conn.execute("ALTER TABLE notebook_entries ADD COLUMN hints_json TEXT DEFAULT '[]'")
 
     @staticmethod
     def _migrate_assessment_attempt_origins(conn: sqlite3.Connection) -> None:
@@ -3046,6 +3059,13 @@ class SQLiteSessionStore:
             misconception = (
                 None if misconception_value is None else str(misconception_value).strip() or None
             )
+            # And for ``hints``: ``None`` keeps the stored rungs; ``[]`` clears them.
+            hints_value = item.get("hints")
+            hints_json = (
+                None
+                if hints_value is None
+                else _json_dumps([str(h).strip() for h in hints_value if str(h).strip()])
+            )
             source = str(item.get("source") or "deep_question")
             if source not in ASSESSMENT_SOURCES:
                 source = "deep_question"
@@ -3084,14 +3104,14 @@ class SQLiteSessionStore:
                 INSERT INTO notebook_entries (
                     session_id, origin_type, origin_ref, turn_id, question_id,
                     question, question_type, options_json, correct_answer,
-                    explanation, misconception, difficulty, user_answer,
+                    explanation, misconception, hints_json, difficulty, user_answer,
                     user_answer_images_json, source, material_id,
                     material_title, section_id, section_title, score_trend,
                     assessment_type, result, mastery_path_id, knowledge_point_id,
                     attempt_count, hints_used, confidence, response_time, quality,
                     is_correct, resolved, bookmarked, followup_session_id,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)
                 ON CONFLICT(origin_type, origin_ref, turn_id, question_id) DO UPDATE SET
                     session_id = excluded.session_id,
                     question = excluded.question,
@@ -3102,6 +3122,10 @@ class SQLiteSessionStore:
                     misconception = CASE
                         WHEN ? THEN notebook_entries.misconception
                         ELSE excluded.misconception
+                    END,
+                    hints_json = CASE
+                        WHEN ? THEN notebook_entries.hints_json
+                        ELSE excluded.hints_json
                     END,
                     difficulty = excluded.difficulty,
                     user_answer = excluded.user_answer,
@@ -3146,6 +3170,7 @@ class SQLiteSessionStore:
                     item.get("correct_answer") or "",
                     item.get("explanation") or "",
                     misconception,
+                    hints_json if hints_json is not None else "[]",
                     item.get("difficulty") or "",
                     item.get("user_answer") or "",
                     images_json if images_json is not None else "[]",
@@ -3156,6 +3181,7 @@ class SQLiteSessionStore:
                     now,
                     now,
                     misconception_value is None,
+                    hints_json is None,
                     images_json is None,
                 ),
             )
@@ -3556,6 +3582,7 @@ class SQLiteSessionStore:
             "correct_answer": row["correct_answer"] or "",
             "explanation": row["explanation"] or "",
             "misconception": (row["misconception"] or None) if "misconception" in keys else None,
+            "hints": _json_loads(row["hints_json"], []) if "hints_json" in keys else [],
             "difficulty": row["difficulty"] or "",
             "user_answer": row["user_answer"] or "",
             "user_answer_images": images,
@@ -3741,7 +3768,7 @@ class SQLiteSessionStore:
                 n.id, n.session_id, COALESCE(s.title, '') AS session_title,
                 n.origin_type, n.origin_ref, n.turn_id, n.question_id,
                 n.question, n.question_type, n.options_json,
-                n.correct_answer, n.explanation, n.misconception, n.difficulty,
+                n.correct_answer, n.explanation, n.misconception, n.hints_json, n.difficulty,
                 n.user_answer, n.user_answer_images_json, n.source, n.material_id,
                 n.material_title, n.section_id, n.section_title, n.score_trend,
                 n.assessment_type, n.result, n.mastery_path_id, n.knowledge_point_id,

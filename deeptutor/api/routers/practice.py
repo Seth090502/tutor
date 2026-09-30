@@ -10,13 +10,13 @@ from typing import Literal
 import zipfile
 
 from defusedxml.ElementTree import ParseError
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, File, Form, HTTPException, Path, Query, Response, UploadFile
+from pydantic import BaseModel, Field, model_validator
 
 from deeptutor.services.practice.answers import check_answer
 from deeptutor.services.practice.importing import MAX_BYTES, preview
 from deeptutor.services.practice.scheduler import Rating, day_bounds
-from deeptutor.services.practice.storage import PracticeStore, ReviewConflict
+from deeptutor.services.practice.storage import AttemptConflict, PracticeStore, ReviewConflict
 from deeptutor.services.session import get_sqlite_session_store
 
 from .question_notebook import NotebookEntryItem, _course_session_ids
@@ -57,6 +57,18 @@ class PracticeSourceCounts(PracticeCounts):
     source: str
 
 
+class PracticeCalibration(BaseModel):
+    level: int
+    attempts: int
+    correct: int
+
+
+class PracticeAssistance(BaseModel):
+    attempts: int
+    hinted: int
+    revealed: int
+
+
 class PracticeAnalytics(BaseModel):
     timezone: str
     days: int
@@ -66,17 +78,59 @@ class PracticeAnalytics(BaseModel):
     daily: list[PracticeDailyCounts]
     sources: list[PracticeSourceCounts]
     totals: PracticeCounts
+    calibration: list[PracticeCalibration]
+    assistance: PracticeAssistance
 
 
 class AnswerRequest(BaseModel):
     answer: str = Field(default="", max_length=20000)
 
 
+ATTEMPT_ID = r"^[a-f0-9]{32}$"
+
+
 class ReviewRequest(AnswerRequest):
     self_report: bool = False
     request_id: str = Field(min_length=16, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     version: int = Field(ge=0)
-    rating: Rating
+    rating: Rating | None = None
+    # With an attempt the server computes the rating from it (contract C7).
+    attempt_id: str | None = Field(default=None, pattern=ATTEMPT_ID)
+    judged_correct: bool | None = None
+
+    @model_validator(mode="after")
+    def _one_rating_source(self) -> "ReviewRequest":
+        if self.attempt_id is None:
+            if self.rating is None:
+                raise ValueError("rating is required without attempt_id")
+            if self.judged_correct is not None:
+                raise ValueError("judged_correct requires attempt_id")
+        elif self.rating is not None or self.self_report:
+            raise ValueError("With attempt_id the server computes the rating")
+        return self
+
+
+class ConfidenceRequest(BaseModel):
+    level: int = Field(ge=1, le=4)
+
+
+class AttemptOpened(BaseModel):
+    attempt_id: str
+    rungs_available: int
+
+
+class AttemptHint(BaseModel):
+    rung: int
+    text: str | None
+    is_answer: bool
+
+
+class AttemptChecked(BaseModel):
+    correct: bool | None
+    rating: Literal["good", "hard", "again"] | None
+    correct_answer: str
+    explanation: str
+    misconception: str | None
 
 
 class CommitRequest(BaseModel):
@@ -213,6 +267,20 @@ async def practice_analytics(
             metric: sum(row["totals"][metric] for row in rows)
             for metric in ("questions", "mistakes", "reviews")
         }
+        result["calibration"] = [
+            {
+                "level": level,
+                **{
+                    metric: sum(row["calibration"][level - 1][metric] for row in rows)
+                    for metric in ("attempts", "correct")
+                },
+            }
+            for level in range(1, 5)
+        ]
+        result["assistance"] = {
+            metric: sum(row["assistance"][metric] for row in rows)
+            for metric in ("attempts", "hinted", "revealed")
+        }
         return result
 
     store = get_sqlite_session_store()
@@ -251,13 +319,50 @@ async def review(entry_id: int, payload: ReviewRequest):
             payload.rating,
             payload.answer,
             self_report=payload.self_report,
+            attempt_id=payload.attempt_id,
+            judged_correct=payload.judged_correct,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
-    except ReviewConflict as exc:
+    except (ReviewConflict, AttemptConflict) as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+async def _attempt_step(method: str, *args):
+    """Run one attempt step: unknown or hidden is 404, past this step is 409."""
+    try:
+        return await asyncio.to_thread(
+            getattr(PracticeStore(get_sqlite_session_store().db_path), method), *args
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except AttemptConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/questions/{entry_id}/attempts", response_model=AttemptOpened)
+async def open_attempt(entry_id: int):
+    return await _attempt_step("open_attempt", entry_id)
+
+
+@router.post("/attempts/{attempt_id}/confidence")
+async def attempt_confidence(
+    payload: ConfidenceRequest, attempt_id: str = Path(pattern=ATTEMPT_ID)
+):
+    await _attempt_step("set_confidence", attempt_id, payload.level)
+    return {"ok": True}
+
+
+@router.post("/attempts/{attempt_id}/hint", response_model=AttemptHint)
+async def attempt_hint(attempt_id: str = Path(pattern=ATTEMPT_ID)):
+    return await _attempt_step("next_hint", attempt_id)
+
+
+@router.post("/attempts/{attempt_id}/check", response_model=AttemptChecked)
+async def attempt_check(payload: AnswerRequest, attempt_id: str = Path(pattern=ATTEMPT_ID)):
+    return await _attempt_step("check_attempt", attempt_id, payload.answer)
 
 
 @router.get("/import/template")
@@ -275,6 +380,7 @@ async def import_template(format: Literal["csv", "xlsx"] = "csv"):
             "tags",
             "user_answer",
             "misconception",
+            "hints",
         ],
         [
             "2 + 2 = ?",
@@ -288,6 +394,7 @@ async def import_template(format: Literal["csv", "xlsx"] = "csv"):
             "Math,Addition",
             "",
             "Counting on from 2 and including the 2 itself gives 3.",
+            "Start at 2 and count on.|Count two more: 3, then 4.",
         ],
         [
             "Select the prime numbers",
@@ -301,8 +408,22 @@ async def import_template(format: Literal["csv", "xlsx"] = "csv"):
             "Math",
             "",
             "",
+            "",
         ],
-        ["The Earth orbits the Sun", "true_false", "", "", "", "", "true", "", "Science", "", ""],
+        [
+            "The Earth orbits the Sun",
+            "true_false",
+            "",
+            "",
+            "",
+            "",
+            "true",
+            "",
+            "Science",
+            "",
+            "",
+            "",
+        ],
         [
             "Explain photosynthesis",
             "short_answer",
@@ -313,6 +434,7 @@ async def import_template(format: Literal["csv", "xlsx"] = "csv"):
             "Plants convert light into chemical energy.",
             "",
             "Biology",
+            "",
             "",
             "",
         ],
