@@ -24,6 +24,9 @@ today:
 * ``kiwix``               — retrieval from one ZIM already served by
                             kiwix-serve. Only matched articles are fetched;
                             no local archive or index copy is made.
+* ``tutor_library``       — retrieval from the owner's library indexed by the
+                            local rag-engine service (hybrid BM25 + vectors).
+                            No local index or document copy.
 
 A KB is bound to one provider at creation time; later adds and retrieval always
 go through that same pipeline (enforced upstream in the knowledge router).
@@ -43,6 +46,7 @@ LIGHTRAG_SERVER_PROVIDER = "lightrag-server"
 IMA_PROVIDER = "ima"
 WEKNORA_PROVIDER = "weknora"
 KIWIX_PROVIDER = "kiwix"
+TUTOR_LIBRARY_PROVIDER = "tutor_library"
 
 # Providers the factory can instantiate. Unknown / legacy strings fall back to
 # the default with a re-index hint upstream.
@@ -57,6 +61,7 @@ KNOWN_PROVIDERS = frozenset(
         IMA_PROVIDER,
         WEKNORA_PROVIDER,
         KIWIX_PROVIDER,
+        TUTOR_LIBRARY_PROVIDER,
     }
 )
 
@@ -182,6 +187,13 @@ def _build_pipeline(provider: str, kb_base_dir: Optional[str], **kwargs: Any):
         if kb_base_dir is not None:
             kwargs.setdefault("kb_base_dir", kb_base_dir)
         return KiwixPipeline(**kwargs)
+
+    if provider == TUTOR_LIBRARY_PROVIDER:
+        from .pipelines.tutor_library.pipeline import TutorLibraryPipeline
+
+        if kb_base_dir is not None:
+            kwargs.setdefault("kb_base_dir", kb_base_dir)
+        return TutorLibraryPipeline(**kwargs)
 
     from .pipelines.llamaindex.pipeline import LlamaIndexPipeline
 
