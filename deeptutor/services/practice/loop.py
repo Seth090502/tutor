@@ -144,7 +144,13 @@ def initialize_loop(conn: sqlite3.Connection) -> None:
         CREATE TRIGGER IF NOT EXISTS learning_events_no_delete
         BEFORE DELETE ON learning_events
         BEGIN SELECT RAISE(ABORT, 'learning events are append-only'); END;
+        CREATE TABLE IF NOT EXISTS learning_meta (key TEXT PRIMARY KEY, value TEXT);
     """)
+    # Identifies this notebook database to the Rust projections (C13); generated once.
+    conn.execute(
+        "INSERT OR IGNORE INTO learning_meta(key, value) VALUES('store_id', ?)",
+        (str(uuid.uuid4()),),
+    )
 
 
 def item_version(entry: sqlite3.Row | dict) -> str:
