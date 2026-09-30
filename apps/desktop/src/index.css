@@ -128,6 +128,7 @@
     --acc-english: #c8402a;
     --acc-science: #17727a;
     --acc-chemistry: #8c6218;
+    --acc-languages: #7a3b7d;
     --acc-green: #4d7c2f;
 
     --chart-1: var(--world);
@@ -166,6 +167,7 @@
     --acc-english: #e4573a;
     --acc-science: #56d4e0;
     --acc-chemistry: #dcb86e;
+    --acc-languages: #d99ad6;
     --acc-green: #8cc26b;
 
     --sidebar: #16130f;
@@ -190,6 +192,12 @@
     --world: var(--acc-chemistry);
     --chart-2: var(--acc-math); --chart-3: var(--acc-english);
     --chart-4: var(--acc-science); --chart-5: var(--acc-green);
+}
+/* Math's blue is the hue nearest the plum accent, so it sits out of this palette. */
+[data-world="languages"] {
+    --world: var(--acc-languages);
+    --chart-2: var(--acc-english); --chart-3: var(--acc-science);
+    --chart-4: var(--acc-chemistry); --chart-5: var(--acc-green);
 }
 
 @media (prefers-reduced-motion: reduce) {

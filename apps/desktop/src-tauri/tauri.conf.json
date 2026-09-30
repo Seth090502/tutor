@@ -38,6 +38,7 @@
           "wss://livekit.rtc.elevenlabs.io",
           "https://livekit.rtc.elevenlabs.io"
         ],
+        "media-src": ["'self'", "blob:"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"]
       }

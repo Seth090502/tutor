@@ -3,7 +3,7 @@
 
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react"
 
-export type World = "neutral" | "math" | "english" | "science" | "chemistry"
+export type World = "neutral" | "math" | "english" | "science" | "chemistry" | "languages"
 
 export type WorldMeta = { id: World; label: string; description: string }
 
@@ -13,6 +13,7 @@ export const WORLDS: readonly WorldMeta[] = [
   { id: "english", label: "English", description: "Reading, writing and language." },
   { id: "science", label: "Science", description: "Physics, biology and the earth." },
   { id: "chemistry", label: "Chemistry", description: "Matter, reactions and bonds." },
+  { id: "languages", label: "Languages", description: "Speaking, listening and reading." },
 ]
 
 export const WORLD_STORAGE_KEY = "tutor.world"

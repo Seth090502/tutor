@@ -56,6 +56,12 @@ export type EvalRun = {
   cost_usd: number
 }
 
+/** Speech through the shell (contract C10). */
+export type TtsOptions = { voiceId?: string; model?: string; speed?: number }
+export type TtsVoice = { voice_id: string; name: string; labels: Record<string, string>; preview_url: string | null }
+export type SttWord = { text: string; start: number; end: number }
+export type SttResult = { text: string; words: SttWord[] }
+
 export const shell = {
   servicesStatus: () => invoke<ServicesStatus>("services_status"),
   servicesRestart: (name: "backend" | "rag_engine") => invoke<void>("services_restart", { name }),
@@ -68,4 +74,12 @@ export const shell = {
   configSet: (key: string, value: string) => invoke<void>("config_set", { key, value }),
   evalsRuns: () => invoke<{ runs: EvalRun[]; warnings: string[] }>("evals_runs"),
   planMarkdown: () => invoke<{ markdown: string }>("plan_markdown"),
+  /** MP3 bytes for `text`; `lang` is ISO 639-1. Cached on disk by the shell. */
+  ttsAudio: (text: string, lang: string, { voiceId, model, speed }: TtsOptions = {}) =>
+    invoke<ArrayBuffer>("tts_audio", { text, lang, voiceId, model, speed }),
+  /** The voices for a language (ISO 639-1). */
+  ttsVoices: (lang: string) => invoke<{ voices: TtsVoice[] }>("tts_voices", { lang }),
+  /** Scribe transcript of WebM/Opus or WAV bytes; `lang` is the Scribe (ISO 639-3) code. */
+  sttTranscribe: (audio: Uint8Array, lang: string) =>
+    invoke<SttResult>("stt_transcribe", { audio: Array.from(audio), lang }),
 }

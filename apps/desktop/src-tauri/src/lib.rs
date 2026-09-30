@@ -8,6 +8,7 @@ mod nback;
 mod root;
 mod secrets;
 mod services;
+mod speech;
 mod tracker;
 
 use std::collections::BTreeMap;
@@ -159,6 +160,9 @@ pub fn run() {
             nback::nback_sessions,
             nback::nback_session,
             nback::nback_export_csv,
+            speech::tts_audio,
+            speech::tts_voices,
+            speech::stt_transcribe,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -297,6 +301,16 @@ mod tests {
                 (
                     "https://livekit.rtc.elevenlabs.io",
                     "LiveKit reachability checks (HEAD, /rtc/validate)",
+                ),
+            ],
+        ),
+        (
+            "media-src",
+            &[
+                ("'self'", "bundled audio"),
+                (
+                    "blob:",
+                    "text-to-speech clips played from object URLs of the shell's MP3 bytes",
                 ),
             ],
         ),
