@@ -16,3 +16,8 @@ docker-compose.*.yml text eol=lf
 *.toml text eol=lf
 *.cfg text eol=lf
 *.ini text eol=lf
+
+# Documents are binary: an ASCII-only PDF would otherwise get CRLF conversion on
+# checkout, which breaks its byte offsets.
+*.pdf binary
+*.epub binary

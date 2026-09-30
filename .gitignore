@@ -9,7 +9,9 @@
 data/
 /multi-user/
 # Local development documents; public guides live in docs-for-user/.
-/docs/
+# docs/tutor/ holds the Tutor fork's tracked plan.
+/docs/*
+!/docs/tutor/
 /design-qa.md
 /site/
 .claude
@@ -282,3 +284,16 @@ dmypy.json
 *.mp3
 *.wav
 *.ogg
+
+# ============================================
+# Tutor fork
+# ============================================
+# Rust workspace build output
+/target/
+# Books and papers never enter git: only the folder skeleton and README do.
+/corpus/**
+!/corpus/**/
+!/corpus/README.md
+!/corpus/**/.gitkeep
+# Local eval run outputs
+/evals/runs/

@@ -1,11 +1,13 @@
 # Fork plan: custom DeepTutor tutor
 
 Base: HKUDS/DeepTutor v1.6.12 (`ef2d9e5`, Apache-2.0). Remote `upstream`, work branch `custom`.
-Lives outside OneDrive on purpose (node_modules, indexes, corpus). Nothing is pushed anywhere.
+Home: `C:\Users\sethy\Projects\tutor` (outside OneDrive on purpose: node_modules, indexes, corpus).
+Layout map: `TUTOR.md`. Local commits only; nothing is pushed anywhere.
 
 ## Goals (owner, 2026-09-30)
 - A tutor clearly better than upstream DeepTutor, with its own GUI and full ElevenLabs voice.
-- LLM: Meta Muse Spark 1.3 xhigh, or any model ranked higher on the Artificial Analysis index.
+- LLM: Meta Muse Spark 1.3 (xhigh or max) via OpenCode Go; Claude Opus 5.5 or Sonnet 5.5 as
+  alternatives. No local models. The ElevenLabs key arrives after everything is built.
 - SOTA RAG over 50-250 GB of lawfully acquired teaching material and papers
   (math, English, science, chemistry).
 - Quality is decided by evals: train/test split, one change per round, keep only if
@@ -41,7 +43,7 @@ Lives outside OneDrive on purpose (node_modules, indexes, corpus). Nothing is pu
   `reasoning.effort`; Muse Spark 1.3 supports max/xhigh/high/medium/low/minimal, default medium.
 - Content: `content/question_bank.csv` (60 items incl. `misconception` column; 60/60 valid through
   DeepTutor's own import preview) and `content/notes/` (the owner's 4 notes, byte-identical).
-- Desktop app `desktop/` (Tauri 2 + Vite + React 19 + Tailwind 4 + shadcn): sidebar with Tutor, Library,
+- Desktop app `apps/desktop/` (Tauri 2 + Vite + React 19 + Tailwind 4 + shadcn): sidebar with Tutor, Library,
   Evals, Progress, Plan. Tutor shows ElevenLabs' official Orb (MIT registry, unmodified `orb.tsx`) with
   their 3 color presets, Idle/Listening/Thinking/Talking, and a Live mic mode driven by a real mic level.
   Other sections are honest empty states naming their data source. Theme follows Windows light/dark.
@@ -87,7 +89,7 @@ Lives outside OneDrive on purpose (node_modules, indexes, corpus). Nothing is pu
 - **P0** fork, baseline, lockdown. Done; commit pending owner OK.
 - **P1** corpus sample (1-2 GB, representative):
   - Done: `rag-engine survey --root <dir> --out report.json` (Rust; blake3, clap, pdfium-render 0.9.4 +
-    PDFium chromium/8076 in `vendor/`, rayon, rbook, serde, walkdir; licenses in rag-engine/README.md).
+    PDFium chromium/8076 in `vendor/`, rayon, rbook, serde, walkdir; licenses in crates/rag-engine/README.md).
     Dedup, PDF text layer, per-page triage (born_digital / scanned / math_heavy / empty), EPUB/MD/TXT
     sizing, per-GB extrapolation to 50 and 250 GB. 34 unit + 1 integration tests, clippy clean.
   - Waiting on the owner: the sample folder. Then calibrate triage thresholds against hand-labelled pages.
