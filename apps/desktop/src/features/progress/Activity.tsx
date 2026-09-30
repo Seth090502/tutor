@@ -26,7 +26,13 @@ export function ReviewDiscs({ analytics }: { analytics: Analytics }) {
       table={phaseTableFor(daily, days, peak)}
     >
       <div ref={ref}>
-        <PhaseDiscs name={`Reviews for each of the last ${period} days, relative to the busiest day`} days={days} columns={columns} />
+        <PhaseDiscs
+          name={`Reviews for each of the last ${period} days, relative to the busiest day`}
+          days={days}
+          columns={columns}
+          unit="of your busiest day"
+          label="of busiest day"
+        />
       </div>
     </ChartFrame>
   )

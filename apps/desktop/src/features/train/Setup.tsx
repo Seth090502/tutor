@@ -1,14 +1,12 @@
 // Session setup: mode, starting level, block count, keys, the adaptation rule, lures, in-trial feedback,
 // the comparability mark, the length estimate and the weekly dose. The transfer check has its own panel.
-import type { CSSProperties } from "react"
-
-import { DeltaChip, Eyebrow, LedStatus, Panel, Stat, StatRow } from "@/components/kit"
+import { DeltaChip, Eyebrow, LedStatus, Panel, Segmented, Stat, StatRow, Stepper, SwitchRow, riseStyle } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ruleText } from "./engine/adapt"
 import { WEEK_SESSIONS, WEEK_SOFT_CAP_MIN } from "./engine/history"
 import { TRANSFER_SETTINGS, isComparable, transferLevel } from "./engine/session"
-import { Field, KeyPicker, Segmented, Stepper, SwitchRow } from "./ui"
+import { Field, KeyPicker } from "./ui"
 import type { Mode, Settings } from "./types"
 import { doseFraction, nonComparableReasons } from "./view"
 import "./train.css"
@@ -25,7 +23,8 @@ const MODES: { id: TrainMode; label: string; hint: string }[] = [
 export const estimateMinutes = (s: Settings, n: number) =>
   Math.round((s.blocks * (20 + n) * s.trial_ms + (s.blocks - 1) * 10_000) / 60_000)
 
-const rise = (i: number) => ({ "--i": i }) as CSSProperties
+/** Shown beside a switch that, turned on, makes the session not comparable with earlier ones. */
+const NOT_COMPARABLE = <DeltaChip tone="warn" text="Not comparable" className="max-[560px]:hidden" />
 
 export type Week = { minutes: number; sessions: number }
 
@@ -105,7 +104,7 @@ export function SetupPanel({
   const hint = MODES.find((m) => m.id === mode)?.hint
 
   return (
-    <Panel eyebrow="Session" title="Set up a session" className="train-rise @container" style={rise(0)}>
+    <Panel eyebrow="Session" title="Set up a session" className="kit-rise @container" style={riseStyle(0)}>
       <p className="text-ink-2 -mt-2 mb-6 max-w-[62ch] font-serif text-[16px] leading-relaxed italic">
         This trains the n-back task. Transfer to other skills is small or unproven; the Experiment tab tests it on you.
       </p>
@@ -179,14 +178,14 @@ export function SetupPanel({
             detail="n±1 repeats, tagged in the log."
             checked={settings.lures}
             onChange={(lures) => set({ lures })}
-            breaksComparable
+            note={settings.lures ? NOT_COMPARABLE : undefined}
           />
           <SwitchRow
             title="In-trial feedback"
             detail="Marks each response correct or wrong as you go. The default is a summary at the end of each block."
             checked={settings.in_trial_feedback}
             onChange={(in_trial_feedback) => set({ in_trial_feedback })}
-            breaksComparable
+            note={settings.in_trial_feedback ? NOT_COMPARABLE : undefined}
           />
         </div>
 

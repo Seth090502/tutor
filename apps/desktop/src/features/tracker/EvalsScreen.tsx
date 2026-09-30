@@ -4,11 +4,11 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Erro
 import { FlaskConical, Monitor, RefreshCw, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { LedStatus } from "@/components/kit"
+import { LedStatus, QuietNote, Rise } from "@/components/kit"
 import { inTauri, shell, type EvalRun } from "@/lib/backend"
 import { LatestRun } from "@/features/evals/LatestRun"
 import { annotate, fmtUsd, primaryMetric, tally } from "@/features/evals/model"
-import { Code, QuietNote, Rise, StateBlock } from "@/features/evals/parts"
+import { Code, StateBlock } from "@/features/evals/parts"
 import { RunList } from "@/features/evals/RunList"
 import { Trajectory } from "@/features/evals/Trajectory"
 

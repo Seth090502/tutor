@@ -1,12 +1,9 @@
 // The Library when there is nothing to show yet: loading, rag-engine offline, rag-engine error.
-import type { CSSProperties, ReactNode } from "react"
+import type { ReactNode } from "react"
 import { RotateCw, ServerOff, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Eyebrow, Kbd, KbdHint, Led } from "@/components/kit"
-import "./library.css"
-
-const at = (i: number) => ({ "--i": i }) as CSSProperties
+import { Eyebrow, Kbd, KbdHint, Led, riseStyle } from "@/components/kit"
 
 function CalmState({
   mark,
@@ -25,17 +22,17 @@ function CalmState({
     <div className="mx-auto flex min-h-full max-w-lg flex-col items-center justify-center gap-5 px-8 py-16 text-center">
       <span
         aria-hidden
-        className="lib-rise border-hairline-strong text-ink-2 bg-card grid size-14 place-items-center rounded-full border [box-shadow:inset_0_1px_0_var(--kit-highlight),var(--kit-shadow)]"
+        className="kit-rise border-hairline-strong text-ink-2 bg-card grid size-14 place-items-center rounded-full border [box-shadow:inset_0_1px_0_var(--kit-highlight),var(--kit-shadow)]"
       >
         {mark}
       </span>
-      <div className="lib-rise flex flex-col items-center gap-3" style={at(1)}>
+      <div className="kit-rise flex flex-col items-center gap-3" style={riseStyle(1)}>
         <Eyebrow>{eyebrow}</Eyebrow>
         <h2 className="font-serif text-[24px] leading-snug font-normal tracking-[-0.01em] text-balance">{title}</h2>
         {detail ? <p className="text-ink-2 max-w-[44ch] text-[14px] leading-relaxed text-pretty">{detail}</p> : null}
       </div>
       {children ? (
-        <div className="lib-rise flex flex-col items-center gap-4" style={at(2)}>
+        <div className="kit-rise flex flex-col items-center gap-4" style={riseStyle(2)}>
           {children}
         </div>
       ) : null}

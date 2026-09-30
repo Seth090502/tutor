@@ -19,7 +19,6 @@ export function Trajectory({ items, metric, drawOn }: { items: Annotated[]; metr
       title="Trajectory"
       subtitle={`${metric} across ${count} ${evalName} ${count === 1 ? "run" : "runs"}. Follow the solid held-out line; the dashed train line is what tuning could see.`}
       table={table}
-      className="p-5 [box-shadow:inset_0_1px_0_var(--kit-highlight),var(--kit-shadow)] sm:p-6"
     >
       {count === 0 ? (
         <p className="text-ink-2 text-sm">No {evalName} run has a held-out {metric} yet.</p>

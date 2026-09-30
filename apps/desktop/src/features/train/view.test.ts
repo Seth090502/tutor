@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import { DEFAULT_SETTINGS } from "./engine/session"
 import type { Block, Metrics, NBackSummary } from "./types"
 import {
-  commitInt,
   daysSince,
   doseFraction,
   levelChange,
@@ -86,20 +85,6 @@ describe("transferStatus", () => {
     expect(daysSince(null, 1000)).toBeNull()
     expect(daysSince(0, 3.5 * day)).toBe(3)
     expect(daysSince(1000, 10)).toBe(0)
-  })
-})
-
-describe("commitInt", () => {
-  it("clamps and rounds", () => {
-    expect(commitInt("15", 12, 20)).toBe(15)
-    expect(commitInt("1", 12, 20)).toBe(12)
-    expect(commitInt("99", 12, 20)).toBe(20)
-    expect(commitInt("3.6", 1, 9)).toBe(4)
-  })
-  it("is null while the draft is not a number", () => {
-    expect(commitInt("", 1, 9)).toBeNull()
-    expect(commitInt("  ", 1, 9)).toBeNull()
-    expect(commitInt("abc", 1, 9)).toBeNull()
   })
 })
 

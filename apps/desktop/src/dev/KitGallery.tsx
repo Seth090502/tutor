@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client"
 
 import "@/index.css"
 import {
+  BarList,
   CountUp,
+  DecisionBadge,
   DeltaChip,
   Eyebrow,
   IdleDim,
@@ -13,13 +15,22 @@ import {
   KeycapGroup,
   Led,
   LedStatus,
+  LogLine,
+  LogList,
   Panel,
+  PasswordField,
   QuestionCard,
+  QuietNote,
+  Rise,
   Scrim,
+  Segmented,
   ServiceRow,
   Stat,
   StatRow,
   StateChip,
+  Stepper,
+  SwitchRow,
+  TextField,
   idleDimClass,
   type KeycapChoice,
 } from "@/components/kit"
@@ -143,6 +154,24 @@ function CardDemo({ mastery, id, defaultFlipped, live }: { mastery: "new" | "lea
   )
 }
 
+function CountOnceDemo() {
+  const [n, setN] = useState(41)
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-[40px] leading-none font-extralight tracking-[-0.04em]">
+        <CountUp value={n} once />
+      </span>
+      <button
+        type="button"
+        onClick={() => setN((v) => v + 7)}
+        className="border-hairline-strong hover:bg-world-soft w-fit rounded-full border px-3 py-1 font-mono text-[11px] tracking-[0.14em] uppercase"
+      >
+        Add 7 (snaps)
+      </button>
+    </div>
+  )
+}
+
 function CountUpDemo() {
   const [n, setN] = useState(128)
   return (
@@ -160,6 +189,100 @@ function CountUpDemo() {
           To {v}
         </button>
       ))}
+    </div>
+  )
+}
+
+/** Replays the one-shot entrance by remounting it. */
+function RiseDemo() {
+  const [run, setRun] = useState(0)
+  return (
+    <div className="flex flex-col gap-4">
+      <div key={run} id="rise-demo" className="grid gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Rise key={i} i={i} className="border-hairline bg-card rounded-xl border p-4">
+            <Eyebrow>Step {i}</Eyebrow>
+            <p className="text-ink-2 mt-2 text-sm">Waits {i * 70} ms, then rises 8px.</p>
+          </Rise>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setRun((n) => n + 1)}
+        className="border-hairline-strong hover:bg-world-soft w-fit rounded-full border px-3 py-1 font-mono text-[11px] tracking-[0.14em] uppercase"
+      >
+        Replay
+      </button>
+    </div>
+  )
+}
+
+function FormDemo() {
+  const [seg, setSeg] = useState<string | null>("dual")
+  const [optional, setOptional] = useState<number | null>(null)
+  const [n, setN] = useState(3)
+  const [on, setOn] = useState(false)
+  const [off, setOff] = useState(true)
+  return (
+    <div className="grid gap-8 md:grid-cols-2">
+      <div className="flex flex-col gap-6">
+        <div id="form-seg" className="flex flex-col gap-3">
+          <Sub>Segmented</Sub>
+          <Segmented
+            label="Mode"
+            value={seg}
+            onChange={setSeg}
+            options={[
+              { value: "dual", label: "Dual" },
+              { value: "position", label: "Position only" },
+              { value: "letter", label: "Letter only" },
+            ]}
+          />
+          <Segmented
+            label="Optional answer"
+            value={optional}
+            onChange={setOptional}
+            onClear={() => setOptional(null)}
+            options={[1, 2, 3, 4, 5].map((v) => ({ value: v, label: String(v) }))}
+          />
+        </div>
+        <div id="form-stepper" className="flex flex-col gap-3">
+          <Sub>Stepper</Sub>
+          <Stepper label="starting n" value={n} min={1} max={9} onChange={setN} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-6">
+        <div id="form-switch" className="divide-hairline flex flex-col divide-y">
+          <SwitchRow title="Lures" detail="n±1 repeats, tagged in the log." checked={on} onChange={setOn} note={on ? <DeltaChip tone="warn" text="Not comparable" /> : undefined} />
+          <SwitchRow title="Sound" detail="A quiet tick on each answer." checked={off} onChange={setOff} />
+        </div>
+        <div id="form-text" className="flex flex-col gap-3">
+          <Sub>TextField and PasswordField</Sub>
+          <TextField aria-label="Agent id" placeholder="agent_…" defaultValue="agent_01jx8k4v2e9f" />
+          <PasswordField aria-label="API key" placeholder="Paste the key" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HotkeyDemo({ id, hotkeys, sendOnPress }: { id: string; hotkeys: "all" | "letters" | "none"; sendOnPress?: boolean }) {
+  const [value, setValue] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
+  return (
+    <div id={id} className="flex flex-col gap-3">
+      <KeycapGroup
+        aria-label={`Hotkeys ${hotkeys}`}
+        choices={CHOICES.slice(0, 3)}
+        value={sendOnPress ? sent : value}
+        onChange={sendOnPress ? undefined : setValue}
+        onSubmit={sendOnPress ? setSent : undefined}
+        sendOnPress={sendOnPress}
+        hotkeys={hotkeys}
+      />
+      <p className="text-ink-3 font-mono text-[11px]" data-testid={`${id}-out`}>
+        {sendOnPress ? `sent: ${sent ?? "nothing"}` : `chosen: ${value ?? "nothing"}`}
+      </p>
     </div>
   )
 }
@@ -230,6 +353,26 @@ export function KitGallery() {
             <DeltaChip tone="bad" text="-4 pts" />
           </div>
           <CountUpDemo />
+          <div className="grid gap-6 md:grid-cols-[2fr_1fr_1fr]">
+            <div id="stat-sizes">
+              <Sub>Numeral follows its cell: wide, narrow, narrower</Sub>
+              <div className="grid grid-cols-[2fr_1.2fr_0.9fr] gap-px overflow-hidden rounded-2xl border border-hairline bg-hairline">
+                <Stat label="Wide" value={58764} caption="of 61,432 · 95.7%" />
+                <Stat label="Narrow" value={8731} />
+                <Stat label="Tiny" value={184} />
+              </div>
+            </div>
+            <div id="stat-md">
+              <Sub>Size md</Sub>
+              <StatRow className="grid-cols-1">
+                <Stat size="md" label="Errors" value={3} delta={{ text: "needs a look", tone: "bad" }} />
+              </StatRow>
+            </div>
+            <div id="countup-once">
+              <Sub>CountUp once</Sub>
+              <CountOnceDemo />
+            </div>
+          </div>
         </div>
       </Section>
 
@@ -249,6 +392,16 @@ export function KitGallery() {
               <p className="font-serif text-[19px] leading-snug italic">A local scrim keeps this sentence readable over colour.</p>
             </Scrim>
           </BusyBackdrop>
+        </div>
+      </Section>
+
+      <Section id="chips-light" eyebrow="On a plain surface" title="StateChip, light variant">
+        <div id="chips-light-row" className="flex flex-wrap gap-3">
+          <StateChip variant="light" state="Listening" pulse />
+          <StateChip variant="light" state="Thinking" tone="warn" pulse />
+          <StateChip variant="light" state="Speaking" tone="ok" />
+          <StateChip variant="light" state="Idle" dot={false} />
+          <StateChip variant="light" state="Error" tone="bad" />
         </div>
       </Section>
 
@@ -316,6 +469,92 @@ export function KitGallery() {
           <CardDemo id="card-mastered" mastery="mastered" />
           <CardDemo id="card-flipped" mastery="learning" defaultFlipped />
         </div>
+      </Section>
+
+      <Section id="hotkeys" eyebrow="Answer keys" title="KeycapGroup hotkeys and send on press">
+        <div className="grid gap-8 md:grid-cols-3">
+          <div>
+            <Sub>Letters only (A-C; 1-3 do nothing)</Sub>
+            <HotkeyDemo id="hk-letters" hotkeys="letters" />
+          </div>
+          <div>
+            <Sub>None (the page owns the keys)</Sub>
+            <HotkeyDemo id="hk-none" hotkeys="none" />
+          </div>
+          <div>
+            <Sub>Send on press (click; arrows only move)</Sub>
+            <HotkeyDemo id="hk-send" hotkeys="letters" sendOnPress />
+          </div>
+        </div>
+      </Section>
+
+      <Section id="verdict" eyebrow="Study cards" title="QuestionCard: no mastery, with a verdict">
+        <div className="grid gap-8 lg:grid-cols-2">
+          <div id="card-nomastery">
+            <QuestionCard mastery={null} eyebrow="Practice question" verdict={<DeltaChip tone="bad" text="Not quite" />} explanation={<p>The one-sided limits must agree.</p>}>
+              {Q}
+            </QuestionCard>
+          </div>
+          <div id="card-verdict">
+            <QuestionCard mastery={null} eyebrow="Practice question" defaultFlipped verdict={<DeltaChip tone="ok" text="Correct" />} explanation={<p>The one-sided limits agree, so the two-sided limit exists.</p>}>
+              {Q}
+            </QuestionCard>
+          </div>
+        </div>
+      </Section>
+
+      <Section id="lists" eyebrow="Shared pieces" title="BarList, DecisionBadge, QuietNote">
+        <div className="grid gap-8 md:grid-cols-2">
+          <div id="barlist">
+            <BarList
+              label="Documents by domain"
+              capitalize
+              empty="No documents yet."
+              rows={[
+                { label: "math", value: 72, color: "var(--chart-1)" },
+                { label: "english", value: 41, color: "var(--chart-2)" },
+                { label: "science", value: 33, color: "var(--chart-3)" },
+                { label: "unsorted", value: 16 },
+              ]}
+            />
+            <div className="mt-6">
+              <Sub>Empty</Sub>
+              <BarList label="Nothing" rows={[]} empty="No documents yet. Put files in a subject shelf, then run Ingest." />
+            </div>
+          </div>
+          <div className="flex flex-col gap-6">
+            <div id="badges" className="flex flex-wrap gap-3">
+              <DecisionBadge shape="diamond" label="Baseline" color="var(--ink-2)" />
+              <DecisionBadge shape="circle" label="Keep" color="var(--ok)" />
+              <DecisionBadge shape="cross" label="Revert" color="var(--bad)" />
+              <DecisionBadge shape="triangle" label="Pending" color="var(--warn)" />
+            </div>
+            <div id="notes" className="flex flex-col gap-3">
+              <QuietNote tone="warn">Could not refresh: rag-engine answered slowly. Showing the last reading.</QuietNote>
+              <QuietNote tone="bad">Could not refresh: cannot read the runs directory.</QuietNote>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section id="log" eyebrow="Jobs" title="LogList and LogLine (typed, with a check stamp)">
+        <div id="log-demo">
+          <LogList label="Ingest log">
+            <LogLine time="16:39:24" label="queued" detail="ingest 3f2a91c4" />
+            <LogLine time="16:39:26" label="running" detail="ingest 3f2a91c4" />
+            <LogLine time="16:39:32" label="done" detail="finished in 6.0s" mark="check" />
+            <LogLine time="16:40:01" label="failed" detail="embedding provider returned 429: rate limited" tone="bad" mark="cross" />
+            <LogLine time="16:40:09" label="running" detail="ingest 9b1c77d0" caret />
+          </LogList>
+        </div>
+      </Section>
+
+      <Section id="rise" eyebrow="Motion" title="Rise: one-shot staggered entrance">
+        <RiseDemo />
+      </Section>
+
+      <Section id="forms" eyebrow="Controls" title="Segmented, Stepper, SwitchRow, TextField, PasswordField">
+        <FormDemo />
       </Section>
 
       <Section id="idle" eyebrow="Session chrome" title="IdleDim and useIdle">

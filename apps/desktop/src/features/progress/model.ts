@@ -167,6 +167,17 @@ export const LEVEL_NAMES = ["Guess", "Unsure", "Fairly sure", "Certain"]
 /** Level 1 to 4 read as 25, 50, 75 and 95 percent (PEDAGOGY.md): a reference line, not a target. */
 export const expectedPct = (level: number) => [25, 50, 75, 95][level - 1] ?? 0
 
+/** 95% Wilson score interval for a share, in percent (0 to 100). Null with no attempts. Sound for small counts, unlike a normal approximation. */
+export function wilsonPct(correct: number, attempts: number): [number, number] | null {
+  if (attempts <= 0) return null
+  const z = 1.96
+  const p = Math.min(1, Math.max(0, correct / attempts))
+  const z2n = (z * z) / attempts
+  const centre = (p + z2n / 2) / (1 + z2n)
+  const half = (z * Math.sqrt((p * (1 - p)) / attempts + (z * z) / (4 * attempts * attempts))) / (1 + z2n)
+  return [Math.max(0, 100 * (centre - half)), Math.min(100, 100 * (centre + half))]
+}
+
 export type CalibrationRow = { level: number; name: string; attempts: number; correct: number; pct: number | null }
 
 export function calibrationRows(cal: Calibration[]): CalibrationRow[] {
@@ -180,6 +191,32 @@ export function calibrationRows(cal: Calibration[]): CalibrationRow[] {
 
 /** Attempts below this are plotted but flagged as a small sample. */
 export const SMALL_SAMPLE = 5
+
+/**
+ * The calibration plot as chart-kit input: one category per confidence level, the percent correct with its
+ * 95% Wilson interval, and the dashed reference line. A level with no attempts has no point.
+ */
+export function calibrationSeries(rows: CalibrationRow[]): { series: Series[]; labels: string[] } {
+  const actual = rows.flatMap((r) => {
+    if (r.pct === null) return []
+    const ci = wilsonPct(r.correct, r.attempts)
+    return [
+      {
+        x: r.level - 1,
+        y: r.pct,
+        ...(ci ? { lo: ci[0], hi: ci[1] } : {}),
+        note: `${r.correct} of ${r.attempts} right${r.attempts < SMALL_SAMPLE ? ", small sample" : ""}`,
+      },
+    ]
+  })
+  return {
+    labels: rows.map((r) => r.name),
+    series: [
+      { id: "actual", label: "Correct", points: actual },
+      { id: "reference", label: "Reference", color: "var(--ink-3)", dashed: true, points: rows.map((r) => ({ x: r.level - 1, y: expectedPct(r.level) })) },
+    ],
+  }
+}
 
 export function calibrationTable(rows: CalibrationRow[]): TableData {
   return {

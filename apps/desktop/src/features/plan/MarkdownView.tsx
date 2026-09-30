@@ -1,12 +1,11 @@
 // Renders parsed plan markdown as an editorial reading column: serif body, Geist headings with
 // mono eyebrows, hairline tables. Each `##` section is one panel that rises in once on mount.
-import { Fragment, type CSSProperties, type ReactNode } from "react"
+import { Fragment, type ReactNode } from "react"
 
-import { Eyebrow } from "@/components/kit"
+import { Eyebrow, riseStyle } from "@/components/kit"
 import { cn } from "@/lib/utils"
 
 import type { Block, Heading, List } from "./markdown"
-import "./rise.css"
 
 export const headingDomId = (h: Heading) => `plan-${h.id}`
 
@@ -193,7 +192,7 @@ export function MarkdownView({ blocks, headings }: { blocks: Block[]; headings: 
   return (
     <div className="flex flex-col">
       {groupSections(blocks, headings).map((group, g) => {
-        const style = { "--i": g + 1 } as CSSProperties
+        const style = riseStyle(g + 1)
         const [head, ...rest] = group.items
         if (group.heading) {
           return (
@@ -201,7 +200,7 @@ export function MarkdownView({ blocks, headings }: { blocks: Block[]; headings: 
               key={g}
               style={style}
               aria-labelledby={headingDomId(group.heading)}
-              className="screen-rise border-hairline mt-14 flex flex-col gap-[1.15em] border-t pt-9"
+              className="kit-rise border-hairline mt-14 flex flex-col gap-[1.15em] border-t pt-9"
             >
               <header className="mb-1 flex flex-col gap-3.5">
                 <Eyebrow rule className="text-muted-foreground">{numbers.get(group.heading.id)}</Eyebrow>
@@ -212,7 +211,7 @@ export function MarkdownView({ blocks, headings }: { blocks: Block[]; headings: 
           )
         }
         return (
-          <div key={g} style={style} className="screen-rise flex flex-col gap-[1.15em]">
+          <div key={g} style={style} className="kit-rise flex flex-col gap-[1.15em]">
             {group.items.map((item, i) => renderBlock(item.block, i, item.heading))}
           </div>
         )

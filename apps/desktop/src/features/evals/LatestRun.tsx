@@ -2,9 +2,8 @@
 import { useId, type ReactNode } from "react"
 
 import { RangeBars, type RangeRow } from "@/components/charts"
-import { Eyebrow, Panel, Stat } from "@/components/kit"
-import { ciOf, deltaKind, fmt3, fmtDateTime, fmtDelta, fmtUsd, metricNames, metricOf, orderMetrics, TEST_COLOR, TRAIN_COLOR, type Annotated } from "./model"
-import { DecisionBadge } from "./parts"
+import { DecisionBadge, Eyebrow, Panel, Stat } from "@/components/kit"
+import { ciOf, decisionBadge, deltaKind, fmt3, fmtDateTime, fmtDelta, fmtUsd, metricNames, metricOf, orderMetrics, TEST_COLOR, TRAIN_COLOR, type Annotated } from "./model"
 
 /** Rows for the two splits of one run, one row per metric. Test first: it is the one to trust. */
 function metricRows(item: Annotated): RangeRow[] {
@@ -48,7 +47,7 @@ export function LatestRun({ item, metric, animate }: { item: Annotated; metric: 
     : undefined
 
   return (
-    <Panel className="@container p-5 sm:p-6" aria-labelledby={titleId}>
+    <Panel className="@container" aria-labelledby={titleId}>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-3">
           <Eyebrow rule>
@@ -58,7 +57,7 @@ export function LatestRun({ item, metric, animate }: { item: Annotated; metric: 
             {run.change}
           </h2>
         </div>
-        <DecisionBadge decision={item.decision} className="mt-0.5" />
+        <DecisionBadge {...decisionBadge(item.decision)} className="mt-0.5" />
       </div>
 
       <div className="grid gap-x-12 gap-y-8 @3xl:grid-cols-[16rem_minmax(0,1fr)]">

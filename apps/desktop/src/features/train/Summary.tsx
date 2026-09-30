@@ -165,7 +165,7 @@ export function SessionSummary({ record }: { record: NBackSession }) {
     <Panel
       eyebrow={transfer ? "Measurement" : "Session complete"}
       title={transfer ? "Transfer check" : `Level ${first} to ${last}`}
-      className="train-rise"
+      className="kit-rise"
     >
       <div className="flex flex-col gap-6">
         <StatRow>

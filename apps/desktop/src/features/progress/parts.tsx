@@ -1,22 +1,9 @@
-// Small pieces local to the Progress screen: entrance wrapper, notices, state blocks, an error
-// boundary and a one-time intro count for the gauge numeral.
-import { Component, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
+// Small pieces local to the Progress screen: notices, state blocks, an error boundary and a width hook.
+import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react"
 import { RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
 
 import { Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
-import { useReducedMotion } from "@/lib/motion"
-import "./progress.css"
-
-/** One-shot entrance: rises 8px and fades, delayed by `index` x 70 ms. */
-export function Rise({ index, className, children }: { index: number; className?: string; children: ReactNode }) {
-  return (
-    <div className={cn("prog-rise min-w-0", className)} style={{ "--i": index } as CSSProperties}>
-      {children}
-    </div>
-  )
-}
 
 /** A failed or partial load. Glyph and words carry the meaning; the tint is secondary. */
 export function Notice({ children }: { children: ReactNode }) {
@@ -83,35 +70,6 @@ export class ScreenBoundary extends Component<{ children: ReactNode }, { error: 
     }
     return this.props.children
   }
-}
-
-/**
- * Counts 0 to `value` once, the first time a value arrives, then follows later values directly. The
- * gauge kit takes its numeral as text, so the count runs here. Instant under reduced motion.
- */
-export function useIntroCount(value: number, duration = 900): number {
-  const reduced = useReducedMotion()
-  const done = useRef(false)
-  const [shown, setShown] = useState(reduced ? value : 0)
-  useEffect(() => {
-    if (done.current || reduced || value <= 0) {
-      done.current = true
-      setShown(value)
-      return
-    }
-    let raf = 0
-    let start = 0
-    const step = (now: number) => {
-      if (!start) start = now
-      const t = Math.min(1, (now - start) / duration)
-      setShown(Math.round(value * (1 - Math.pow(1 - t, 3))))
-      if (t < 1) raf = requestAnimationFrame(step)
-      else done.current = true
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [value, reduced, duration])
-  return shown
 }
 
 /** Width in px of the element the ref is attached to; `fallback` until it is measured. */

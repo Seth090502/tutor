@@ -1,12 +1,11 @@
 // History: the training curve (trained task only, comparable sessions), d' per stream, CSV export, and
 // the transfer checks in a separate panel. Nothing here is a score of ability.
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 
 import { ChartFrame, LineChart, lineTable, type Series } from "@/components/charts"
-import { Eyebrow, LedStatus, Panel } from "@/components/kit"
+import { Eyebrow, LedStatus, Panel, Segmented, riseStyle } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { Segmented } from "./ui"
 import { CURVE_WINDOW, trainingCurve, transferStatus } from "./view"
 import type { NBackSummary } from "./types"
 import type { TrainMode } from "./Setup"
@@ -14,7 +13,7 @@ import "./train.css"
 
 const HONEST = "n-back scores are noisy and do not measure intelligence."
 const MODE_LABEL: Record<TrainMode, string> = { dual: "Dual", position: "Position only", letter: "Letter only" }
-const FRAME = "border-0 bg-transparent p-0"
+const FRAME = "border-0 bg-transparent p-0 [box-shadow:none]"
 
 const fmtDate = (t: number) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 const fmtN = (v: number) => String(+v.toFixed(2))
@@ -112,8 +111,8 @@ export function HistoryPanel({
     <Panel
       eyebrow="History"
       title="Training curve"
-      className="train-rise"
-      style={{ "--i": 4 } as CSSProperties}
+      className="kit-rise"
+      style={riseStyle(4)}
       actions={
         <Button variant="outline" size="sm" onClick={onExport} disabled={sessions.length === 0}>
           Export trials (CSV)
@@ -173,8 +172,8 @@ export function TransferChecks({
       eyebrow="Measurement"
       title="Transfer check"
       actions={<LedStatus tone={status.tone} state={status.state} />}
-      className="train-rise"
-      style={{ "--i": 5 } as CSSProperties}
+      className="kit-rise"
+      style={riseStyle(5)}
     >
       {children}
       <div className="border-hairline mt-6 border-t pt-5">

@@ -1,6 +1,8 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
+import { Eyebrow } from "../kit/Eyebrow"
+import { HEADER, SURFACE } from "../kit/surface"
 import { EASE_SPRING } from "./_motion"
 import type { TableData } from "./types"
 import "./charts.css"
@@ -135,16 +137,12 @@ export function ChartFrame({ title, subtitle, table, children, defaultView = "ch
   const [view, setView] = useState<View>(defaultView)
   const id = useId()
   return (
-    <section aria-labelledby={`${id}-t`} className={cn("border-hairline bg-card min-w-0 rounded-2xl border p-5", className)}>
-      <header className="mb-4 flex items-start justify-between gap-4">
+    <section aria-labelledby={`${id}-t`} className={cn(SURFACE, "min-w-0", className)}>
+      <header className={HEADER}>
         <div className="min-w-0">
-          <h3
-            id={`${id}-t`}
-            className="text-ink-3 flex items-center gap-3 font-mono text-[11px] font-normal tracking-[0.18em] uppercase"
-          >
-            <span aria-hidden="true" className="bg-hairline-strong h-px w-6 shrink-0" />
+          <Eyebrow as="h3" rule id={`${id}-t`} className="flex">
             {title}
-          </h3>
+          </Eyebrow>
           {subtitle ? <p className="text-ink-2 mt-2 max-w-[60ch] text-sm leading-snug text-pretty">{subtitle}</p> : null}
         </div>
         <ViewToggle view={view} onChange={setView} label={`${title} view`} />

@@ -1,11 +1,10 @@
 // After the session: the check-in (strategy, expectation, sleep, exercise, fatigue). Every question is
 // optional; answers are logged with the session and never shown as a score.
-import { useId, useState, type CSSProperties, type ReactNode } from "react"
+import { useId, useState, type ReactNode } from "react"
 
-import { Panel } from "@/components/kit"
+import { Panel, Segmented, riseStyle } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { Segmented } from "./ui"
 import type { Checkin } from "./types"
 import "./train.css"
 
@@ -35,7 +34,7 @@ export function CheckinForm({ onSubmit, saving }: { onSubmit: (c: Checkin) => vo
   }
 
   return (
-    <Panel eyebrow="Check-in" title="Before you go" className="train-rise" style={{ "--i": 1 } as CSSProperties}>
+    <Panel eyebrow="Check-in" title="Before you go" className="kit-rise" style={riseStyle(1)}>
       <p className="text-ink-2 -mt-2 mb-6 max-w-[60ch] font-serif text-[15px] leading-relaxed italic">
         Five optional questions. They are logged with the session so a later comparison has something to go on.
       </p>

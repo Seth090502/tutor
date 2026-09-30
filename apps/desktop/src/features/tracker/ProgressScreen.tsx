@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { BookOpenCheck, RefreshCw, ServerOff } from "lucide-react"
 
-import { Panel } from "@/components/kit"
+import { Panel, Rise } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
 import { ActivityChart, ReviewDiscs } from "@/features/progress/Activity"
@@ -11,7 +11,7 @@ import { Hero } from "@/features/progress/Hero"
 import { AssistancePanel, CalibrationPanel } from "@/features/progress/Learning"
 import { MasteryMap, TopicList } from "@/features/progress/Mastery"
 import { DAYS, errorText, type Analytics, type Summary, type Topic } from "@/features/progress/model"
-import { Notice, Quiet, Rise, ScreenBoundary, StateBlock } from "@/features/progress/parts"
+import { Notice, Quiet, ScreenBoundary, StateBlock } from "@/features/progress/parts"
 import { ProgressSkeleton } from "@/features/progress/Skeleton"
 
 type Loaded = {
@@ -130,10 +130,10 @@ function ProgressBody({ data, loading, onRefresh }: { data: Loaded; loading: boo
 
           {analytics ? (
             <>
-              <Rise index={2}>
+              <Rise i={2}>
                 <ReviewDiscs analytics={analytics} />
               </Rise>
-              <Rise index={3}>
+              <Rise i={3}>
                 <ActivityChart analytics={analytics} />
               </Rise>
             </>
@@ -144,7 +144,7 @@ function ProgressBody({ data, loading, onRefresh }: { data: Loaded; loading: boo
           {learning.length > 0 ? (
             <div className={learning.length > 1 ? "grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : undefined}>
               {learning.map((panel, i) => (
-                <Rise key={panel.key} index={4 + i}>
+                <Rise key={panel.key} i={4 + i}>
                   {panel}
                 </Rise>
               ))}
@@ -153,10 +153,10 @@ function ProgressBody({ data, loading, onRefresh }: { data: Loaded; loading: boo
 
           {topics ? (
             <>
-              <Rise index={6}>
+              <Rise i={6}>
                 <MasteryMap topics={topics} />
               </Rise>
-              <Rise index={7}>
+              <Rise i={7}>
                 <TopicList topics={topics} />
               </Rise>
             </>

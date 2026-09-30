@@ -1,16 +1,14 @@
 // Library: rag-engine status, survey projections and job control (contract C1).
-import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
+import { Component, type ErrorInfo, type ReactNode } from "react"
 
 import { ChartFrame, StackedBar, stackTable, type StackSegment } from "@/components/charts"
-import { Led, Panel, Stat, StatRow } from "@/components/kit"
-import { BarRows, NEUTRAL_BAR } from "@/features/library/BarRows"
+import { BarList, Led, NEUTRAL_BAR, Panel, Stat, StatRow, riseStyle } from "@/components/kit"
 import { fmtInt, fmtPct } from "@/features/library/format"
 import { JobsPanel } from "@/features/library/JobsPanel"
 import { ErrorState, LoadingState, OfflineState } from "@/features/library/LibraryStates"
 import { domainColor, sortedRows, type Status } from "@/features/library/logic"
 import { SurveyPanel } from "@/features/library/SurveyPanel"
 import { useLibrary } from "@/features/library/useLibrary"
-import "@/features/library/library.css"
 
 // Pages by triage class. The first three take the chart palette in order; an empty page is neutral.
 const TRIAGE: { id: string; label: string; color?: string }[] = [
@@ -21,7 +19,7 @@ const TRIAGE: { id: string; label: string; color?: string }[] = [
 ]
 
 /** Entrance stagger: each block rises 8px and fades, 70 ms after the one before. */
-const rise = (i: number) => ({ "--i": i }) as CSSProperties
+const rise = riseStyle
 
 class ScreenBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -76,7 +74,7 @@ function Loaded({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 pt-6 pb-10">
-      <div className="lib-rise flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <div className="kit-rise flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <span className="border-hairline bg-card inline-flex max-w-full items-center gap-3 rounded-full border py-1.5 pr-4 pl-3">
           <Led tone={provider ? "ok" : "off"} />
           <span className="text-ink-3 font-mono text-[11px] tracking-[0.18em] uppercase">Embeddings</span>
@@ -98,32 +96,32 @@ function Loaded({
         </p>
       ) : null}
 
-      <StatRow className="lib-stats lib-rise grid-cols-3" style={rise(1)}>
+      <StatRow className="kit-rise grid-cols-3" style={rise(1)}>
         <Stat label="Documents" value={status.documents?.total ?? 0} />
         <Stat label="Pages" value={pagesTotal} />
         <Stat
           label="Chunks embedded"
           value={chunks.embedded}
-          unit={chunks.total > 0 ? `of ${fmtInt(chunks.total)} · ${fmtPct(chunks.embedded, chunks.total)}` : "of 0"}
+          caption={chunks.total > 0 ? `of ${fmtInt(chunks.total)} · ${fmtPct(chunks.embedded, chunks.total)}` : "of 0"}
         />
         <Stat
-          className="lib-stat-sm"
+          size="md"
           label="OCR pending"
           value={status.ocr?.pending_pages ?? 0}
           unit={`pages · ${fmtInt(status.ocr?.done_pages)} done`}
         />
         <Stat
-          className="lib-stat-sm"
+          size="md"
           label="Errors"
           value={errors}
           delta={errors > 0 ? { text: "needs a look", tone: "bad" } : { text: "none", tone: "ok" }}
         />
-        <Stat className="lib-stat-sm" label="Spend" value={spend} decimals={spend > 0 && spend < 1 ? 4 : 2} unit="USD" />
+        <Stat size="md" label="Spend" value={spend} decimals={spend > 0 && spend < 1 ? 4 : 2} unit="USD" />
       </StatRow>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        <JobsPanel className="lib-rise h-full" style={rise(2)} job={job} busy={busy} notice={notice} onStart={(k) => void start(k)} />
-        <div className="lib-rise min-w-0 [&>section]:h-full" style={rise(3)}>
+        <JobsPanel className="kit-rise h-full" style={rise(2)} job={job} busy={busy} notice={notice} onStart={(k) => void start(k)} />
+        <div className="kit-rise min-w-0 [&>section]:h-full" style={rise(3)}>
           <ChartFrame
             title="Pages by triage class"
             subtitle="Scanned and math-heavy pages wait for OCR."
@@ -139,22 +137,22 @@ function Loaded({
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Panel className="lib-rise" style={rise(4)} eyebrow="Corpus" title="Documents by domain">
-          <BarRows
+        <Panel className="kit-rise" style={rise(4)} eyebrow="Corpus" title="Documents by domain">
+          <BarList
             label="Documents by domain"
-            rows={sortedRows(status.documents?.by_domain)}
-            colorFor={domainColor}
+            rows={sortedRows(status.documents?.by_domain).map((r) => ({ ...r, color: domainColor(r.label) }))}
+            capitalize
             empty="No documents yet. Put files in a subject shelf, then run Ingest."
           />
         </Panel>
-        <Panel className="lib-rise" style={rise(5)} eyebrow="Corpus" title="Documents by source type">
-          <BarRows label="Documents by source type" rows={sortedRows(status.documents?.by_source_type)} empty="No documents yet." />
+        <Panel className="kit-rise" style={rise(5)} eyebrow="Corpus" title="Documents by source type">
+          <BarList label="Documents by source type" rows={sortedRows(status.documents?.by_source_type)} capitalize empty="No documents yet." />
         </Panel>
       </div>
 
-      <SurveyPanel className="lib-rise" style={rise(6)} survey={survey} error={surveyError} />
+      <SurveyPanel className="kit-rise" style={rise(6)} survey={survey} error={surveyError} />
 
-      <footer className="lib-rise border-hairline text-ink-3 flex flex-col gap-1.5 border-t pt-4 font-mono text-[11px] tracking-[0.04em]" style={rise(7)}>
+      <footer className="kit-rise border-hairline text-ink-3 flex flex-col gap-1.5 border-t pt-4 font-mono text-[11px] tracking-[0.04em]" style={rise(7)}>
         <p className="min-w-0 truncate" title={status.data_dir}>
           Data {status.data_dir}
         </p>

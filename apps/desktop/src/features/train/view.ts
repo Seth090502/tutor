@@ -34,13 +34,6 @@ export function transferStatus(days: number | null): TransferStatus {
   return { tone: "ok", state: "Not due", detail: `Last check ${days} days ago; next in ${TRANSFER_EVERY_DAYS - days} days.` }
 }
 
-/** Parse a typed integer and clamp it into range; null while the text is not a whole number. */
-export function commitInt(draft: string, min: number, max: number): number | null {
-  if (draft.trim() === "") return null
-  const v = Number(draft)
-  return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : null
-}
-
 /** Sum counts over blocks; d' and c are the mean of the per-block values. */
 export function pooled(ms: Metrics[]): Metrics | null {
   if (ms.length === 0) return null

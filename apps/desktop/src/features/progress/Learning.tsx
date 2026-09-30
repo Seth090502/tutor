@@ -2,13 +2,13 @@
 // Both come from contract C7 fields and are only rendered when the backend sends them.
 import { useMemo } from "react"
 
-import { ChartFrame, StackedBar, stackTable } from "@/components/charts"
+import { ChartFrame, LineChart, StackedBar, stackTable } from "@/components/charts"
 import { CountUp, Eyebrow, Stat, StatRow } from "@/components/kit"
-import { CalibrationPlot } from "./CalibrationPlot"
 import {
   SMALL_SAMPLE,
   assistanceSegments,
   calibrationRows,
+  calibrationSeries,
   calibrationTable,
   fmtInt,
   type Assistance,
@@ -18,6 +18,7 @@ import { Quiet } from "./parts"
 
 export function CalibrationPanel({ calibration, days }: { calibration: Calibration[]; days: number }) {
   const rows = useMemo(() => calibrationRows(calibration), [calibration])
+  const plot = useMemo(() => calibrationSeries(rows), [rows])
   const total = rows.reduce((a, r) => a + r.attempts, 0)
   const small = rows.some((r) => r.attempts > 0 && r.attempts < SMALL_SAMPLE)
 
@@ -33,7 +34,7 @@ export function CalibrationPanel({ calibration, days }: { calibration: Calibrati
       footer={
         total === 0 ? undefined : (
           <span>
-            Dashed line: what each level would imply (25, 50, 75, 95%). It is a reference, not a target. Above it you did better than you felt; below it, worse.
+            Dashed line: what each level would imply (25, 50, 75, 95%). It is a reference, not a target. Above it you did better than you felt; below it, worse. Whiskers show the 95% confidence interval.
             {small ? ` Levels with fewer than ${SMALL_SAMPLE} attempts are noisy.` : ""}
           </span>
         )
@@ -43,7 +44,15 @@ export function CalibrationPanel({ calibration, days }: { calibration: Calibrati
         <Quiet>No checked attempts with a confidence rating yet. Rate how sure you are before each answer and this chart fills in.</Quiet>
       ) : (
         <div className="flex flex-col gap-5">
-          <CalibrationPlot rows={rows} name="Percent correct by confidence level, against a reference line" />
+          <LineChart
+            name="Percent correct by confidence level, against a reference line"
+            series={plot.series}
+            xKind="category"
+            xLabels={plot.labels}
+            yDomain={[0, 100]}
+            yFormat={(v) => `${Math.round(v)}%`}
+            height={240}
+          />
           <StatRow className="grid-cols-2">
             {rows.map((r) => (
               <Stat

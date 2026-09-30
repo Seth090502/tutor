@@ -3,11 +3,10 @@ import { useId, useState } from "react"
 import { ArrowDown, ArrowUp, ChevronRight, Minus } from "lucide-react"
 
 import { RangeBars, type RangeRow } from "@/components/charts"
-import { Eyebrow, Panel } from "@/components/kit"
+import { DecisionBadge, Eyebrow, Panel } from "@/components/kit"
 import { cn } from "@/lib/utils"
 import type { EvalRun } from "@/lib/backend"
-import { ciOf, deltaKind, fmt3, fmtDateTime, fmtDelta, fmtShortDate, fmtUsd, metricNames, metricOf, orderMetrics, TEST_COLOR, TRAIN_COLOR, type Annotated } from "./model"
-import { DecisionBadge } from "./parts"
+import { ciOf, deltaKind, fmt3, fmtDateTime, fmtDelta, fmtShortDate, fmtUsd, metricNames, metricOf, orderMetrics, decisionBadge, TEST_COLOR, TRAIN_COLOR, type Annotated } from "./model"
 
 const VISIBLE = 10
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-world"
@@ -61,7 +60,7 @@ function RunDetail({ id, item, metric }: { id: string; item: Annotated; metric: 
   const config = Object.entries(run.config ?? {})
 
   return (
-    <div id={id} role="region" aria-label={`Run ${item.n} detail`} className="ev-rise @container px-2 pt-2 pb-7">
+    <div id={id} role="region" aria-label={`Run ${item.n} detail`} className="kit-rise @container px-2 pt-2 pb-7">
       <dl className="text-ink-3 m-0 mb-5 flex flex-wrap gap-x-6 gap-y-1.5 font-mono text-[11px] leading-snug">
         <div className="min-w-0">
           <dt className="sr-only">Run id</dt>
@@ -140,7 +139,7 @@ function RunRow({ item, metric, open, onToggle, showEval }: { item: Annotated; m
         <span className="min-w-0">
           <span className="line-clamp-2 text-[14px] leading-snug @2xl:line-clamp-1">{run.change}</span>
           <span className="mt-1.5 flex min-w-0 items-center gap-2.5 @2xl:hidden">
-            <DecisionBadge decision={item.decision} />
+            <DecisionBadge {...decisionBadge(item.decision)} />
             <span className="text-ink-3 truncate font-mono text-[11px]">
               {fmtDateTime(run.created_at)}
               {showEval ? ` · ${run.eval}` : ""}
@@ -148,7 +147,7 @@ function RunRow({ item, metric, open, onToggle, showEval }: { item: Annotated; m
           </span>
           {showEval ? <span className="text-ink-3 mt-1 hidden truncate font-mono text-[11px] @2xl:block">{run.eval}</span> : null}
         </span>
-        <DecisionBadge decision={item.decision} className="hidden justify-self-start @2xl:inline-flex" />
+        <DecisionBadge {...decisionBadge(item.decision)} className="hidden justify-self-start @2xl:inline-flex" />
         <span className="flex items-baseline justify-end gap-3">
           <span className="w-[3.25rem] text-right font-mono text-[15px] tabular-nums">{item.test !== null ? fmt3(item.test) : <span className="text-ink-3">{"—"}</span>}</span>
           <span className="flex w-[4.25rem] justify-end">
@@ -176,7 +175,7 @@ export function RunList({ items, metric }: { items: Annotated[]; metric: string 
 
   return (
     <Panel
-      className="@container p-5 sm:p-6"
+      className="@container"
       eyebrow={`All runs · ${items.length}`}
       actions={<span className="text-ink-3 hidden font-mono text-[11px] @lg:inline">{`Held-out test ${metric}, change vs last kept run`}</span>}
     >

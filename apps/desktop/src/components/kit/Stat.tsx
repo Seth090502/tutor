@@ -37,16 +37,21 @@ export function DeltaChip({ text, tone, className }: { text: string; tone: Tone;
 
 type StatSize = "md" | "lg" | "xl"
 
+// Sized from the cell's own width (cqi), so a narrow cell shrinks its numeral instead of overflowing it.
+// Md reaches its maximum in a cell about 200px wide inside its padding, lg in one about 267px, xl in one about 255px.
 const NUMERAL: Record<StatSize, string> = {
-  md: "text-[40px] font-light",
-  lg: "text-[56px] font-extralight",
-  xl: "text-[clamp(56px,7vw,92px)] font-extralight",
+  md: "text-[clamp(22px,20cqi,40px)] font-light",
+  lg: "text-[clamp(24px,21cqi,56px)] font-extralight",
+  xl: "text-[clamp(56px,36cqi,92px)] font-extralight",
 }
 
 type StatProps = Omit<ComponentProps<"div">, "children"> & {
   label: ReactNode
   value: number | string
+  /** Small mono text beside the numeral. */
   unit?: ReactNode
+  /** A line under the numeral, e.g. "of 61,432 · 95.7%". */
+  caption?: ReactNode
   delta?: { text: string; tone: Tone }
   size?: StatSize
   decimals?: number
@@ -54,11 +59,12 @@ type StatProps = Omit<ComponentProps<"div">, "children"> & {
   animate?: boolean
 }
 
-/** Big light tabular numeral over a mono caps label, optional unit and delta chip. */
+/** Big light tabular numeral over a mono caps label, with an optional unit, delta chip and caption. */
 export function Stat({
   label,
   value,
   unit,
+  caption,
   delta,
   size = "lg",
   decimals = 0,
@@ -67,16 +73,19 @@ export function Stat({
   ...props
 }: StatProps) {
   return (
-    <div data-slot="kit-stat" className={cn("bg-card flex min-w-0 flex-col gap-3.5 px-6 py-5", className)} {...props}>
+    <div data-slot="kit-stat" className={cn("bg-card @container flex min-w-0 flex-col gap-3.5 px-6 py-5", className)} {...props}>
       <dt>
         <Eyebrow>{label}</Eyebrow>
       </dt>
-      <dd className="m-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-2">
-        <span className={cn("leading-none tracking-[-0.04em] tabular-nums", NUMERAL[size])}>
-          {typeof value === "number" && animate ? <CountUp value={value} decimals={decimals} /> : value}
-        </span>
-        {unit ? <span className="text-ink-2 font-mono text-xs tracking-[0.06em]">{unit}</span> : null}
-        {delta ? <DeltaChip {...delta} className="self-center" /> : null}
+      <dd className="m-0 flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-2">
+          <span className={cn("leading-none tracking-[-0.04em] tabular-nums", NUMERAL[size])}>
+            {typeof value === "number" && animate ? <CountUp value={value} decimals={decimals} /> : value}
+          </span>
+          {unit ? <span className="text-ink-2 font-mono text-xs tracking-[0.06em]">{unit}</span> : null}
+          {delta ? <DeltaChip {...delta} className="self-center" /> : null}
+        </div>
+        {caption ? <p className="text-ink-2 font-mono text-xs tracking-[0.06em]">{caption}</p> : null}
       </dd>
     </div>
   )

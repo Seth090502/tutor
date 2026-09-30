@@ -105,10 +105,72 @@
 .kit-chip[data-tone="ok"] { --led: color-mix(in oklab, var(--ok) 55%, white); }
 .kit-chip[data-tone="warn"] { --led: color-mix(in oklab, var(--warn) 55%, white); }
 .kit-chip[data-tone="bad"] { --led: color-mix(in oklab, var(--bad) 55%, white); }
+/* Light variant: a card-coloured chip for text on a plain surface, where glass would look like a hole. */
+.kit-chip[data-variant="light"] {
+  --led: var(--world);
+  background: var(--card);
+  border-color: var(--hairline-strong);
+  color: var(--foreground);
+  box-shadow: none;
+}
+.kit-chip[data-variant="light"][data-tone="ok"] { --led: var(--ok); }
+.kit-chip[data-variant="light"][data-tone="warn"] { --led: var(--warn); }
+.kit-chip[data-variant="light"][data-tone="bad"] { --led: var(--bad); }
+.kit-chip[data-variant="light"] .kit-chip-dot {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--led) 50%, black);
+}
 .kit-chip-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--led);
   box-shadow: 0 0 8px var(--led);
+}
+
+/* ---- One-shot entrances. Transform and opacity only; nothing loops; reduced motion shows the end state. ---- */
+
+/* A block rises 8px and fades in, staggered 70 ms by --i, capped at step 9 so the last lands inside 1.2 s. */
+@keyframes kit-rise {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+.kit-rise {
+  animation: kit-rise 520ms var(--ease-soft) backwards;
+  animation-delay: calc(min(var(--i, 0), 9) * 70ms);
+}
+
+/* Bars grow from the left once, staggered by row (--i). */
+.kit-bar {
+  transform-origin: left center;
+  animation: kit-grow 600ms var(--ease-soft) both;
+  animation-delay: calc(250ms + var(--i, 0) * 50ms);
+}
+@keyframes kit-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+/* Log lines type in character by character (mono, so steps() lands on character edges); --ch is the count. */
+.kit-type {
+  animation: kit-type calc(var(--ch, 20) * 18ms) steps(var(--ch, 20), end) both;
+  animation-delay: 60ms;
+}
+@keyframes kit-type {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+/* A completion check stamps down with a little overshoot. */
+.kit-stamp {
+  animation: kit-stamp 620ms cubic-bezier(.3, 1.6, .4, 1) both;
+  animation-delay: 240ms;
+}
+@keyframes kit-stamp {
+  from { opacity: 0; transform: scale(2.1) rotate(-16deg); }
+  55% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kit-rise, .kit-bar, .kit-type, .kit-stamp { animation: none; }
 }

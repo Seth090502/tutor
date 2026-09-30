@@ -9,6 +9,7 @@ import {
   bandPath,
   linePath,
   linearScale,
+  loneEntries,
   markerPath,
   MONO_CHAR_W,
   nearestIndex,
@@ -17,7 +18,9 @@ import {
   repelLabels,
   runsOf,
   textWidth,
+  tickStride,
   truncateLabel,
+  whiskerPath,
   type MarkerShape,
 } from "./geometry"
 import { seriesColor, washOf } from "./palette"
@@ -27,7 +30,8 @@ import "./charts.css"
 export interface SeriesPoint {
   x: number
   y: number
-  /** Lower and upper edge of a confidence band. Drawn as a 10% wash when both are present. */
+  /** Lower and upper edge of a confidence interval. Drawn as a 10% band when both are present; a point with no
+   *  neighbour to join a band to, and every point of a category axis, is drawn as a whisker instead. */
   lo?: number
   hi?: number
   /** Shape drawn on this point, e.g. one per decision type. The shape is the signal, not the colour. */
@@ -55,7 +59,12 @@ export interface LineChartProps {
   series: Series[]
   /** Accessible name. */
   name: string
-  xKind?: "index" | "time"
+  /** "category": x is the position (0, 1, 2 ...) of a named tick. Every tick is labelled (labels thin out when
+   *  they would touch), every point is a dot, and an interval is a whisker per point, since there is nothing
+   *  between categories to shade. Give the names in `xLabels`. */
+  xKind?: "index" | "time" | "category"
+  /** The name of each category tick, by position. */
+  xLabels?: string[]
   /** x axis label text. Time defaults to a short date. */
   xFormat?: (x: number) => string
   yFormat?: (y: number) => string
@@ -129,6 +138,7 @@ export function LineChart({
   series,
   name,
   xKind = "index",
+  xLabels,
   xFormat,
   yFormat = fmtNum,
   yDomain,
@@ -170,14 +180,18 @@ export function LineChart({
       const t = niceTimeTicks(xMin, xMax, 6)
       xTicks = t.ticks
       unit = t.unit
+    } else if (xKind === "category") {
+      xTicks = xs
     } else {
       xTicks = niceTicks(xMin, xMax, Math.min(8, Math.max(2, xs.length))).ticks.filter((t) => Number.isInteger(t) && t >= xMin && t <= xMax)
     }
-    return { xs, xMin, xMax, yMin: nice.min, yMax: nice.max, yTicks, xTicks, unit }
+    const pad = xKind === "category" ? 0.5 : 0
+    return { xs, xMin, xMax, dMin: xMin - pad, dMax: xMax + pad, yMin: nice.min, yMax: nice.max, yTicks, xTicks, unit }
   }, [series, yDomain, area, xKind])
 
-  const fmtX = xFormat ?? (xKind === "time" ? (model.unit === "hour" ? fmtHour : fmtDay) : fmtNum)
-  const fmtXLong = xFormat ?? (xKind === "time" ? (model.unit === "hour" ? (t: number) => `${fmtDay(t)}, ${fmtHour(t)}` : fmtDayLong) : fmtNum)
+  const fmtCategory = (x: number) => xLabels?.[x] ?? fmtNum(x)
+  const fmtX = xFormat ?? (xKind === "time" ? (model.unit === "hour" ? fmtHour : fmtDay) : xKind === "category" ? fmtCategory : fmtNum)
+  const fmtXLong = xFormat ?? (xKind === "time" ? (model.unit === "hour" ? (t: number) => `${fmtDay(t)}, ${fmtHour(t)}` : fmtDayLong) : xKind === "category" ? fmtCategory : fmtNum)
 
   const compact = width < 480
   const endText = (s: Series) => {
@@ -191,16 +205,17 @@ export function LineChart({
   const plotR = Math.max(plotL + 40, width - right)
   const plotT = PAD_T
   const plotB = height - PAD_B
-  const xScale = linearScale(model.xMin, model.xMax, plotL + 6, plotR - 6)
+  const xScale = linearScale(model.dMin, model.dMax, plotL + 6, plotR - 6)
   const yScale = linearScale(model.yMin, model.yMax, plotB, plotT)
   const xsPx = model.xs.map(xScale)
+  const stride = xKind === "category" ? tickStride(model.xTicks.length + 1, plotR - plotL - 12, Math.max(0, ...model.xTicks.map((t) => textWidth(fmtX(t))))) : 1
 
   const laid = series.map((s, i) => {
     const color = s.color ?? seriesColor(i)
     const pts = [...s.points].sort((a, b) => a.x - b.x)
     const xy = pts.map((p) => ({ x: xScale(p.x), y: yScale(p.y) }))
     const runs = runsOf(pts, (p) => p.lo !== undefined && p.hi !== undefined)
-    const band = runs
+    const band = (xKind === "category" ? [] : runs)
       .map((r) =>
         bandPath(
           r.map((p) => ({ x: xScale(p.x), y: yScale(p.hi!) })),
@@ -208,7 +223,10 @@ export function LineChart({
         ),
       )
       .join("")
-    return { s, i, color, pts, xy, d: linePath(xy), band, areaD: area ? areaPath(xy, plotB) : "" }
+    const whiskers = (xKind === "category" ? runs.flat() : loneEntries(runs))
+      .map((p) => whiskerPath(xScale(p.x), yScale(p.lo!), yScale(p.hi!)))
+      .join("")
+    return { s, i, color, pts, xy, d: linePath(xy), band, whiskers, areaD: area ? areaPath(xy, plotB) : "" }
   })
   const labelYs = repelLabels(
     laid.map((l) => l.xy[l.xy.length - 1]?.y ?? plotB),
@@ -296,7 +314,8 @@ export function LineChart({
                 </text>
               </g>
             ))}
-            {model.xTicks.map((t) => {
+            {model.xTicks.map((t, ti) => {
+              if (ti % stride !== 0) return null
               const label = fmtX(t)
               const half = textWidth(label) / 2
               const x = Math.min(Math.max(xScale(t), half), width - half)
@@ -319,6 +338,9 @@ export function LineChart({
               >
                 {l.band ? (
                   <path d={l.band} fill={washOf(l.color, 10)} style={{ opacity: reveal, transition: drawMs ? `opacity ${drawMs * 0.5}ms ${EASE_SOFT} ${drawMs * 0.6}ms` : "none" }} />
+                ) : null}
+                {l.whiskers ? (
+                  <path d={l.whiskers} fill="none" stroke={l.color} strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" style={{ opacity: reveal, transition: drawMs ? `opacity ${drawMs * 0.5}ms ${EASE_SOFT} ${drawMs * 0.6}ms` : "none" }} />
                 ) : null}
                 {l.areaD ? (
                   <path d={l.areaD} fill={washOf(l.color, 10)} style={{ opacity: reveal, transition: drawMs ? `opacity ${drawMs * 0.5}ms ${EASE_SOFT} ${drawMs * 0.5}ms` : "none" }} />
@@ -356,6 +378,7 @@ export function LineChart({
                       </g>
                     ) : null,
                   )}
+                  {xKind === "category" && !l.s.dashed ? l.xy.map((p, k) => <circle key={l.pts[k].x} cx={p.x} cy={p.y} r={3.5} fill={l.color} />) : null}
                   {l.xy.length ? <circle cx={l.xy[l.xy.length - 1].x} cy={l.xy[l.xy.length - 1].y} r={3.5} fill={l.color} /> : null}
                 </g>
               </g>

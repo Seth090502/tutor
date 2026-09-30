@@ -2,6 +2,7 @@ import { useId, type ComponentProps, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 import { Eyebrow } from "./Eyebrow"
+import { HEADER, SURFACE } from "./surface"
 import "./kit.css"
 
 type PanelProps = Omit<ComponentProps<"section">, "title"> & {
@@ -11,7 +12,7 @@ type PanelProps = Omit<ComponentProps<"section">, "title"> & {
   actions?: ReactNode
 }
 
-/** Card surface: 1px hairline, 16px radius, inner top highlight. */
+/** Card surface: 1px hairline, 16px radius, inner top highlight. Shares its padding, header and shadow with ChartFrame. */
 export function Panel({ eyebrow, title, actions, className, children, ...props }: PanelProps) {
   const titleId = useId()
   const hasHeader = eyebrow || title || actions
@@ -19,14 +20,11 @@ export function Panel({ eyebrow, title, actions, className, children, ...props }
     <section
       data-slot="kit-panel"
       aria-labelledby={title ? titleId : undefined}
-      className={cn(
-        "bg-card text-card-foreground border-hairline rounded-2xl border p-6 [box-shadow:inset_0_1px_0_var(--kit-highlight),var(--kit-shadow)]",
-        className,
-      )}
+      className={cn(SURFACE, className)}
       {...props}
     >
       {hasHeader ? (
-        <header className="mb-5 flex items-start justify-between gap-4">
+        <header className={HEADER}>
           <div className="flex min-w-0 flex-col gap-2.5">
             {eyebrow ? <Eyebrow rule>{eyebrow}</Eyebrow> : null}
             {title ? (

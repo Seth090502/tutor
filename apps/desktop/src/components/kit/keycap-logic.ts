@@ -1,9 +1,12 @@
+/** Which keys pick a choice: A-D and 1-4 ("all"), A-D only ("letters"), or none (the caller owns the keys). */
+export type HotkeyMode = "all" | "letters" | "none"
+
 /** Hotkeys: A-D and 1-4 pick the choice at that position. Null when the key maps to nothing. */
-export function hotkeyIndex(key: string, count: number): number | null {
-  if (key.length !== 1) return null
+export function hotkeyIndex(key: string, count: number, mode: HotkeyMode = "all"): number | null {
+  if (mode === "none" || key.length !== 1) return null
   const k = key.toLowerCase()
   const i = "abcd".indexOf(k)
-  const n = "1234".indexOf(k)
+  const n = mode === "all" ? "1234".indexOf(k) : -1
   const idx = i >= 0 ? i : n
   return idx >= 0 && idx < count ? idx : null
 }

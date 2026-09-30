@@ -128,12 +128,16 @@ function useHoloTilt(rootRef: RefObject<HTMLDivElement | null>) {
 type QuestionCardProps = {
   /** Small caption above the question, e.g. "Question 3 of 10 · Limits". */
   eyebrow?: ReactNode
-  mastery?: Mastery
+  /** Tints the frame ring and prints the word. "new" by default; null when mastery is not known, which
+   *  prints no word and leaves the ring neutral. */
+  mastery?: Mastery | null
   /** The front face: the question and its answer keys. */
   children: ReactNode
-  /** Back face content. With neither, the card does not flip. */
+  /** Back face content. With none of the three, the card does not flip. */
   explanation?: ReactNode
   misconception?: ReactNode
+  /** The result of the attempt, shown first on the back face, e.g. a Correct or Not quite pill. */
+  verdict?: ReactNode
   flipped?: boolean
   defaultFlipped?: boolean
   onFlippedChange?: (flipped: boolean) => void
@@ -154,6 +158,7 @@ export function QuestionCard({
   children,
   explanation,
   misconception,
+  verdict,
   flipped: flippedProp,
   defaultFlipped = false,
   onFlippedChange,
@@ -164,7 +169,7 @@ export function QuestionCard({
   const backBtn = useRef<HTMLButtonElement>(null)
   const [inner, setInner] = useState(defaultFlipped)
   const flipped = flippedProp ?? inner
-  const canFlip = Boolean(explanation || misconception)
+  const canFlip = Boolean(explanation || misconception || verdict)
   const moveFocus = useRef(false)
 
   useHoloTilt(rootRef)
@@ -186,7 +191,7 @@ export function QuestionCard({
     <div
       ref={rootRef}
       data-slot="kit-question-card"
-      data-mastery={mastery}
+      data-mastery={mastery ?? undefined}
       className={cn("qc", className)}
     >
       <div className="qc-tilt">
@@ -202,10 +207,12 @@ export function QuestionCard({
             <div className="qc-body">
               <div className="flex items-center justify-between gap-4">
                 {eyebrow ? <Eyebrow rule>{eyebrow}</Eyebrow> : <span />}
-                <span className="text-ink-2 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase">
-                  <MasteryGlyph mastery={mastery} />
-                  {MASTERY_WORD[mastery]}
-                </span>
+                {mastery ? (
+                  <span className="text-ink-2 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase">
+                    <MasteryGlyph mastery={mastery} />
+                    {MASTERY_WORD[mastery]}
+                  </span>
+                ) : null}
               </div>
               <div className="flex-1">{children}</div>
               {canFlip ? (
@@ -224,13 +231,20 @@ export function QuestionCard({
               <div className="qc-body">
                 <div className="flex items-center justify-between gap-4">
                   <Eyebrow rule>Explanation</Eyebrow>
-                  <span className="text-ink-2 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase">
-                    <MasteryGlyph mastery={mastery} />
-                    {MASTERY_WORD[mastery]}
-                  </span>
+                  {mastery ? (
+                    <span className="text-ink-2 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase">
+                      <MasteryGlyph mastery={mastery} />
+                      {MASTERY_WORD[mastery]}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex flex-1 flex-col gap-5 font-serif text-[17px] leading-[1.6] text-pretty">
-                  {explanation ? <div>{explanation}</div> : null}
+                  {verdict || explanation ? (
+                    <div className="flex flex-col gap-4">
+                      {verdict ? <div>{verdict}</div> : null}
+                      {explanation}
+                    </div>
+                  ) : null}
                   {misconception ? (
                     <div className="border-warn/50 border-l-2 pl-4">
                       <Eyebrow as="div" className="mb-2">

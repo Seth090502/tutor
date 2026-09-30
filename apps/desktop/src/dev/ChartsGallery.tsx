@@ -213,6 +213,22 @@ function ModeLinks() {
   )
 }
 
+const calLabels = ["Guess", "Unsure", "Fairly sure", "Certain"]
+const calibration: Series[] = [
+  {
+    id: "actual",
+    label: "Correct",
+    points: [
+      { x: 0, y: 29, lo: 12, hi: 55 },
+      { x: 1, y: 52, lo: 35, hi: 68 },
+      { x: 2, y: 67, lo: 54, hi: 78 },
+      { x: 3, y: 84, lo: 71, hi: 92 },
+    ],
+  },
+  { id: "reference", label: "Reference", color: "var(--ink-3)", dashed: true, points: [25, 50, 75, 95].map((y, x) => ({ x, y })) },
+]
+const oneLevel: Series[] = [{ id: "actual", label: "Correct", points: [{ x: 2, y: 67, lo: 41, hi: 85 }] }]
+
 export function ChartsGallery() {
   return (
     <main className="mx-auto max-w-[1120px] px-8 py-12">
@@ -302,6 +318,58 @@ export function ChartsGallery() {
             defaultView={defaultView}
           >
             <LineChart name="Cards due and cards reviewed per day" series={reviews} xKind="time" height={260} />
+          </ChartFrame>
+        </div>
+
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <ChartFrame
+            title="Calibration, four levels"
+            className="lg:col-span-2"
+            subtitle="A categorical x axis: every level is a tick, every point a dot with its own 95% whisker."
+            table={lineTable(calibration, { xTitle: "Level", xFormat: (x) => calLabels[x], yFormat: (y) => `${Math.round(y)}%`, caption: "Percent correct by confidence level" })}
+            defaultView={defaultView}
+          >
+            <LineChart
+              name="Percent correct by confidence level, against a reference line"
+              series={calibration}
+              xKind="category"
+              xLabels={calLabels}
+              yDomain={[0, 100]}
+              yFormat={(y) => `${Math.round(y)}%`}
+              height={240}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="One level so far"
+            subtitle="A single point has no neighbour to shade a band with, so its interval is a whisker."
+            table={lineTable(oneLevel, { xTitle: "Level", xFormat: (x) => calLabels[x], yFormat: (y) => `${Math.round(y)}%`, caption: "One level" })}
+            defaultView={defaultView}
+          >
+            <LineChart
+              name="Percent correct at one confidence level"
+              series={oneLevel}
+              xKind="category"
+              xLabels={calLabels}
+              yDomain={[0, 100]}
+              yFormat={(y) => `${Math.round(y)}%`}
+              height={240}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="Reviews, last 14 days"
+            subtitle="Discs worded for the busiest day instead of a goal: the unit and label props."
+            table={phaseTable(phaseDays.slice(0, 14), "Share of the busiest day", "Share of your busiest day")}
+            defaultView={defaultView}
+          >
+            <PhaseDiscs
+              name="Reviews for each of the last 14 days, relative to the busiest day"
+              days={phaseDays.slice(0, 14)}
+              columns={7}
+              unit="of your busiest day"
+              label="of busiest day"
+            />
           </ChartFrame>
         </div>
 
