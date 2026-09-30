@@ -5,7 +5,7 @@
 //! tens of millions of rows nothing reads.
 
 use crate::error::Result;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS documents (
     ocr_pages    INTEGER NOT NULL DEFAULT 0,  -- OCR'd pages whose text was used
     indexed_at   REAL
 );
+-- Library browsing (GET /documents) sorts indexed documents by these.
+CREATE INDEX IF NOT EXISTS documents_title ON documents(state, title COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS documents_added ON documents(state, indexed_at);
+CREATE INDEX IF NOT EXISTS documents_pages ON documents(state, pages);
 
 CREATE TABLE IF NOT EXISTS chunks (
     chunk_id     TEXT PRIMARY KEY,      -- '<doc_id>:<ordinal>'
@@ -53,7 +57,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     tokens       INTEGER NOT NULL,
     embedded     INTEGER NOT NULL DEFAULT 0  -- 0 pending, 1 in the vector store, 2 being written
 );
-CREATE INDEX IF NOT EXISTS chunks_doc ON chunks(doc_id);
+-- A document's chunks in reading order (outline, guided reading); also serves lookups by doc_id,
+-- so it replaces the earlier chunks_doc(doc_id) index.
+DROP INDEX IF EXISTS chunks_doc;
+CREATE INDEX IF NOT EXISTS chunks_doc_ordinal ON chunks(doc_id, ordinal);
 CREATE INDEX IF NOT EXISTS chunks_unembedded ON chunks(embedded) WHERE embedded <> 1;
 
 CREATE TABLE IF NOT EXISTS ocr_queue (
@@ -113,6 +120,16 @@ pub fn open(data_dir: &Path) -> Result<Connection> {
     }
     conn.execute_batch(SCHEMA)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(conn)
+}
+
+/// A read-only connection to the database in `data_dir`, which must exist (for ingest's
+/// extraction thread, next to the connection that writes).
+pub fn open_read(data_dir: &Path) -> Result<Connection> {
+    let path = data_dir.join(DB_FILE);
+    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    conn.busy_timeout(Duration::from_secs(30))?;
     Ok(conn)
 }
 

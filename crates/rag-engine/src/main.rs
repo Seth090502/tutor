@@ -9,6 +9,7 @@ mod extract;
 mod headings;
 mod ingest;
 mod jobs;
+mod library;
 mod meta;
 mod ocr;
 mod report;
@@ -24,6 +25,7 @@ use crate::embed::Embedder;
 use crate::engine::{Engine, Roots};
 use crate::error::{Error, Result};
 use clap::{Parser, Subcommand};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -52,7 +54,8 @@ enum Command {
         #[arg(long, env = "PDFIUM_DYNAMIC_LIB_PATH", default_value = DEFAULT_PDFIUM)]
         pdfium: PathBuf,
     },
-    /// Run the HTTP service on 127.0.0.1 (survey and ingest jobs, status, search).
+    /// Run the HTTP service (survey and ingest jobs, status, search, library browsing). With
+    /// RAG_ENGINE_TOKEN set, every route except GET /health needs `Authorization: Bearer <token>`.
     Serve {
         /// Library root: corpus/<domain>/books|papers/..., corpus/inbox/... (read-only).
         #[arg(long)]
@@ -63,9 +66,12 @@ enum Command {
         /// Directory for the database and indexes.
         #[arg(long)]
         data: PathBuf,
-        /// Port on 127.0.0.1; 0 picks a free one (the address is logged).
+        /// Port; 0 picks a free one (the address is logged).
         #[arg(long, default_value_t = server::DEFAULT_PORT)]
         port: u16,
+        /// Address to listen on. Anything but loopback needs RAG_ENGINE_TOKEN.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: IpAddr,
         /// PDFium dynamic library, or the directory that contains it.
         #[arg(long, env = "PDFIUM_DYNAMIC_LIB_PATH", default_value = DEFAULT_PDFIUM)]
         pdfium: PathBuf,
@@ -110,7 +116,7 @@ enum Command {
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Command::Survey { root, out, pdfium } => survey::run(&root, out.as_deref(), &pdfium).map_err(Error::from),
-        Command::Serve { corpus, notes, data, port, pdfium } => serve(Roots { corpus, notes }, &data, port, pdfium),
+        Command::Serve { corpus, notes, data, port, bind, pdfium } => serve(Roots { corpus, notes }, &data, bind, port, pdfium),
         Command::Ingest { corpus, notes, data, root, rebuild, pdfium } => {
             run_ingest(Roots { corpus, notes }, &data, root.as_deref(), rebuild, &pdfium)
         }
@@ -142,7 +148,10 @@ fn open_engine(rt: &tokio::runtime::Runtime, data: &Path) -> Result<Engine> {
     rt.block_on(Engine::open(data, embedder, ocr))
 }
 
-fn serve(roots: Roots, data: &Path, port: u16, pdfium: PathBuf) -> Result<()> {
+fn serve(roots: Roots, data: &Path, bind: IpAddr, port: u16, pdfium: PathBuf) -> Result<()> {
+    // Read here rather than through clap, so the value never appears in --help.
+    let token = std::env::var("RAG_ENGINE_TOKEN").ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    server::check_bind(bind, token.as_deref())?;
     roots.check(data)?;
     let rt = runtime()?;
     let engine = Arc::new(open_engine(&rt, data)?);
@@ -153,8 +162,9 @@ fn serve(roots: Roots, data: &Path, port: u16, pdfium: PathBuf) -> Result<()> {
         roots.notes.as_deref().map_or_else(|| "none".to_string(), engine::display_path),
         engine::display_path(data)
     );
-    let state = Arc::new(server::AppState { engine, roots, pdfium, jobs: jobs::Jobs::default(), rt: rt.handle().clone() });
-    let result = rt.block_on(server::serve(state, port));
+    let state =
+        Arc::new(server::AppState { engine, roots, pdfium, jobs: jobs::Jobs::default(), rt: rt.handle().clone(), token });
+    let result = rt.block_on(server::serve(state, bind, port));
     // Do not wait for a running job: the next ingest repairs a batch it left uncommitted.
     rt.shutdown_timeout(std::time::Duration::from_secs(2));
     result

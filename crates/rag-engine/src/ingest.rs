@@ -9,17 +9,20 @@
 //!    unplugged folder never empties the index.
 //! 4. Documents whose canonical path changed keep their chunks; their domain and source type
 //!    are updated in both indexes.
-//! 5. New documents are extracted, chunked and indexed one at a time, committed in batches.
+//! 5. New documents are extracted and chunked in parallel: PDFs in order on one thread
+//!    (PDFium is not thread-safe), everything else, and all chunking, on worker threads. They
+//!    are stored one at a time in path order on the ingest thread and committed in batches.
 //!    A document is `indexing` until its batch is committed to BM25, then `indexed`; a crash in
 //!    between is repaired at the start of the next ingest.
 //! 6. With an OCR provider: queued pages are recognised and their documents re-indexed.
 //! 7. With an embedding provider: chunks not yet in the vector store are embedded in batches.
 //!
-//! Memory stays bounded by one document's text, one commit batch in the BM25 writer, and one
-//! buffer of vectors; the file list (one entry per file) is the only corpus-sized structure.
+//! Memory stays bounded by the documents in flight (two per worker thread), one commit batch in
+//! the BM25 writer, and one buffer of vectors; the file list (one entry per file) is the only
+//! corpus-sized structure.
 
 use crate::bm25::Bm25Writer;
-use crate::chunk::{self, DocText};
+use crate::chunk::{self, Chunk, DocText};
 use crate::dedup;
 use crate::discover::{self, DocKind};
 use crate::embed::{self, Embedder, InputType};
@@ -39,6 +42,7 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, mpsc};
 use std::time::{Instant, UNIX_EPOCH};
 use tokio::runtime::Handle;
 
@@ -47,7 +51,9 @@ const COMMIT_DOCS: usize = 64;
 const COMMIT_CHUNKS: usize = 20_000;
 /// Vectors buffered before one LanceDB append (each append is a new data fragment).
 const VECTOR_FLUSH_ROWS: usize = 1024;
-const LOG_EVERY: u64 = 25;
+const LOG_EVERY: usize = 25;
+/// Upper bound on chunking threads (each holds about two documents in memory).
+const MAX_WORKERS: usize = 16;
 
 pub const EMBED_PROVIDER_KEY: &str = "embedding.provider";
 pub const EMBED_MODEL_KEY: &str = "embedding.model";
@@ -154,6 +160,22 @@ pub fn ingest(
     rebuild: bool,
     rt: &Handle,
     progress: &Progress,
+) -> Result<IngestReport> {
+    ingest_with(engine, roots, pdfium_lib, scope, rebuild, rt, progress, default_workers())
+}
+
+/// [`ingest`] with `workers` chunking threads; 1 prepares and stores each document in turn on
+/// this thread.
+#[allow(clippy::too_many_arguments)]
+fn ingest_with(
+    engine: &Engine,
+    roots: &Roots,
+    pdfium_lib: &Path,
+    scope: Option<&Path>,
+    rebuild: bool,
+    rt: &Handle,
+    progress: &Progress,
+    workers: usize,
 ) -> Result<IngestReport> {
     let started = Instant::now();
     let targets = targets(roots, scope)?;
@@ -300,37 +322,52 @@ pub fn ingest(
         report.moved = moved.len() as u64;
     }
 
-    // 5. New documents.
-    let mut pdfium: Option<Pdfium> = None;
-    let (mut batch_docs, mut batch_chunks) = (0, 0);
-    let mut seen = 0u64;
+    // 5. New documents: extracted and chunked in parallel, stored in path order.
+    let mut new_docs = Vec::new();
     for doc in &live {
         match existing.get(&doc.doc_id) {
             Some(old) if old.path == doc.path => report.unchanged += 1,
             Some(_) => {}
             None => {
-                let m = doc_meta(&doc.path)?;
                 let abs = roots.resolve(&doc.path).ok_or(format!("no root for {}", doc.path))?;
-                match index_doc(&mut conn, &writer, &mut pdfium, pdfium_lib, doc, &abs, &m, false)? {
-                    Some(n) => {
-                        report.indexed += 1;
-                        report.chunks_added += n;
-                        batch_chunks += n as usize;
-                    }
-                    None => report.errors += 1,
-                }
-                batch_docs += 1;
-                if batch_docs >= COMMIT_DOCS || batch_chunks >= COMMIT_CHUNKS {
-                    commit(&conn, &mut writer, engine)?;
-                    (batch_docs, batch_chunks) = (0, 0);
-                }
+                let kind = discover::doc_kind(&abs).ok_or(format!("{} is not a document type", doc.path))?;
+                new_docs.push(NewDoc { doc, meta: doc_meta(&doc.path)?, abs, kind });
+                continue;
             }
         }
         progress.add_done(1);
-        seen += 1;
-        if seen.is_multiple_of(LOG_EVERY) || seen == live.len() as u64 {
-            eprintln!("ingest: documents {seen}/{} (last: {})", live.len(), doc.path);
+    }
+    let (mut batch_docs, mut batch_chunks) = (0, 0);
+    let mut seen = live.len() - new_docs.len();
+    let mut store_one = |new: &NewDoc, prepared: Prepared| -> Result<()> {
+        match store_doc(&mut conn, &writer, new.doc, &new.meta, new.kind, prepared, false)? {
+            Some(n) => {
+                report.indexed += 1;
+                report.chunks_added += n;
+                batch_chunks += n as usize;
+            }
+            None => report.errors += 1,
         }
+        batch_docs += 1;
+        if batch_docs >= COMMIT_DOCS || batch_chunks >= COMMIT_CHUNKS {
+            commit(&conn, &mut writer, engine)?;
+            (batch_docs, batch_chunks) = (0, 0);
+        }
+        progress.add_done(1);
+        seen += 1;
+        if seen.is_multiple_of(LOG_EVERY) || seen == live.len() {
+            eprintln!("ingest: documents {seen}/{} (last: {})", live.len(), new.doc.path);
+        }
+        Ok(())
+    };
+    let mut pdfs = PdfExtractor::new(pdfium_lib, &engine.data_dir);
+    if workers <= 1 {
+        for new in &new_docs {
+            let prepared = prepare(new, pdfs.extract_if_pdf(new)?);
+            store_one(new, prepared)?;
+        }
+    } else {
+        prepare_parallel(&new_docs, pdfium_lib, &engine.data_dir, workers, store_one)?;
     }
     commit(&conn, &mut writer, engine)?;
     report.documents = live.len() as u64;
@@ -362,7 +399,10 @@ pub fn ingest(
                 rt.block_on(v.delete_docs(std::slice::from_ref(doc_id)))?;
                 vectors_changed = true;
             }
-            index_doc(&mut conn, &writer, &mut pdfium, pdfium_lib, &doc, &abs, &doc_meta(&doc.path)?, true)?;
+            let kind = discover::doc_kind(&abs).ok_or(format!("{} is not a document type", doc.path))?;
+            let new = NewDoc { doc: &doc, meta: doc_meta(&doc.path)?, abs, kind };
+            let prepared = prepare(&new, pdfs.extract_if_pdf(&new)?);
+            store_doc(&mut conn, &writer, &doc, &new.meta, kind, prepared, true)?;
         }
         if !reindex.is_empty() {
             commit(&conn, &mut writer, engine)?;
@@ -527,30 +567,173 @@ fn plain_extracted(path: &Path, markdown: bool) -> std::result::Result<Extracted
     Ok(Extracted { title, text: DocText { text: body, pages: Vec::new(), sections, markdown }, page_classes: Vec::new() })
 }
 
-/// Extract, chunk and store one document, and add its chunks to the BM25 batch. Returns the
-/// chunk count, or `None` when the file could not be read (stored as an `error` document).
-#[allow(clippy::too_many_arguments)]
-fn index_doc(
+/// A document to extract, chunk and store.
+struct NewDoc<'a> {
+    doc: &'a LiveDoc,
+    meta: DocMeta,
+    abs: PathBuf,
+    kind: DocKind,
+}
+
+/// A PDF's text (OCR text in place of the text layer where a page has it), or why it could not
+/// be read, and how many OCR pages it used.
+struct PdfExtracted {
+    ocr_pages: usize,
+    text: std::result::Result<Extracted, String>,
+}
+
+/// A document ready to store: its chunks, or why it could not be read.
+struct Prepared {
+    ocr_pages: usize,
+    content: std::result::Result<Chunked, String>,
+}
+
+struct Chunked {
+    title: Option<String>,
+    page_classes: Vec<(u32, PageClass)>,
+    chunks: Vec<Chunk>,
+}
+
+/// Extracts PDFs on the thread that owns it (PDFium is not thread-safe). PDFium is bound, and a
+/// read-only connection for finished OCR text opened, on the first PDF.
+struct PdfExtractor<'a> {
+    lib: &'a Path,
+    data_dir: &'a Path,
+    pdfium: Option<Pdfium>,
+    db: Option<Connection>,
+}
+
+impl<'a> PdfExtractor<'a> {
+    fn new(lib: &'a Path, data_dir: &'a Path) -> PdfExtractor<'a> {
+        PdfExtractor { lib, data_dir, pdfium: None, db: None }
+    }
+
+    /// `None` for documents that are not PDFs; workers extract those.
+    fn extract_if_pdf(&mut self, new: &NewDoc) -> Result<Option<PdfExtracted>> {
+        if new.kind != DocKind::Pdf {
+            return Ok(None);
+        }
+        if self.pdfium.is_none() {
+            self.pdfium = Some(survey::bind_pdfium(self.lib)?);
+        }
+        if self.db.is_none() {
+            self.db = Some(store::open_read(self.data_dir)?);
+        }
+        let ocr_texts = ocr::done_texts(self.db.as_ref().expect("opened above"), &new.doc.doc_id)?;
+        let pdfium = self.pdfium.as_ref().expect("bound above");
+        let text = extract::catch_panics(|| Ok(pdf_extracted(extract::pdf_text(pdfium, &new.abs)?, &ocr_texts)));
+        Ok(Some(PdfExtracted { ocr_pages: ocr_texts.len(), text }))
+    }
+}
+
+/// Extract (PDFs arrive extracted) and chunk one document; runs on any thread. A panic in a
+/// parser or in the chunker becomes the document's error.
+fn prepare(new: &NewDoc, pdf: Option<PdfExtracted>) -> Prepared {
+    let (ocr_pages, extracted) = match pdf {
+        Some(pdf) => (pdf.ocr_pages, pdf.text),
+        None => (
+            0,
+            extract::catch_panics(|| match new.kind {
+                DocKind::Pdf => Err("internal error: PDF was not extracted".to_string()),
+                DocKind::Epub => epub_extracted(&new.abs),
+                DocKind::Md => plain_extracted(&new.abs, true),
+                DocKind::Txt => plain_extracted(&new.abs, false),
+            }),
+        ),
+    };
+    let content = extracted.and_then(|x| {
+        extract::catch_panics(|| Ok(Chunked { chunks: chunk::chunk(&x.text), title: x.title, page_classes: x.page_classes }))
+    });
+    Prepared { ocr_pages, content }
+}
+
+/// Default number of chunking threads: the cores left after the writer and the PDF thread.
+fn default_workers() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get()).saturating_sub(2).clamp(1, MAX_WORKERS)
+}
+
+/// Prepare `docs` on `workers` threads and hand each to `store` in order, on this thread. PDFs
+/// are extracted in order on one more thread. Memory is bounded: a document takes one of
+/// `2 * workers` permits before it is extracted and gives it back once stored.
+fn prepare_parallel(
+    docs: &[NewDoc],
+    pdfium_lib: &Path,
+    data_dir: &Path,
+    workers: usize,
+    mut store: impl FnMut(&NewDoc, Prepared) -> Result<()>,
+) -> Result<()> {
+    let window = 2 * workers;
+    let (permit_tx, permit_rx) = mpsc::sync_channel::<()>(window);
+    for _ in 0..window {
+        permit_tx.send(()).expect("the permit channel has room for the window");
+    }
+    let (job_tx, job_rx) = mpsc::channel::<(usize, Option<PdfExtracted>)>();
+    let job_rx = Mutex::new(job_rx);
+    let (done_tx, done_rx) = mpsc::channel::<(usize, Result<Prepared>)>();
+    std::thread::scope(|s| {
+        // Owned here so that returning early (an error) stops the extraction thread.
+        let permit_tx = permit_tx;
+        let failed = done_tx.clone();
+        s.spawn(move || {
+            let mut pdfs = PdfExtractor::new(pdfium_lib, data_dir);
+            for (i, new) in docs.iter().enumerate() {
+                if permit_rx.recv().is_err() {
+                    return;
+                }
+                match pdfs.extract_if_pdf(new) {
+                    Ok(pdf) => {
+                        if job_tx.send((i, pdf)).is_err() {
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = failed.send((i, Err(e)));
+                        return;
+                    }
+                }
+            }
+        });
+        for _ in 0..workers {
+            let (done_tx, job_rx) = (done_tx.clone(), &job_rx);
+            s.spawn(move || {
+                loop {
+                    let job = job_rx.lock().unwrap_or_else(|p| p.into_inner()).recv();
+                    let Ok((i, pdf)) = job else { return };
+                    if done_tx.send((i, Ok(prepare(&docs[i], pdf)))).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        drop(done_tx);
+        // Store in document order, holding documents that finish early.
+        let mut early: HashMap<usize, Result<Prepared>> = HashMap::new();
+        for (i, new) in docs.iter().enumerate() {
+            let prepared = loop {
+                if let Some(p) = early.remove(&i) {
+                    break p;
+                }
+                let (j, p) = done_rx.recv().map_err(|_| "ingest: a document worker stopped unexpectedly")?;
+                early.insert(j, p);
+            };
+            store(new, prepared?)?;
+            let _ = permit_tx.send(());
+        }
+        Ok(())
+    })
+}
+
+/// Store one prepared document and add its chunks to the BM25 batch. Returns the chunk count,
+/// or `None` when the file could not be read (stored as an `error` document).
+fn store_doc(
     conn: &mut Connection,
     writer: &Bm25Writer,
-    pdfium: &mut Option<Pdfium>,
-    pdfium_lib: &Path,
     doc: &LiveDoc,
-    abs: &Path,
     m: &DocMeta,
+    kind: DocKind,
+    prepared: Prepared,
     reindex: bool,
 ) -> Result<Option<u64>> {
-    let kind = discover::doc_kind(abs).ok_or(format!("{} is not a document type", doc.path))?;
-    let ocr_texts = ocr::done_texts(conn, &doc.doc_id)?;
-    if kind == DocKind::Pdf && pdfium.is_none() {
-        *pdfium = Some(survey::bind_pdfium(pdfium_lib)?);
-    }
-    let extracted = extract::catch_panics(|| match kind {
-        DocKind::Pdf => Ok(pdf_extracted(extract::pdf_text(pdfium.as_ref().expect("bound above"), abs)?, &ocr_texts)),
-        DocKind::Epub => epub_extracted(abs),
-        DocKind::Md => plain_extracted(abs, true),
-        DocKind::Txt => plain_extracted(abs, false),
-    });
     let stem = Path::new(&doc.path).file_stem().map_or_else(|| doc.path.clone(), |s| s.to_string_lossy().into_owned());
     let kind_name = serde_json::to_value(kind)?.as_str().unwrap_or_default().to_string();
 
@@ -582,19 +765,19 @@ fn index_doc(
                 counts.math_heavy as i64,
                 counts.empty as i64,
                 chunks as i64,
-                ocr_texts.len() as i64,
+                prepared.ocr_pages as i64,
                 store::now()
             ],
         )
     };
-    let chunks = match extracted {
+    let chunks = match prepared.content {
         Err(error) => {
             eprintln!("ingest: {}: {error}", doc.path);
             upsert_doc("error", Some(&error), &stem, &TriageCounts::default(), 0, 0)?;
             None
         }
         Ok(x) => {
-            let chunks = chunk::chunk(&x.text);
+            let chunks = x.chunks;
             let mut counts = TriageCounts::default();
             for (_, class) in &x.page_classes {
                 counts.add(*class);
@@ -980,6 +1163,131 @@ mod tests {
         assert_eq!(x.text.pages.iter().map(|p| p.1).collect::<Vec<_>>(), vec![1, 2, 3]);
         assert_eq!(x.page_classes, vec![(1, PageClass::BornDigital), (2, PageClass::MathHeavy), (3, PageClass::Scanned)]);
         assert_eq!(x.title.as_deref(), Some("T"));
+    }
+
+    fn pdfium_lib() -> PathBuf {
+        std::env::var_os("PDFIUM_DYNAMIC_LIB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor/pdfium/bin"))
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &to.join(entry.file_name()));
+            } else {
+                fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+            }
+        }
+    }
+
+    /// A Markdown document with `sections` sections of distinct sentences.
+    fn synthetic_markdown(seed: usize, sections: usize) -> String {
+        let words = ["limit", "series", "vector", "enzyme", "photon", "syntax", "reagent", "matrix", "orbital", "clause"];
+        let mut text = format!("# Topic {seed}\n\n");
+        for s in 0..sections {
+            text.push_str(&format!("## Part {seed}.{s}\n\n"));
+            for n in 0..12 {
+                let w = |k: usize| words[(seed * 7 + s * 3 + n + k) % words.len()];
+                text.push_str(&format!(
+                    "Sentence {n} of part {s} relates the {} to the {} and the {} in document {seed}. ",
+                    w(0),
+                    w(1),
+                    w(2)
+                ));
+            }
+            text.push_str("\n\n");
+        }
+        text
+    }
+
+    fn rows(f: &Fixture, sql: &str) -> Vec<Vec<rusqlite::types::Value>> {
+        let conn = f.engine.conn();
+        let mut stmt = conn.prepare(sql).unwrap();
+        let columns = stmt.column_count();
+        stmt.query_map([], |r| (0..columns).map(|i| r.get(i)).collect()).unwrap().collect::<std::result::Result<_, _>>().unwrap()
+    }
+
+    #[test]
+    fn parallel_and_serial_ingest_store_identical_chunks() {
+        let fixtures = [Fixture::new("ingest-serial", None), Fixture::new("ingest-parallel", None)];
+        let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/library");
+        for f in &fixtures {
+            // Every document type (PDFs with OCR pages, an encrypted PDF, EPUB, Markdown, text), and
+            // Markdown documents of very different sizes so workers finish out of order.
+            copy_dir(&library.join("corpus"), &f.roots.corpus);
+            copy_dir(&library.join("notes"), f.roots.notes.as_ref().unwrap());
+            for i in 0..48 {
+                f.write(&format!("corpus/science/books/gen-{i:02}.md"), &synthetic_markdown(i, 1 + (i * 7) % 23));
+            }
+        }
+        let reports: Vec<IngestReport> = fixtures
+            .iter()
+            .zip([1, 6])
+            .map(|(f, workers)| {
+                let progress = Progress::default();
+                let report =
+                    ingest_with(&f.engine, &f.roots, &pdfium_lib(), None, false, f.rt.handle(), &progress, workers).unwrap();
+                let (done, total) = progress.get();
+                assert_eq!(done, total, "progress ends complete");
+                report
+            })
+            .collect();
+        let summary = |r: &IngestReport| (r.files, r.documents, r.indexed, r.errors, r.chunks_added);
+        assert_eq!(summary(&reports[0]), summary(&reports[1]));
+        assert_eq!(reports[0].errors, 1, "the encrypted PDF");
+        assert!(reports[0].chunks_added > 100, "{} chunks", reports[0].chunks_added);
+
+        for sql in [
+            "SELECT chunk_id, doc_id, ordinal, page_start, page_end, heading_path, text, tokens, embedded FROM chunks ORDER BY chunk_id",
+            "SELECT doc_id, path, kind, title, domain, source_type, bytes, state, error, pages, born_digital, scanned, \
+             math_heavy, empty, chunks, ocr_pages FROM documents ORDER BY doc_id",
+            "SELECT doc_id, page, class, state FROM ocr_queue ORDER BY doc_id, page",
+        ] {
+            assert_eq!(rows(&fixtures[0], sql), rows(&fixtures[1], sql), "{sql}");
+        }
+        for query in ["limit series", "enzyme photon", "mitochondrion energy", "plants algae"] {
+            let hits = |f: &Fixture| {
+                let mut ids = f.engine.bm25.search(query, 1000, &Filter::default()).unwrap();
+                ids.sort_by(|a, b| a.0.cmp(&b.0));
+                ids
+            };
+            assert_eq!(hits(&fixtures[0]), hits(&fixtures[1]), "{query}");
+        }
+    }
+
+    #[test]
+    fn a_store_failure_stops_the_parallel_pipeline() {
+        let dir = temp_dir("ingest-parallel-fail");
+        let live: Vec<LiveDoc> = (0..40)
+            .map(|i| {
+                let path = format!("corpus/math/books/gen-{i:02}.md");
+                fs::write(dir.join(format!("gen-{i:02}.md")), synthetic_markdown(i, 4)).unwrap();
+                LiveDoc { doc_id: i.to_string(), path, bytes: 0 }
+            })
+            .collect();
+        let docs: Vec<NewDoc> = live
+            .iter()
+            .enumerate()
+            .map(|(i, doc)| NewDoc {
+                doc,
+                meta: doc_meta(&doc.path).unwrap(),
+                abs: dir.join(format!("gen-{i:02}.md")),
+                kind: DocKind::Md,
+            })
+            .collect();
+        let mut stored = Vec::new();
+        let err = prepare_parallel(&docs, Path::new("unused"), &dir, 3, |new, prepared| {
+            assert!(prepared.content.is_ok());
+            stored.push(new.doc.doc_id.clone());
+            if stored.len() == 5 { Err("disk full".into()) } else { Ok(()) }
+        })
+        .unwrap_err();
+        assert_eq!(err.0, "disk full");
+        assert_eq!(stored, ["0", "1", "2", "3", "4"], "stored in order, and nothing after the failure");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
