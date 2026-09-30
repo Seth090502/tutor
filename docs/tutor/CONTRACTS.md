@@ -523,3 +523,81 @@ An older build runs against a migrated database unchanged: it ignores the new ta
 `legacy`, and it does not honour quarantine or the provisional exclusion. Backup before first run: the
 notebook database is one SQLite file; copy it with the SQLite backup API (the workspace data-migration
 code already does, `services/workspace/data_migration.py`) while the backend is stopped.
+
+## C13. Learner projections, study plan and probes (Rust `learning-core`, desktop shell, backend feed)
+
+Status: specified 2026-09-30 for Phase 2. Every number below is a **local policy default**, versioned and
+provisional (evidence ledger EV-023); none of them establishes improved learning.
+
+**Pieces and owners.**
+- `crates/learning-core` (Rust library, pure: no I/O, no clock; every time is an argument): skill
+  projection (`skills`), study plan (`plan`), probe rules (`probes`).
+- Backend read adapter (Python, read-only; C12 stays the only writer):
+  - `GET /api/study/feed?after_event_seq=N&limit=500` returns
+    `{schema_version: 1, store_id, events: [{event_seq, session_id, seq, attempt_id, kind, recorded_at,
+    source, payload}], next_after}` in `event_seq` order. `store_id` is a UUID kept in a `learning_meta`
+    table, so projections from different workspaces never mix.
+  - `GET /api/study/candidates` returns, for every visible item that is not quarantined or provisional,
+    `{entry_id, track, question_type, lang, skill_ids, family_id, tags, due_at, retrievability, stability,
+    difficulty, review_count, last_review_at, fsrs_state, estimated_seconds}`. Retrievability comes from
+    py-fsrs (one implementation of the forgetting curve).
+- Projection host (desktop shell, `src-tauri/src/learning.rs`): `<app data>/learning.sqlite` holds
+  `projection_progress(store_id, policy_version, last_event_seq)` and `skill_observations`. It catches up
+  from the feed on demand, and it is rebuilt from scratch when the policy version changes or on request.
+  Tauri commands: `learning_skills()`, `learning_plan(request)`.
+
+**Observations.** One per skill id of an `attempt_closed` event whose `measurement_eligibility.eligible`
+is true: `y = 1` when the first outcome is `correct`, else 0, at the event's `recorded_at`; skills and
+family come from the attempt's `item_opened` event (family defaults to the item). Ineligible attempts
+(assisted, unverified, exposed, instruction, invalid, abandoned) are counted in `excluded` by reason and
+never update the posterior.
+
+**Skill state (`skill-policy/1`).**
+- Prior `alpha0 = beta0 = 1`; `half_life_days = 30` (pilot; the report also shows 14 and 60).
+- Before each observation at time `t`: `w = exp(-ln 2 * (t - t_prev) / 86400 / half_life_days)`;
+  `alpha = alpha0 + w * (alpha - alpha0) + y * c`; `beta = beta0 + w * (beta - beta0) + (1 - y) * c`.
+- Dependence cap: per (skill, family, local date in the learner's timezone) the first observation has
+  `c = 1`; later ones have `c = 0`, are kept, and are flagged `dependent`.
+- `effective_weight = (alpha - alpha0) + (beta - beta0)`; `p_mastery = P(p >= 0.70) = 1 - I_0.70(alpha, beta)`.
+- `SkillState {skill_id, policy_version, alpha, beta, effective_weight, eligible_observations,
+  dependent_observations, distinct_families, families_available, distinct_dates, last_exposure_at,
+  delayed_evidence: [{attempt_id, at, gap_days, y}], p_mastery, status, limitations}`.
+- Status (advisory, reversible, never a lesson gate):
+  - `insufficient`: fewer than 15 eligible observations or fewer than 3 distinct dates.
+  - `provisionally_mastered`: `p_mastery >= 0.80`, at least 15 eligible observations on at least 3
+    dates, at least 3 distinct families when the skill's items span 3 or more families (otherwise the
+    limitation "fewer than 3 families authored" is shown), and at least one correct eligible observation
+    7 or more days after the previous exposure to the skill.
+  - `needs_review`: was provisionally mastered and later fails the probability or delayed criterion.
+  - `developing`: otherwise.
+- With a uniform prior, four successes already give `P(p >= 0.70) = 1 - 0.7^5 = 0.832`; the 15-observation
+  floor exists because of that. Stronger mastery language needs calibration against held-out work.
+
+**Study plan (`plan-policy/1`).**
+- `PlanRequest {now, timezone, available_minutes, active_tracks, review_budget_minutes = 45,
+  new_item_budget, study_soft_stop_minutes = 90, procedure_share_min = 0.3, fatigue: none|tired|rested,
+  excluded_experiment_units}`.
+- One global budget across every subject and language: each language card kind (recognition, production,
+  listening) is a separate item charged against it. Active language tracks share the budget; five tracks
+  never multiply it.
+- Ranking: due items by lowest retrievability, with each active track's share proportional to its due
+  load and a floor so no track starves; procedures and writing keep at least `procedure_share_min` of the
+  minutes when such candidates exist; new items only after due work, up to `new_item_budget`.
+- Estimated seconds default by kind (atom 20, language card 15, procedure 180, writing 900) until measured
+  medians replace them.
+- `PlanItem {entry_id, track, reason, estimated_seconds, priority_components {retrievability,
+  overdue_days, track_share}, due_at}` and `PlanSummary {minutes_by_track, deferred_by_track, total_minutes,
+  budget_minutes, notes}`. `fatigue: tired` suggests a smaller budget; the learner can undo it.
+
+**Probes (Phase 2b).** `ProbePlan {id, skill_id, heldout_entry_id, arm: day7_only|day30_only|day7_and_day30,
+anchor_event_id, anchor_kind, target_delay_days, due_at, feedback_release_policy, intervening_exposures,
+contamination_flags, status}`. The backend stores probe plans (it gates the queue and retrieval);
+`learning-core` computes due dates and contamination from the feed. Reserved items stay out of the queue
+and out of generation and retrieval contexts until the probe; arms are reported separately; a simulated
+clock verifies scheduling only, never retention.
+
+**Acceptance tests.** Exact Beta values for hand-computed sequences; the four-success counterexample;
+decay halving at one half-life; identical state whatever the batch split of the feed; the dependence cap
+on a DST boundary in `America/New_York`; ineligible attempts excluded by reason; a plan over 500 due
+Spanish cards plus 5 maths procedures that still includes the procedures; five language tracks with large
+backlogs staying within one budget; deterministic ordering.
