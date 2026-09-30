@@ -331,3 +331,40 @@ corpus that will grow by orders of magnitude.
 - **Starter decks:** `python -m deeptutor.services.languages.build_deck --lang <code> --size <n>` builds a
   starter deck from openly licensed sources (Tatoeba sentence pairs, an open frequency list) into `data/`,
   with licence and source per item, and imports it through the practice import pipeline.
+
+## C11. Library use (spec: `docs/tutor/CORPUS.md`)
+
+**DeepTutor backend** (routes under `/api/library` and `/api/reading`):
+- **`POST /api/library/search`** takes
+  `{"query", "k"? (default 8), "domains"?, "source_types"?, "attempt_id"?, "depth"?: "normal"|"deep"}` and
+  returns `{"pack": [Hit & {"section": [str]}], "queries": [str], "mode_used": str,
+  "withheld": int}`.
+  - Hits are C1 hits.
+  - `withheld` counts the chunks dropped because an attempt is open: the chunk contains the attempt's
+    correct answer after normalisation, or sits under a solution or answer-key heading.
+  - Rewrites, RRF and rerank follow the settings `library.rewrite`, `library.rerank` and
+    `library.agentic` (all off by default).
+  - The pack follows CORPUS.md Stage 0 step 3.
+- **`POST /api/library/verify`** takes `{"citations": [{"chunk_id", "quote", "page"?}]}` and returns
+  `{"results": [{"ok": bool, "reason": null|"no_chunk"|"not_substring"|"page_out_of_range"}]}`.
+  Normalisation: whitespace, quotes, dashes, soft hyphens.
+- **`POST /api/reading/sessions`** takes `{"doc_id", "from_chunk"}` and returns
+  `{"session_id", "section": {"heading_path", "chunk_ids", "page_start", "page_end"}}`.
+- **`POST /api/reading/sessions/{id}/prepare`** returns
+  `{"prequestions": [{"id", "q"}], "idea_units": int, "atoms": [{"id", "front", "back", "chunk_id"}],
+  "warrants": [...]}`. Keys and idea-unit texts stay server-side.
+- **`POST .../prequestions/{qid}/answer`** takes `{"answer", "confidence"}` and returns
+  `{"correct": bool|null}`. The explanation is revealed only after the section is read.
+- **`POST .../recall`** takes `{"text"}`.
+- **`POST .../summary`** takes `{"text", "judgement": 1-4}` and returns
+  `{"covered": int, "missed": [{"unit", "chunk_id"}]}`. Scoring takes two passes.
+- **`POST .../atoms/accept`** takes `{"ids": [...]}` and returns `{"entry_ids": [...]}`. It creates
+  practice cards whose source is the chunk.
+
+**rag-engine** (C9 additions):
+- **`GET /documents/{doc_id}/pages/{n}.png?w=1200&highlight=<quote>`** returns a pdfium-rendered page as
+  PNG. When the quote is found in the page's text, its boxes are drawn with a translucent mark. 404 for
+  non-PDF documents.
+
+**Voice tools:** `search_library` calls `/api/library/search` with the open `attempt_id` when one exists,
+so the agent never sees withheld chunks.
