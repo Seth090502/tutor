@@ -73,18 +73,27 @@ Merged since this plan was written:
 - Voice tools and prompt (C8), and the chat teaching policy.
 - Dual N-Back: engine, audio, storage (C6), and the Train section.
 
+Also merged:
+- Design round 2: all screens restyled on the kits.
+- The Tutor screen's attempt panel, driven by C8.
+- The Train screen polish.
+- rag-engine C9: remote mode with a token, library browsing, and parallel ingest (about 4.6x faster).
+- Research round 3: `research/corpus-use.md` and `CORPUS.md`.
+
 Running, each on its own `wt/*` branch and merged after review:
-- Design round 2: the Library, Evals, Progress, and Plan with Settings screens.
-- The Tutor and Train screen polish.
-- rag-engine remote mode, library browsing and parallel ingest (C9).
-- Research round 3: corpus exploitation.
+- Languages (C10): the Rust speech commands and the languages world, the language backend (cards,
+  checking, coverage, graded texts, starter decks), and the Languages screen with per-language agents.
+- Kit consolidation: the locally built pieces promoted into the kits.
+- Library use (C11):
+  - Library search with rewrites, the answer-leak guard, citation verification and the eval arms.
+  - rag-engine page crops and index quality.
+  - The Guided Reading backend and screen.
 
 Next:
-- Languages (C10): the world and language picker, shell TTS/STT with a cache, language cards and
-  checking, the Languages screen, and per-language role-play agents.
-- A corpus-exploitation build from research round 3: guided reading, concept maps, question generation
-  from the library, and LLM query rewrite and rerank.
-- A visual-QA pass.
+- Question generation from the library (CORPUS.md Stage 1).
+- Concept graph.
+- A visual-QA pass across all screens.
+- An external review (`docs/tutor/review/`).
 
 ## Phases (remaining)
 
