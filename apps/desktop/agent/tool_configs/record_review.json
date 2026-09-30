@@ -1,6 +1,6 @@
 {
     "name": "record_review",
-    "description": "Record a graded attempt in the spaced-repetition schedule. Call once per question after check_answer. Returns the rating and when the question is next due.",
+    "description": "Record the checked attempt in the spaced-repetition schedule. Call once per question after check_answer. The server computes the rating from the attempt. Returns the rating and when the question is next due.",
     "type": "client",
     "expects_response": true,
     "response_timeout_secs": 30,
@@ -8,6 +8,10 @@
         "type": "object",
         "description": "Arguments for record_review",
         "properties": {
+            "attempt_id": {
+                "type": "string",
+                "description": "The attempt_id returned by get_next_question for the current question."
+            },
             "question_id": {
                 "type": "integer",
                 "description": "The question_id returned by get_next_question."
@@ -16,15 +20,15 @@
                 "type": "string",
                 "description": "The learner's answer as given: an option letter, letters such as A,C for multi-select, true or false, or their words."
             },
-            "correct": {
+            "judged_correct": {
                 "type": "boolean",
-                "description": "Whether the answer was correct: check_answer's result, or your own judgement when it returned null."
+                "description": "Only when check_answer returned correct null: whether the answer counts as correct, as you and the learner judged it. Omit otherwise."
             }
         },
         "required": [
+            "attempt_id",
             "question_id",
-            "answer",
-            "correct"
+            "answer"
         ]
     },
     "dynamic_variables": {

@@ -1,0 +1,23 @@
+{
+    "name": "get_hint",
+    "description": "Reveal the next rung of the hint ladder for the current attempt: 1 nudge, 2 hint, 3 key step, 4 worked example, 5 answer. Call only after the learner has attempted and is stuck, one rung per call. Returns rung, text and is_answer; when text is null, follow the instruction field instead.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for get_hint",
+        "properties": {
+            "attempt_id": {
+                "type": "string",
+                "description": "The attempt_id returned by get_next_question for the current question."
+            }
+        },
+        "required": [
+            "attempt_id"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}
