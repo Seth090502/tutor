@@ -1,6 +1,6 @@
 //! Everything under `--data` that searches and jobs share, plus the read-only source roots.
 
-use crate::bm25::Bm25;
+use crate::bm25::{self, Bm25, Tuning};
 use crate::embed::Embedder;
 use crate::error::Result;
 use crate::meta::{self, Root};
@@ -70,9 +70,18 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn open(data_dir: &Path, embedder: Option<Embedder>, ocr: Option<Box<dyn OcrProvider>>) -> Result<Engine> {
+    pub async fn open(
+        data_dir: &Path,
+        embedder: Option<Embedder>,
+        ocr: Option<Box<dyn OcrProvider>>,
+        tuning: Tuning,
+    ) -> Result<Engine> {
         let conn = store::open(data_dir)?;
-        let bm25 = Bm25::open(&data_dir.join(BM25_DIR))?;
+        let bm25 = Bm25::open(&data_dir.join(BM25_DIR), tuning)?;
+        if bm25.created {
+            // A new or replaced index is empty: the next ingest fills it from the database.
+            store::meta_delete(&conn, bm25::SCHEMA_KEY)?;
+        }
         let lancedb = data_dir.join(LANCEDB_DIR);
         let vectors = if embedder.is_some() || lancedb.is_dir() { Some(Vectors::open(&lancedb).await?) } else { None };
         Ok(Engine { data_dir: data_dir.to_path_buf(), bm25, vectors, embedder, ocr, conn: Arc::new(Mutex::new(conn)) })

@@ -27,7 +27,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 /// Variables the engine reads. They are removed from the child's environment so a test can
 /// never reach a real (paid) provider, then set explicitly where a test needs them.
-const ENGINE_VARS: [&str; 8] = [
+const ENGINE_VARS: [&str; 12] = [
     "RAG_EMBED_PROVIDER",
     "RAG_EMBED_MODEL",
     "RAG_EMBED_API_KEY",
@@ -36,6 +36,10 @@ const ENGINE_VARS: [&str; 8] = [
     "RAG_EMBED_PRICE_PER_MTOK",
     "RAG_OCR_PROVIDER",
     "RAG_ENGINE_TOKEN",
+    "RAG_BM25_TITLE_BOOST",
+    "RAG_BM25_HEADING_BOOST",
+    "RAG_BM25_WRITER_HEAP_MB",
+    "RAG_BM25_COMMIT_CHUNKS",
 ];
 
 const ALLOWED: [&str; 4] = ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"];
@@ -188,6 +192,14 @@ fn query_from(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let start = words.len().saturating_sub(30) / 2;
     words[start..(start + 30).min(words.len())].join(" ")
+}
+
+/// Width and height from a PNG's IHDR chunk.
+fn png_size(png: &[u8]) -> (u32, u32) {
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "not a PNG");
+    assert_eq!(&png[12..16], b"IHDR");
+    let be = |at: usize| u32::from_be_bytes(png[at..at + 4].try_into().unwrap());
+    (be(16), be(20))
 }
 
 fn hits(response: &Value) -> &Vec<Value> {
@@ -376,6 +388,49 @@ async fn service_contract_with_bm25_only() {
     let hit = &hits(&algebra)[0];
     assert_eq!((&hit["path"], &hit["page_start"], &hit["page_end"]), (&json!("corpus/math/books/algebra.pdf"), &json!(1), &json!(1)));
 
+    // Maths glyphs from PDFium are searchable by their LaTeX names.
+    let glyphs = server.search(json!({"query": r"\int \partial \sqrt", "mode": "bm25"})).await;
+    assert_eq!(hits(&glyphs)[0]["path"], "corpus/math/books/algebra.pdf", "{glyphs}");
+
+    // Page images (C11): PDFium-rendered PNG, with a quote marked.
+    let biology_id = by_path("corpus/science/books/biology.pdf")["doc_id"].as_str().unwrap().to_string();
+    let quote = "Glucose is first broken down in the cytoplasm, and the products then enter the mitochondrion";
+    let url = format!("{}/documents/{biology_id}/pages/1.png?w=600&highlight={}", server.base, quote.replace(' ', "%20"));
+    let response = reqwest::get(&url).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "image/png");
+    let marked = response.bytes().await.unwrap();
+    assert_eq!(png_size(&marked).0, 600);
+    let plain = reqwest::get(format!("{}/documents/{biology_id}/pages/1.png?w=600", server.base)).await.unwrap();
+    let plain = plain.bytes().await.unwrap();
+    assert_eq!(png_size(&plain), png_size(&marked));
+    assert_ne!(plain, marked, "the quote is marked");
+    let empty_highlight = reqwest::get(format!("{}/documents/{biology_id}/pages/1.png?w=600&highlight=", server.base)).await.unwrap();
+    assert_eq!(empty_highlight.bytes().await.unwrap(), plain, "an empty highlight marks nothing");
+    for (w, expected) in [("", 1200), ("?w=10", 400), ("?w=5000", 2000)] {
+        let response = reqwest::get(format!("{}/documents/{biology_id}/pages/3.png{w}", server.base)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{w}");
+        assert_eq!(png_size(&response.bytes().await.unwrap()).0, expected, "{w}");
+    }
+    let scan_id = by_path("corpus/inbox/scan.pdf")["doc_id"].as_str().unwrap().to_string();
+    let scan = reqwest::get(format!("{}/documents/{scan_id}/pages/1.png", server.base)).await.unwrap();
+    assert_eq!(scan.status(), StatusCode::OK, "a scanned page renders too");
+    for missing in [
+        format!("/documents/{biology_id}/pages/4.png"),
+        format!("/documents/{biology_id}/pages/0.png"),
+        format!("/documents/{biology_id}/pages/1.jpg"),
+        format!("/documents/{biology_id}/pages/one.png"),
+        format!("/documents/{limits_id}/pages/1.png"),
+        "/documents/nope/pages/1.png".to_string(),
+    ] {
+        let (status, body) = server.get(&missing).await;
+        assert_eq!((status, body["error"].is_string()), (StatusCode::NOT_FOUND, true), "{missing}: {body}");
+    }
+    for bad in ["?w=wide", "?w=-5", "?zoom=2"] {
+        let (status, body) = server.get(&format!("/documents/{biology_id}/pages/1.png{bad}")).await;
+        assert_eq!((status, body["error"].is_string()), (StatusCode::BAD_REQUEST, true), "{bad}: {body}");
+    }
+
     // Filters.
     let notes = server.search(json!({"query": "oxidation electrons reduction", "source_types": ["note"]})).await;
     assert_eq!(hits(&notes).len(), 1);
@@ -474,6 +529,7 @@ async fn bearer_token_guards_every_route_but_health() {
         (Method::GET, "/documents"),
         (Method::GET, "/documents/x"),
         (Method::GET, "/documents/x/chunks"),
+        (Method::GET, "/documents/x/pages/1.png"),
         (Method::GET, "/jobs/x"),
         (Method::GET, "/survey/latest"),
         (Method::POST, "/search"),

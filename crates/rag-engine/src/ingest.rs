@@ -21,7 +21,7 @@
 //! the BM25 writer, and one buffer of vectors; the file list (one entry per file) is the only
 //! corpus-sized structure.
 
-use crate::bm25::Bm25Writer;
+use crate::bm25::{self, Bm25Writer, Entry};
 use crate::chunk::{self, Chunk, DocText};
 use crate::dedup;
 use crate::discover::{self, DocKind};
@@ -46,9 +46,6 @@ use std::sync::{Mutex, mpsc};
 use std::time::{Instant, UNIX_EPOCH};
 use tokio::runtime::Handle;
 
-/// Commit the BM25 index after this many documents or chunks, whichever comes first.
-const COMMIT_DOCS: usize = 64;
-const COMMIT_CHUNKS: usize = 20_000;
 /// Vectors buffered before one LanceDB append (each append is a new data fragment).
 const VECTOR_FLUSH_ROWS: usize = 1024;
 const LOG_EVERY: usize = 25;
@@ -205,6 +202,7 @@ fn ingest_with(
         }
     }
     recover_interrupted(&mut conn, &mut writer, engine, rt)?;
+    reindex_if_stale(&conn, &mut writer, engine)?;
 
     // 1. Walk.
     let mut found = Vec::new();
@@ -296,8 +294,17 @@ fn ingest_with(
     for (doc, m, old) in &moved {
         if old.state == "indexed" && (old.domain.as_str(), old.source_type.as_str()) != (m.domain.as_str(), m.source_type) {
             writer.delete_doc(&doc.doc_id);
-            for (chunk_id, text) in chunk_texts(&conn, &doc.doc_id)? {
-                writer.add(&chunk_id, &doc.doc_id, &m.domain, m.source_type, &text)?;
+            let title: String = conn.query_row("SELECT title FROM documents WHERE doc_id = ?1", [&doc.doc_id], |r| r.get(0))?;
+            for (chunk_id, heading_path, text) in chunk_rows(&conn, &doc.doc_id)? {
+                writer.add(&Entry {
+                    chunk_id: &chunk_id,
+                    doc_id: &doc.doc_id,
+                    domain: &m.domain,
+                    source_type: m.source_type,
+                    title: &title,
+                    heading_path: &heading_path,
+                    text: &text,
+                })?;
             }
             refiled.push((doc.doc_id.clone(), m.domain.clone(), m.source_type));
         }
@@ -337,7 +344,8 @@ fn ingest_with(
         }
         progress.add_done(1);
     }
-    let (mut batch_docs, mut batch_chunks) = (0, 0);
+    let commit_chunks = engine.bm25.tuning().commit_chunks;
+    let mut batch_chunks = 0;
     let mut seen = live.len() - new_docs.len();
     let mut store_one = |new: &NewDoc, prepared: Prepared| -> Result<()> {
         match store_doc(&mut conn, &writer, new.doc, &new.meta, new.kind, prepared, false)? {
@@ -348,10 +356,9 @@ fn ingest_with(
             }
             None => report.errors += 1,
         }
-        batch_docs += 1;
-        if batch_docs >= COMMIT_DOCS || batch_chunks >= COMMIT_CHUNKS {
+        if batch_chunks >= commit_chunks {
             commit(&conn, &mut writer, engine)?;
-            (batch_docs, batch_chunks) = (0, 0);
+            batch_chunks = 0;
         }
         progress.add_done(1);
         seen += 1;
@@ -485,10 +492,72 @@ fn existing_docs(conn: &Connection) -> Result<HashMap<String, ExistingDoc>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-fn chunk_texts(conn: &Connection, doc_id: &str) -> Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare("SELECT chunk_id, text FROM chunks WHERE doc_id = ?1 ORDER BY ordinal")?;
-    let rows = stmt.query_map([doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+/// A document's chunks as `(chunk_id, heading_path, text)`.
+fn chunk_rows(conn: &Connection, doc_id: &str) -> Result<Vec<(String, Vec<String>, String)>> {
+    let mut stmt = conn.prepare("SELECT chunk_id, heading_path, text FROM chunks WHERE doc_id = ?1 ORDER BY ordinal")?;
+    let rows = stmt.query_map([doc_id], |r| Ok((r.get(0)?, heading_path(&r.get::<_, String>(1)?), r.get(2)?)))?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+fn heading_path(json: &str) -> Vec<String> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+/// Re-index BM25 from the stored chunks of every indexed document when the index was built
+/// with another schema version, or is new (see `bm25::SCHEMA_VERSION`). Nothing is extracted
+/// again. The version is recorded only once the re-index is committed, so an interrupted one
+/// starts over.
+fn reindex_if_stale(conn: &Connection, writer: &mut Bm25Writer, engine: &Engine) -> Result<()> {
+    let stored = store::meta_get(conn, bm25::SCHEMA_KEY)?;
+    if stored.as_deref() == Some(bm25::SCHEMA_VERSION) {
+        return Ok(());
+    }
+    let chunks: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM chunks c JOIN documents d ON d.doc_id = c.doc_id WHERE d.state = 'indexed'",
+        [],
+        |r| r.get(0),
+    )?;
+    if chunks > 0 {
+        eprintln!(
+            "ingest: the BM25 index has schema version {} but this build uses {}; re-indexing {chunks} chunks \
+             from the database (nothing is extracted again)",
+            stored.as_deref().unwrap_or("1"),
+            bm25::SCHEMA_VERSION
+        );
+    }
+    writer.delete_all()?;
+    let commit_chunks = engine.bm25.tuning().commit_chunks;
+    let mut stmt = conn.prepare(
+        "SELECT c.chunk_id, c.doc_id, d.domain, d.source_type, d.title, c.heading_path, c.text \
+         FROM chunks c JOIN documents d ON d.doc_id = c.doc_id WHERE d.state = 'indexed'",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut added = 0usize;
+    while let Some(r) = rows.next()? {
+        let get = |i: usize| r.get::<_, String>(i);
+        let (chunk_id, doc_id, domain, source_type, title, text) = (get(0)?, get(1)?, get(2)?, get(3)?, get(4)?, get(6)?);
+        let heading_path = heading_path(&get(5)?);
+        writer.add(&Entry {
+            chunk_id: &chunk_id,
+            doc_id: &doc_id,
+            domain: &domain,
+            source_type: &source_type,
+            title: &title,
+            heading_path: &heading_path,
+            text: &text,
+        })?;
+        added += 1;
+        if added.is_multiple_of(commit_chunks) {
+            writer.commit()?;
+        }
+    }
+    writer.commit()?;
+    engine.bm25.reload()?;
+    store::meta_set(conn, bm25::SCHEMA_KEY, bm25::SCHEMA_VERSION)?;
+    if chunks > 0 {
+        eprintln!("ingest: BM25 re-index done ({added} chunks)");
+    }
+    Ok(())
 }
 
 /// Commit the BM25 batch, make it searchable, then mark its documents indexed.
@@ -782,8 +851,8 @@ fn store_doc(
             for (_, class) in &x.page_classes {
                 counts.add(*class);
             }
-            let title = x.title.as_deref().unwrap_or(&stem);
-            upsert_doc("indexing", None, title, &counts, x.page_classes.len(), chunks.len())?;
+            let title = x.title.unwrap_or(stem);
+            upsert_doc("indexing", None, &title, &counts, x.page_classes.len(), chunks.len())?;
             let mut insert = tx.prepare_cached(
                 "INSERT INTO chunks(chunk_id, doc_id, ordinal, page_start, page_end, heading_path, text, tokens) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -802,16 +871,24 @@ fn store_doc(
             }
             drop(insert);
             ocr::enqueue(&tx, &doc.doc_id, &x.page_classes)?;
-            Some(chunks)
+            Some((chunks, title))
         }
     };
     tx.commit()?;
     if reindex {
         writer.delete_doc(&doc.doc_id);
     }
-    let Some(chunks) = chunks else { return Ok(None) };
+    let Some((chunks, title)) = chunks else { return Ok(None) };
     for c in &chunks {
-        writer.add(&chunk_id(&doc.doc_id, c.ordinal), &doc.doc_id, &m.domain, m.source_type, &c.text)?;
+        writer.add(&Entry {
+            chunk_id: &chunk_id(&doc.doc_id, c.ordinal),
+            doc_id: &doc.doc_id,
+            domain: &m.domain,
+            source_type: m.source_type,
+            title: &title,
+            heading_path: &c.heading_path,
+            text: &c.text,
+        })?;
     }
     Ok(Some(chunks.len() as u64))
 }
@@ -925,7 +1002,7 @@ fn flush(conn: &Connection, vectors: &Vectors, buffer: &mut Vec<VecRow>, embedde
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bm25::Filter;
+    use crate::bm25::{Filter, Tuning};
     use crate::extract::PdfPageText;
     use crate::store::temp_dir;
     use std::fs;
@@ -944,7 +1021,7 @@ mod tests {
             fs::create_dir_all(&roots.corpus).unwrap();
             fs::create_dir_all(roots.notes.as_ref().unwrap()).unwrap();
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-            let engine = rt.block_on(Engine::open(&dir.join("data"), embedder, None)).unwrap();
+            let engine = rt.block_on(Engine::open(&dir.join("data"), embedder, None, Tuning::default())).unwrap();
             Fixture { dir, roots, engine, rt }
         }
 
@@ -1120,6 +1197,56 @@ mod tests {
         assert_eq!((report.indexed, report.unchanged), (1, 0));
         assert_eq!(f.docs(), vec![doc("corpus/math/books/a.md", "math", "book")]);
         assert_eq!(f.search("alpha", &[]).len(), 1, "exactly one copy in BM25");
+    }
+
+    #[test]
+    fn an_older_bm25_index_is_rebuilt_from_the_database_by_the_next_ingest() {
+        let mut f = Fixture::new("ingest-schema", None);
+        f.write("corpus/math/books/limits.md", "# Limits\n\n## One-sided limits\n\nA function approaches a value from the left.\n");
+        // Title "organelles" (the file name) appears only in the title field.
+        f.write("corpus/science/books/organelles.txt", "Mitochondria release energy.");
+        assert_eq!(f.ingest().indexed, 2);
+        let version = |f: &Fixture| store::meta_get(&f.engine.conn(), bm25::SCHEMA_KEY).unwrap();
+        assert_eq!(version(&f).as_deref(), Some(bm25::SCHEMA_VERSION));
+        assert_eq!(f.search("organelles", &[]).len(), 1);
+
+        // Put back the index an older build left: chunk text only, tantivy's en_stem analyzer,
+        // and no version in the database. The engine is closed first (its files are mapped).
+        let data = f.dir.join("data");
+        let scratch = f.rt.block_on(Engine::open(&f.dir.join("scratch"), None, None, Tuning::default())).unwrap();
+        drop(std::mem::replace(&mut f.engine, scratch));
+        let bm25_dir = data.join(crate::engine::BM25_DIR);
+        fs::remove_dir_all(&bm25_dir).unwrap();
+        fs::create_dir_all(&bm25_dir).unwrap();
+        {
+            use tantivy::schema::{STORED, STRING, Schema, TEXT};
+            let mut builder = Schema::builder();
+            let chunk_id = builder.add_text_field("chunk_id", STRING | STORED);
+            builder.add_text_field("doc_id", STRING);
+            builder.add_text_field("domain", STRING);
+            builder.add_text_field("source_type", STRING);
+            let text = builder.add_text_field("text", TEXT);
+            let old = tantivy::Index::create_in_dir(&bm25_dir, builder.build()).unwrap();
+            let mut w: tantivy::IndexWriter = old.writer_with_num_threads(1, 50 << 20).unwrap();
+            w.add_document(tantivy::doc!(chunk_id => "old:0", text => "mitochondria")).unwrap();
+            w.commit().unwrap();
+        }
+        store::meta_delete(&store::open(&data).unwrap(), bm25::SCHEMA_KEY).unwrap();
+
+        let reopened = f.rt.block_on(Engine::open(&data, None, None, Tuning::default())).unwrap();
+        drop(std::mem::replace(&mut f.engine, reopened));
+        assert!(f.search("mitochondria", &[]).is_empty(), "the old index is cleared when the engine opens");
+
+        // The next ingest re-indexes every stored chunk, titles and headings included, without
+        // extracting any document again.
+        let report = f.ingest();
+        assert_eq!((report.indexed, report.unchanged), (0, 2));
+        assert_eq!(version(&f).as_deref(), Some(bm25::SCHEMA_VERSION));
+        assert_eq!(f.search("mitochondria energy", &["science"]).len(), 1);
+        assert_eq!(f.search("organelles", &[]).len(), 1);
+        assert_eq!(f.search("function approaches", &["math"]).len(), 1);
+        assert_eq!(f.ingest().indexed, 0, "a current index is not re-indexed again");
+        assert_eq!(f.search("mitochondria", &[]).len(), 1, "exactly one copy in BM25");
     }
 
     #[test]

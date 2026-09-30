@@ -12,12 +12,14 @@ mod jobs;
 mod library;
 mod meta;
 mod ocr;
+mod pages;
 mod report;
 mod search;
 mod server;
 mod store;
 mod survey;
 mod text;
+mod tokenize;
 mod triage;
 mod vector;
 
@@ -141,11 +143,12 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 fn open_engine(rt: &tokio::runtime::Runtime, data: &Path) -> Result<Engine> {
     let embedder = Embedder::from_env()?;
     let ocr = ocr::provider_from_env()?;
+    let tuning = bm25::Tuning::from_env()?;
     match &embedder {
         Some(e) => eprintln!("rag-engine: embeddings: {} / {}", e.provider_name(), e.model()),
         None => eprintln!("rag-engine: embeddings: none (RAG_EMBED_PROVIDER unset); search runs BM25 only"),
     }
-    rt.block_on(Engine::open(data, embedder, ocr))
+    rt.block_on(Engine::open(data, embedder, ocr, tuning))
 }
 
 fn serve(roots: Roots, data: &Path, bind: IpAddr, port: u16, pdfium: PathBuf) -> Result<()> {

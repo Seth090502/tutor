@@ -8,8 +8,10 @@ publish = false
 [dependencies]
 blake3 = "1.8.7"
 clap = { version = "4.6.7", features = ["derive", "env"] }
-# Runtime-bound PDFium only: no image rendering, and PDFs are processed on one thread.
+# Runtime-bound PDFium only, without the `image` crate (pages render to raw bitmaps, encoded
+# with `png`) or `thread_safe` (calls are serialised by one lock: `extract::pdfium_lock`).
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest"] }
+png = "0.18.1"
 rayon = "1.12.0"
 # Reading only: the EPUB writer is not needed.
 rbook = { version = "0.7.10", default-features = false }
@@ -24,5 +26,6 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 tantivy = "0.26.2"
 text-splitter = { version = "0.33.0", features = ["markdown", "tiktoken-rs"] }
 tiktoken-rs = "0.12.1"
+unicode-normalization = "0.1.25"
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
