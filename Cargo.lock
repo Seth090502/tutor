@@ -2328,6 +2328,7 @@ version = "0.1.0"
 dependencies = [
  "keyring",
  "reqwest 0.13.5",
+ "rusqlite",
  "rustls",
  "serde",
  "serde_json",

@@ -4,6 +4,7 @@
 mod config;
 mod elevenlabs;
 pub mod job;
+mod nback;
 mod root;
 mod secrets;
 mod services;
@@ -154,6 +155,10 @@ pub fn run() {
             config_set,
             evals_runs,
             plan_markdown,
+            nback::nback_save_session,
+            nback::nback_sessions,
+            nback::nback_session,
+            nback::nback_export_csv,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
