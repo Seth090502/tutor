@@ -134,6 +134,61 @@ writing) stay neutral and identical across subjects. There is no decorative imag
 (seductive details g -0.16), and themes are never presented as memory aids. Context-dependent memory
 effects are small and fragile (Smith & Vela 2001, d about 0.25, secondary source).
 
+## Round 2 resolutions (research round 2, 2026-09-30)
+
+Sources: `research/cognition.md`, `curricula.md`, `engineering.md`, `languages.md`, `critique-2.md`.
+
+- **Mastery (one definition).** Per skill, a decayed Beta posterior over **unassisted** attempts on fresh
+  variants.
+  - A skill is **mastered** when P(p ≥ 0.7) ≥ 0.8 **and** at least one unassisted success came 7 or more
+    days after the last exposure. That is about 15-20 attempts over several days.
+  - Assisted attempts never count.
+  - Periodic batteries are measurement, not mastery.
+- **Prerequisites are advisory.** They are shown as "ready" or "not yet" with the reason, never as hard
+  gates; the learner can override. The graph is small, hand-edited data with typed edges.
+- **Confidence scale.** 1-4 everywhere. For calibration and Brier scores it maps to probabilities
+  0.25 / 0.5 / 0.75 / 0.95.
+- **First exposure vs practice.** At the novice stage, first exposure to a procedure is a labelled worked
+  example. That is instruction, not practice. Attempt-first governs every practice and retrieval item.
+- **Variant families are testlets.** A family is one FSRS card, with at most one fresh variant per family
+  per day.
+- **FSRS.** FSRS-6 defaults at retention 0.90, capped at 0.95. Parameters are personalised only after
+  about 1,000 unassisted reviews, and only if a chronological holdout beats the defaults; both parameter
+  sets are stored.
+- **Daily workload cap.**
+  - A configurable daily review budget (default 45 minutes or 150 reviews). Overflow is served by lowest
+    retrievability first.
+  - New items are capped per day (default 15 atoms, and 10 new words, which is 20 cards, per language).
+  - Without the caps, a language's cards alone would exceed 500 reviews a day within a year.
+- **Experiment register.** At most two running at a time, each with a preregistered minimum detectable
+  effect. Small effects are labelled underpowered.
+- **Verification ladder.**
+  1. Deterministic checkers first: SymPy and Pint for maths and units, RDKit for structures, Lean
+     optional for proofs.
+  2. Then a rubric with at least two independent LLM passes, calibrated against the learner's own grading.
+  - Never a single-pass LLM verdict on proofs or mechanisms.
+  - Otherwise: "I cannot verify this."
+- **Grounding.** Formulas, quantities, quotes, dates, constants and citations are stated only from a chunk
+  retrieved this turn or a checker result. After every cited answer, a deterministic span check confirms
+  that each number and equation appears in the cited text. On a miss: "not found in the library".
+- **Cognition track.**
+  - Every claim about intelligence or cognition carries an evidence tag (strong / moderate / weak /
+    contested, plus design and population).
+  - Approved line: schooling-type learning is the best-supported route, and gains carry mainly to what
+    you practise (Ritchie & Tucker-Drob 2018: 1-5 IQ points per year of schooling, quasi-experimental,
+    mostly youth).
+  - No IQ or brain scores.
+  - Supplements and stimulants get an evidence-tiered answer with no doses, and a referral to a
+    clinician.
+  - A statistics and probability family uses natural frequencies and diagrams first, then notation.
+  - Later: an argument-map editor (Cullen 2018: d 0.71, quasi-experimental).
+- **Sleep.** After a short night, the tutor suggests favouring retrieval over new material. This is a
+  weak inference, shipped as an optional suggestion; the outcome is logged, and scheduling is never
+  enforced by it.
+- **Mock qualifying exams (later).** Per-subject exam simulations modelled on published formats (e.g.
+  Berkeley math: two 3-hour sittings), plus a voice oral-examiner mode. There is no pass probability or
+  time-to-PhD score.
+
 ## Not building
 
 - An open answer chat, answer-reveal review credit, points, streaks or XP.
