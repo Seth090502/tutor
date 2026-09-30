@@ -1,0 +1,12 @@
+/* Preview page only. Until the languages world lands in src/index.css (contract C10), this supplies its
+   accent so the chrome can be checked in context. Delete with the rest of the preview at integration. */
+:root[data-world="languages"] {
+  --acc-languages: #7a3b7d;
+  --world: var(--acc-languages);
+  --world-ink: #fbf7ee;
+}
+:root.dark[data-world="languages"] {
+  --acc-languages: #d99ad6;
+  --world: var(--acc-languages);
+  --world-ink: #1a1714;
+}

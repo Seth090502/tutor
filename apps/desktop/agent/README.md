@@ -81,3 +81,60 @@ Alternatives for `llm`:
 - Other native models, such as `gemini-3.7-flash` or `gpt-5.5`, are listed on the same page.
 - A custom LLM is not used: OpenCode's Muse Spark is served only over the OpenAI Responses API, so it
   cannot be an ElevenLabs custom LLM.
+
+## Language role-play agents
+
+One agent per target language, for the Speak tab of the Languages screen (`src/features/languages/`;
+method in `docs/tutor/LANGUAGES.md`).
+
+| File | What |
+|---|---|
+| `agent_configs/lang-es.json`, `lang-fr.json`, `lang-de.json`, `lang-ja.json`, `lang-zh.json` | The five partners. Same prompt, with the language and its register notes filled in. |
+| `tool_configs/show_gloss.json` | Client tool: puts English on the learner's screen. `kind: gloss` after the learner presses **Help in English** (logged as assistance), `kind: rule` for a short explicit rule in accuracy mode (not assistance). Never spoken. |
+| `tool_configs/log_error.json` | Client tool: silently logs one learner error (`said`, `corrected`, `english`, optional `rule`, `breaks_comprehension`) for the end-of-session digest of at most three. |
+
+What each config pins (`npm test` checks all of it):
+
+- **Language:** `agent.language` is the target code, and the `language_detection` tool is off, because an accent can
+  trigger an unwanted switch. The prompt forbids speaking English at all.
+- **Privacy:** `record_voice: false` (audio is not stored) and `retention_days: 1` (ElevenLabs keeps the text for one day).
+  The app keeps the transcript and digest locally. The agent is private (`enable_auth`), like the tutor.
+- **Voice:** `eleven_flash_v2_5`, which covers all five languages (`eleven_flash_v2` is English only). The voice id is the
+  tutor's placeholder: replace it with a native-checked voice per language before relying on it. Which TTS model an agent
+  really uses, and whether dictionary rules apply inside agents, are still open tests (LANGUAGES.md).
+- **Turn taking:** `turn_eagerness: patient` and a 10 s timeout, so a learner who pauses to think is not cut off.
+- **LLM:** the tutor's (`claude-opus-4-8`, low reasoning). `claude-sonnet-5` is the first thing to try if replies are slow.
+- **Prompt:** attempt first in the target language, no translation or gloss before an attempt; in **fluency** mode no
+  interruptions, silent `log_error` calls and recasts only when meaning breaks; in **accuracy** mode the ladder clarification
+  request, repetition, metalinguistic clue (with an on-screen English rule if still stuck), elicitation, then explicit
+  correction, at most two per turn; English only on screen; no claims about accent or pronunciation, since the agent reads
+  recogniser text, not sound.
+
+Dynamic variables the app sends at the start of a call (`dynamicVariables()` in `agent.ts`; the prompt reads them as
+`{{name}}`): `language_name`, `mode` (`fluency` or `accuracy`), `level` (A1 to C2) and `scenario`.
+
+### Push them
+
+The app reads the agent id from the config key `agent_<code>` (`agent_es`, ...), and the Speak tab can save it for you.
+At integration, register the files and push:
+
+```jsonc
+// agents.json: add one entry per language
+{ "config": "agent_configs/lang-es.json" }
+// tools.json: add both
+{ "type": "client", "config": "tool_configs/show_gloss.json" }
+{ "type": "client", "config": "tool_configs/log_error.json" }
+```
+
+Step 2 above gives an agent every tool in `tools.json`, so once the two language tools are registered it must pick
+tool ids by name instead, and `src/features/voice/tools.test.ts` (which expects `tools.json` to match the tutor's tools
+exactly) needs the same split. Then, in this folder:
+
+```powershell
+npx @elevenlabs/cli tools push
+node -e "const fs=require('fs');const t=JSON.parse(fs.readFileSync('tools.json','utf8')).tools;const cfg=t.map(x=>[JSON.parse(fs.readFileSync(x.config,'utf8')).name,x.id]);const pick=n=>cfg.find(c=>c[0]===n)?.[1];const ids=['show_gloss','log_error'].map(pick);if(ids.some(i=>!i))throw new Error('run tools push first');for(const c of ['es','fr','de','ja','zh']){const p='agent_configs/lang-'+c+'.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.conversation_config.agent.prompt.tool_ids=ids;fs.writeFileSync(p,JSON.stringify(j,null,4)+'\n')}"
+npx @elevenlabs/cli agents push
+```
+
+Paste each agent's id into the Speak tab (or `config_set agent_<code>`). Test the agent once per language before relying
+on it: does it stay in the language, call `log_error` silently, and show an English gloss without saying it?
