@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { RotateCw, ServerOff, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Eyebrow, Kbd, KbdHint, Led } from "@/components/kit"
+import { Eyebrow, KbdHint, Led } from "@/components/kit"
 import "./library.css"
 
 const at = (i: number) => ({ "--i": i }) as CSSProperties
@@ -66,9 +66,7 @@ export function OfflineState({ onRetry }: { onRetry: () => void }) {
         <RotateCw />
         Check again
       </Button>
-      <KbdHint>
-        Settings is <Kbd>Alt</Kbd> + <Kbd>6</Kbd>
-      </KbdHint>
+      <KbdHint>Settings is at the foot of the sidebar</KbdHint>
     </CalmState>
   )
 }
