@@ -1,0 +1,236 @@
+/* Tutor screen styling that Tailwind utilities cannot express, or that the kit's unlayered CSS
+   would otherwise win against. Colours come from the C5 tokens. Motion is opacity and
+   transform only, one-shot, and follows the --dur-* tokens (1 ms under reduced motion). */
+
+/* ---- Page tint: four static washes, one per orb state. Only their opacity changes, and only
+   when the state changes, so nothing repaints while the tutor listens or speaks. */
+
+.tv-tint {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  --tv-x: 50%;
+  --tv-y: 20%;
+}
+.tv-tint > i {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--dur-world) var(--ease-soft);
+}
+.tv-tint > i[data-on] {
+  opacity: 1;
+}
+.tv-tint > i[data-state="idle"] {
+  background: radial-gradient(ellipse 62% 50% at var(--tv-x) var(--tv-y), color-mix(in oklab, var(--ink) 5%, transparent), transparent 72%);
+}
+.tv-tint > i[data-state="listening"] {
+  background: radial-gradient(ellipse 62% 50% at var(--tv-x) var(--tv-y), color-mix(in oklab, var(--ok) 15%, transparent), transparent 72%);
+}
+.tv-tint > i[data-state="thinking"] {
+  background: radial-gradient(ellipse 62% 50% at var(--tv-x) var(--tv-y), color-mix(in oklab, var(--warn) 15%, transparent), transparent 72%);
+}
+.tv-tint > i[data-state="speaking"] {
+  background: radial-gradient(ellipse 62% 50% at var(--tv-x) var(--tv-y), color-mix(in oklab, var(--world) 20%, transparent), transparent 72%);
+}
+@container (min-width: 56rem) {
+  .tv-tint {
+    --tv-x: 27%;
+    --tv-y: 24%;
+  }
+}
+
+/* ---- Entrances: one short rise and fade. */
+
+@keyframes tv-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tv-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tv-enter {
+  animation: tv-rise calc(var(--dur-slow) * 1.5) var(--ease-soft) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.tv-fade {
+  animation: tv-fade calc(var(--dur-slow) * 1.6) var(--ease-soft) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+/* ---- Orb frame: a hairline ring with a soft inset, tinted only by neutrals. */
+
+.tv-orb-frame {
+  position: relative;
+  border-radius: 9999px;
+  padding: 5px;
+  background: color-mix(in oklab, var(--ink) 7%, var(--paper-sunk));
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    inset 0 2px 8px rgb(0 0 0 / 0.22),
+    0 18px 40px -18px rgb(0 0 0 / 0.45);
+}
+.tv-orb-frame > div {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--background);
+  box-shadow: inset 0 0 12px rgb(0 0 0 / 0.3);
+}
+
+/* ---- Confidence keys: four keycaps in a row, the word under each. The kit's .kc rules are
+   unlayered, so these override them by specificity. */
+
+.tv-conf {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.tv-conf .kc {
+  --u: 2.75rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 4px 2px 6px;
+  text-align: center;
+}
+.tv-conf .kc-label {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--ink-2);
+}
+.tv-conf .kc[data-latched] .kc-label {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* ---- Hint ladder: five segments that fill left to right as rungs are given. */
+
+.tv-rung {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--hairline);
+}
+.tv-rung > i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--foreground) 78%, transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform calc(var(--dur-slow) * 1.2) var(--ease-soft);
+  transition-delay: calc(var(--n, 0) * 60ms);
+}
+.tv-rung[data-on] > i {
+  transform: scaleX(1);
+}
+
+/* ---- Session hairline. */
+
+.tv-progress {
+  position: relative;
+  display: block;
+  height: 1px;
+  width: 6rem;
+  background: var(--hairline-strong);
+}
+.tv-progress > i {
+  position: absolute;
+  inset: -0.5px 0;
+  background: color-mix(in oklab, var(--foreground) 70%, transparent);
+  transform-origin: left;
+  transition: transform 1s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-progress > i {
+    transition: none;
+  }
+}
+
+/* ---- Transcript text. */
+
+.tv-tutor-text {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.6;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.tv-tutor-text p {
+  margin: 0;
+}
+.tv-tutor-text p + p {
+  margin-top: 0.75em;
+}
+
+/* ---- The question card: the kit labels every card with a mastery word, but the practice events
+   carry no mastery, so "New" would be wrong on a card the learner has seen before. */
+
+.tv-card .qc-body > div:first-child > span:last-child {
+  display: none;
+}
+/* A little tighter than the kit's default so the keys below stay on screen. */
+.tv-card .qc-body {
+  gap: 1.1rem;
+  padding: 1.4rem 1.6rem 1.3rem;
+}
+
+/* ---- Frame: one column when narrow (stage, question, conversation, call bar), two when wide
+   (stage, conversation and call bar on the left, the attempt on the right). */
+
+.tv-grid {
+  width: 100%;
+  max-width: 82rem;
+  margin-inline: auto;
+  display: grid;
+  min-height: 100%;
+  align-content: start;
+  gap: 1.25rem 2rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+.tv-grid > [data-area="transcript"] {
+  height: 20rem;
+}
+@container (min-width: 56rem) {
+  .tv-grid {
+    height: 100%;
+    min-height: 38rem;
+    padding: 1.25rem 2rem 1.5rem;
+    grid-template-columns: minmax(0, 1fr) clamp(26rem, 44%, 30rem);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "chrome attempt"
+      "stage attempt"
+      "transcript attempt"
+      "composer attempt";
+  }
+  .tv-grid > [data-area="chrome"] { grid-area: chrome; }
+  .tv-grid > [data-area="stage"] { grid-area: stage; }
+  .tv-grid > [data-area="transcript"] { grid-area: transcript; height: auto; }
+  .tv-grid > [data-area="composer"] { grid-area: composer; }
+  .tv-grid > [data-area="attempt"] { grid-area: attempt; min-height: 0; overflow-y: auto; }
+}
+
+/* ---- Quiet scrollbars for the two scrolling regions. */
+
+.tv-scroll,
+.tv-scroll * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+/* ---- Call bar: the shadcn ConversationBar prints its idle label at 10px and 50% opacity, which
+   misses the 11px and 4.5:1 floor. Raised here, since the component is not ours to edit. */
+
+[data-area="composer"] [class*="text-[10px]"] {
+  font-size: 11px;
+  color: var(--ink-2);
+}
