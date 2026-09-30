@@ -4,6 +4,7 @@
 mod config;
 mod elevenlabs;
 pub mod job;
+mod learning;
 mod nback;
 mod root;
 mod secrets;
@@ -163,6 +164,8 @@ pub fn run() {
             speech::tts_audio,
             speech::tts_voices,
             speech::stt_transcribe,
+            learning::learning_skills,
+            learning::learning_plan,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
