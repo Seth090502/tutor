@@ -185,6 +185,26 @@ export function runsOf<T>(items: T[], keep: (t: T) => boolean): T[][] {
   return runs
 }
 
+/** The entries that sit alone in their run: a band needs two points, so these are drawn as whiskers. */
+export function loneEntries<T>(runs: T[][]): T[] {
+  return runs.filter((r) => r.length === 1).map((r) => r[0])
+}
+
+/** A vertical whisker from `yLo` to `yHi` at `x`, with a short cap at each end. */
+export function whiskerPath(x: number, yLo: number, yHi: number, cap = 5): string {
+  return `M${f(x)} ${f(yLo)}V${f(yHi)}M${f(x - cap)} ${f(yLo)}H${f(x + cap)}M${f(x - cap)} ${f(yHi)}H${f(x + cap)}`
+}
+
+/**
+ * Label every `stride`-th tick so labels of `labelW` px never touch, given `count` evenly spaced ticks
+ * across `room` px. 1 means label them all.
+ */
+export function tickStride(count: number, room: number, labelW: number, gap = 10): number {
+  if (count <= 1 || room <= 0) return 1
+  const step = room / (count - 1)
+  return Math.max(1, Math.ceil((labelW + gap) / step))
+}
+
 // ---------------------------------------------------------------------------
 // End-of-line label repel
 // ---------------------------------------------------------------------------

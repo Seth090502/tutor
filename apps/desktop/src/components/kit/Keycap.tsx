@@ -2,10 +2,11 @@ import { useEffect, useRef, type ComponentProps, type KeyboardEvent as ReactKeyb
 import { Check, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { hotkeyIndex, isEditableTarget, stepIndex } from "./keycap-logic"
+import { hotkeyIndex, isEditableTarget, stepIndex, type HotkeyMode } from "./keycap-logic"
 import "./kit.css"
 import "./keycap.css"
 
+export type { HotkeyMode }
 export type KeycapStatus = "correct" | "wrong"
 
 type KeycapProps = Omit<ComponentProps<"button">, "children"> & {
@@ -66,10 +67,20 @@ type KeycapGroupProps = {
   choices: KeycapChoice[]
   /** The chosen id, or null. */
   value: string | null
-  onChange: (id: string) => void
-  /** Called with the chosen id on Enter. */
+  /** Called with the chosen id. Optional with `sendOnPress`, where a press goes to `onSubmit` and the parent
+   *  shows the choice by setting `value` itself. */
+  onChange?: (id: string) => void
+  /** Called with the chosen id on Enter, or at once on a press when `sendOnPress` is set. */
   onSubmit?: (id: string) => void
-  /** Hotkeys (A-D, 1-4, Enter) listen on the window while true. */
+  /**
+   * Choosing sends: a click or hotkey calls `onChange` and then `onSubmit`, and the arrow keys only move
+   * focus (they do not choose, so moving never sends). For answers that go straight to a tutor.
+   */
+  sendOnPress?: boolean
+  /** Which keys choose: A-D and 1-4 ("all", the default), A-D only ("letters"), or none, for a caller that
+   *  owns the keyboard. Enter still submits unless `sendOnPress` is set. */
+  hotkeys?: HotkeyMode
+  /** Hotkeys (per `hotkeys`, and Enter) listen on the window while true. */
   active?: boolean
   /** Dimmed and inert. A graded group (any choice has a status) is read-only but not dimmed. */
   disabled?: boolean
@@ -88,6 +99,8 @@ export function KeycapGroup({
   value,
   onChange,
   onSubmit,
+  sendOnPress = false,
+  hotkeys = "all",
   active = true,
   disabled = false,
   className,
@@ -98,13 +111,16 @@ export function KeycapGroup({
   const locked = disabled || choices.some((c) => c.status)
 
   // Latest props for the window listener, so it subscribes once per `active` change.
-  const latest = useRef({ choices, value, onChange, onSubmit, locked })
-  latest.current = { choices, value, onChange, onSubmit, locked }
+  const latest = useRef({ choices, value, onChange, onSubmit, locked, sendOnPress })
+  latest.current = { choices, value, onChange, onSubmit, locked, sendOnPress }
 
-  const choose = (i: number) => {
-    const c = latest.current.choices[i]
+  /** `press`: a click or hotkey, which sends when `sendOnPress`. Arrow keys only choose. */
+  const choose = (i: number, press = false) => {
+    const s = latest.current
+    const c = s.choices[i]
     if (!c) return
-    latest.current.onChange(c.id)
+    s.onChange?.(c.id)
+    if (press && s.sendOnPress) s.onSubmit?.(c.id)
     keyRefs.current[i]?.focus()
   }
 
@@ -116,6 +132,7 @@ export function KeycapGroup({
       if (isEditableTarget(e.target)) return
 
       if (e.key === "Enter") {
+        if (s.sendOnPress) return
         const target = e.target as Element | null
         const elsewhere = target?.closest?.("button, a, [role=button], [role=link]")
         if (s.value === null || !s.onSubmit || (elsewhere && !rootRef.current?.contains(elsewhere))) return
@@ -123,14 +140,14 @@ export function KeycapGroup({
         s.onSubmit(s.value)
         return
       }
-      const i = hotkeyIndex(e.key, s.choices.length)
+      const i = hotkeyIndex(e.key, s.choices.length, hotkeys)
       if (i === null) return
       e.preventDefault()
-      choose(i)
+      choose(i, true)
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [active])
+  }, [active, hotkeys, sendOnPress])
 
   const onGroupKeyDown = (e: ReactKeyboardEvent) => {
     if (locked) return
@@ -138,7 +155,9 @@ export function KeycapGroup({
     if (!delta) return
     e.preventDefault()
     const at = keyRefs.current.findIndex((k) => k === document.activeElement)
-    choose(stepIndex(at < 0 ? 0 : at, delta, choices.length))
+    const next = stepIndex(at < 0 ? 0 : at, delta, choices.length)
+    if (sendOnPress) keyRefs.current[next]?.focus()
+    else choose(next)
   }
 
   const chosen = choices.findIndex((c) => c.id === value)
@@ -167,7 +186,7 @@ export function KeycapGroup({
           disabled={disabled}
           aria-disabled={locked && !disabled ? true : undefined}
           onClick={() => {
-            if (!locked) onChange(c.id)
+            if (!locked) choose(i, true)
           }}
         >
           {c.label}

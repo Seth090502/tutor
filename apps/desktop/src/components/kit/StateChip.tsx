@@ -8,16 +8,19 @@ type StateChipProps = Omit<ComponentProps<"span">, "children"> & {
   /** The state word, shown uppercase. Always present: the dot is decoration. */
   state: string
   tone?: "world" | "ok" | "warn" | "bad"
+  /** "glass" is dark and translucent, for text over busy visuals such as the Orb. "light" is a card-coloured
+   *  chip for a plain surface. */
+  variant?: "glass" | "light"
   /** Pulsing dot. Stops under reduced motion and while the page is hidden. */
   pulse?: boolean
   dot?: boolean
 }
 
-/** Dark-glass chip for text over busy visuals such as the Orb. */
-export function StateChip({ state, tone = "world", pulse = false, dot = true, className, ...props }: StateChipProps) {
+/** State word with an optional dot. Dark glass by default (for text over the Orb); `variant="light"` for plain surfaces. */
+export function StateChip({ state, tone = "world", variant = "glass", pulse = false, dot = true, className, ...props }: StateChipProps) {
   const visible = usePageVisible()
   return (
-    <span data-slot="kit-state-chip" data-tone={tone} className={cn("kit-chip", className)} {...props}>
+    <span data-slot="kit-state-chip" data-tone={tone} data-variant={variant} className={cn("kit-chip", className)} {...props}>
       {dot ? (
         <span
           aria-hidden

@@ -1,15 +1,14 @@
 // Plan: docs/tutor/PLAN.md as an editorial reading surface. Parsing is in features/plan/markdown.ts,
 // rendering in features/plan/MarkdownView.tsx.
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ErrorInfo, type MouseEvent, type ReactNode } from "react"
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type MouseEvent, type ReactNode } from "react"
 import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react"
 
-import { Eyebrow } from "@/components/kit"
+import { Eyebrow, riseStyle } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { DesktopRequired } from "@/features/plan/DesktopRequired"
 import { headingsOf, parseBlocks, readingMinutes, type Heading } from "@/features/plan/markdown"
 import { MarkdownView, headingDomId, sectionNumbers } from "@/features/plan/MarkdownView"
 import { useScrollSpy } from "@/features/plan/useScrollSpy"
-import "@/features/plan/rise.css"
 import { inTauri, shell } from "@/lib/backend"
 import { cn } from "@/lib/utils"
 
@@ -103,7 +102,7 @@ function PlanReader({ blocks, headings, error, loading, onRefresh }: ReaderProps
       <div className="@container">
         <div className="mx-auto grid max-w-[76rem] justify-center gap-x-14 px-8 pt-8 pb-28 @[60rem]:grid-cols-[minmax(0,68ch)_13rem]">
           <div className="min-w-0">
-            <div className="screen-rise mb-10 flex items-center justify-between gap-4">
+            <div className="kit-rise mb-10 flex items-center justify-between gap-4">
               <Eyebrow rule className="text-muted-foreground">
                 <span className="tracking-[0.04em] normal-case">docs/tutor/PLAN.md</span>
                 {minutes !== null && <span>{minutes} min read</span>}
@@ -117,7 +116,7 @@ function PlanReader({ blocks, headings, error, loading, onRefresh }: ReaderProps
             {error && <ErrorNotice error={error} />}
 
             {outline.length > 1 && (
-              <details className="screen-rise border-hairline group/toc mb-8 border-y py-3 @[60rem]:hidden" style={{ "--i": 1 } as CSSProperties}>
+              <details className="kit-rise border-hairline group/toc mb-8 border-y py-3 @[60rem]:hidden" style={riseStyle(1)}>
                 <summary className="text-ink-2 flex cursor-pointer list-none items-center gap-2 font-mono text-[11px] tracking-[0.16em] uppercase [&::-webkit-details-marker]:hidden">
                   <ChevronRight aria-hidden className="size-3.5 transition-transform group-open/toc:rotate-90 motion-reduce:transition-none" />
                   Contents
@@ -138,7 +137,7 @@ function PlanReader({ blocks, headings, error, loading, onRefresh }: ReaderProps
           </div>
 
           {outline.length > 1 && (
-            <aside className="screen-rise hidden @[60rem]:block" style={{ "--i": 3 } as CSSProperties}>
+            <aside className="kit-rise hidden @[60rem]:block" style={riseStyle(3)}>
               <div className="sticky top-8 max-h-[calc(100vh-14rem)] overflow-y-auto pt-0.5">
                 <Eyebrow className="text-muted-foreground mb-4">On this page</Eyebrow>
                 <Outline headings={outline} active={active} />
@@ -199,7 +198,7 @@ function Outline({ headings, active, className }: { headings: Heading[]; active:
 
 function ErrorNotice({ error }: { error: string }) {
   return (
-    <div role="alert" className="screen-rise border-bad/60 mb-8 flex items-start gap-3 border-l-2 py-1 pl-4">
+    <div role="alert" className="kit-rise border-bad/60 mb-8 flex items-start gap-3 border-l-2 py-1 pl-4">
       <TriangleAlert aria-hidden className="text-bad mt-0.5 size-4 shrink-0" />
       <div className="min-w-0">
         <p className="text-[14px] font-medium">Could not read the plan</p>
@@ -211,7 +210,7 @@ function ErrorNotice({ error }: { error: string }) {
 
 function Empty() {
   return (
-    <div className="screen-rise border-hairline flex flex-col gap-2 border-t pt-8 font-sans">
+    <div className="kit-rise border-hairline flex flex-col gap-2 border-t pt-8 font-sans">
       <p className="text-[15px] font-medium">The plan is empty</p>
       <p className="text-ink-2 text-[14px]">
         <code className="font-mono text-[13px]">docs/tutor/PLAN.md</code> has no content yet. Refresh after editing it.
@@ -224,7 +223,7 @@ function Empty() {
 function Loading() {
   const widths = ["w-2/3", "w-full", "w-[92%]", "w-[78%]", "w-full", "w-1/2"]
   return (
-    <div role="status" aria-busy="true" className="screen-rise flex flex-col gap-4">
+    <div role="status" aria-busy="true" className="kit-rise flex flex-col gap-4">
       <span className="sr-only">Reading the plan</span>
       <Eyebrow className="text-muted-foreground">Reading the plan</Eyebrow>
       <div aria-hidden className="mt-2 flex flex-col gap-3.5">

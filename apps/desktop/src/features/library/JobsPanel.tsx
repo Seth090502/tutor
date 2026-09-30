@@ -1,13 +1,12 @@
 // Jobs: Survey and Ingest buttons, progress as a thin rule with a tabular percent, and a typed mono log of
 // state changes. Everything animates once when it appears.
 import { useEffect, useState, type CSSProperties } from "react"
-import { Check, Play, ScanSearch, TriangleAlert, X } from "lucide-react"
+import { Play, ScanSearch, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Eyebrow, LedStatus, Panel, type LedTone } from "@/components/kit"
+import { Eyebrow, LedStatus, LogLine, LogList, Panel, type LedTone } from "@/components/kit"
 import { fmtInt } from "./format"
-import { appendLog, isActive, ratio, type Job, type JobLog, type JobState, type LogLine } from "./logic"
-import "./library.css"
+import { appendLog, isActive, ratio, type Job, type JobLog, type JobState, type LogLine as LogEntry } from "./logic"
 
 const TONE: Record<JobState, LedTone> = { queued: "warn", running: "ok", done: "ok", failed: "bad" }
 
@@ -15,35 +14,16 @@ const NO_TOTAL: Record<JobState, string> = { queued: "waiting to start", running
 
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour12: false })
 
-function LogRow({ line, latest, active }: { line: LogLine; latest: boolean; active: boolean }) {
-  const text = `${clock(line.at)}  ${line.state.padEnd(7)}  ${line.detail}`
-  const ch = Math.min(text.length, 64)
+function LogRow({ line, latest, active }: { line: LogEntry; latest: boolean; active: boolean }) {
   return (
-    <li className="lib-type grid grid-cols-[8ch_8ch_minmax(0,1fr)_auto] items-start gap-x-3" style={{ "--ch": ch } as CSSProperties}>
-      <span className="text-ink-3">{clock(line.at)}</span>
-      <span className={line.state === "failed" ? "text-bad" : "text-foreground"}>{line.state}</span>
-      <span className="text-ink-2 min-w-0 break-words">
-        {line.detail}
-        {latest && active ? (
-          <span aria-hidden className="text-world ml-1.5">
-            ▍
-          </span>
-        ) : null}
-      </span>
-      {line.state === "done" ? (
-        <span
-          aria-hidden
-          className="lib-stamp border-ok/60 bg-ok/10 text-ok mt-px grid size-[18px] place-items-center rounded-full border"
-        >
-          <Check className="size-3" strokeWidth={3} />
-        </span>
-      ) : null}
-      {line.state === "failed" ? (
-        <span aria-hidden className="border-bad/60 bg-bad/10 text-bad mt-px grid size-[18px] place-items-center rounded-full border">
-          <X className="size-3" strokeWidth={3} />
-        </span>
-      ) : null}
-    </li>
+    <LogLine
+      time={clock(line.at)}
+      label={line.state}
+      detail={line.detail}
+      tone={line.state === "failed" ? "bad" : "default"}
+      mark={line.state === "done" ? "check" : line.state === "failed" ? "cross" : undefined}
+      caret={latest && active}
+    />
   )
 }
 
@@ -134,15 +114,11 @@ export function JobsPanel({
           </div>
           <Progress job={job} />
           {log && log.jobId === job.job_id ? (
-            <ol
-              role="log"
-              aria-label={`${job.kind} log`}
-              className="border-hairline m-0 flex list-none flex-col gap-1.5 border-t p-0 pt-4 font-mono text-[12px] leading-[1.5] whitespace-pre-wrap"
-            >
+            <LogList label={`${job.kind} log`}>
               {log.lines.map((line, i) => (
                 <LogRow key={line.id} line={line} latest={i === log.lines.length - 1} active={active} />
               ))}
-            </ol>
+            </LogList>
           ) : null}
         </div>
       ) : (

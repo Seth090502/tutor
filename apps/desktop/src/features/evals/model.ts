@@ -17,6 +17,9 @@ export const DECISION_META: Record<Decision, { label: string; shape: MarkerShape
   pending: { label: "Pending", shape: "triangle", tone: "var(--warn)" },
 }
 
+/** Props for the kit DecisionBadge. */
+export const decisionBadge = (d: Decision) => ({ shape: DECISION_META[d].shape, label: DECISION_META[d].label, color: DECISION_META[d].tone })
+
 /** Held-out test is the one to trust: solid, in the world accent. Train is muted and hatched or dashed. */
 export const TEST_COLOR = "var(--chart-1)"
 export const TRAIN_COLOR = "color-mix(in oklab, var(--ink) 46%, var(--card))"

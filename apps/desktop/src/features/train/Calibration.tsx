@@ -1,8 +1,8 @@
 // Audio/visual sync check: 8 flashes with beeps, scheduled exactly like trials. Shows the measured
 // frame offsets and the audio latencies, then asks whether the two lined up.
-import { useEffect, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useRef, useState } from "react"
 
-import { LedStatus, Panel } from "@/components/kit"
+import { LedStatus, Panel, riseStyle } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { audioContext, latencies, loadClips, toBuffer } from "./audio"
@@ -81,8 +81,8 @@ export function CalibrationPanel({
     <Panel
       eyebrow="Timing"
       title="Timing check"
-      className="train-rise"
-      style={{ "--i": 3 } as CSSProperties}
+      className="kit-rise"
+      style={riseStyle(3)}
       actions={
         calibration ? (
           <LedStatus tone={calibration.in_sync ? "ok" : "bad"} state={calibration.in_sync ? "In sync" : "Reported out of sync"} />

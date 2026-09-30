@@ -21,16 +21,26 @@ export interface PhaseDiscsProps {
   /** Accessible name. */
   name: string
   columns?: number
+  /** What a full disc is, worded to follow a percentage: "72% {unit}". Default "of the daily goal". */
+  unit?: string
+  /** The end of the legend, after "100%". Default "of goal". */
+  label?: string
   className?: string
 }
 
 const R = 15
 const pct = (v: number) => `${Math.round(Math.min(1, Math.max(0, v)) * 100)}%`
 
-export function phaseTable(days: PhaseDay[], caption?: string): TableData {
+/** "Mon, Sep 14 (today): 72% of the daily goal", or "not yet" for a day that has not happened. */
+export function describePhaseDay(d: PhaseDay, unit = "of the daily goal"): string {
+  return `${d.title}${d.isToday ? " (today)" : ""}: ${d.value === null ? "not yet" : `${pct(d.value)} ${unit}`}`
+}
+
+/** `column` names the share column, e.g. "Share of your busiest day". */
+export function phaseTable(days: PhaseDay[], caption?: string, column = "Share of daily goal"): TableData {
   return {
     caption,
-    columns: ["Day", "Share of daily goal"],
+    columns: ["Day", column],
     rows: days.map((d) => [d.isToday ? `${d.title} (today)` : d.title, d.value === null ? "—" : pct(d.value)]),
   }
 }
@@ -52,10 +62,10 @@ function Disc({ value, today, className, style }: { value: number | null; today?
 }
 
 /** A grid of moon-phase discs: the lit share of each disc is the share of that day's goal; today wears a ring. */
-export function PhaseDiscs({ days, name, columns = 10, className }: PhaseDiscsProps) {
+export function PhaseDiscs({ days, name, columns = 10, unit, label = "of goal", className }: PhaseDiscsProps) {
   const [cur, setCur] = useState<number | null>(null)
   const shown = cur !== null ? days[cur] : undefined
-  const describe = (d: PhaseDay) => `${d.title}${d.isToday ? " (today)" : ""}: ${d.value === null ? "not yet" : `${pct(d.value)} of the daily goal`}`
+  const describe = (d: PhaseDay) => describePhaseDay(d, unit)
   return (
     <div className={cn("min-w-0", className)}>
       <ul
@@ -91,7 +101,7 @@ export function PhaseDiscs({ days, name, columns = 10, className }: PhaseDiscsPr
               <Disc value={v} />
             </span>
           ))}
-          <span>100% of goal</span>
+          <span>100% {label}</span>
         </div>
       </div>
     </div>

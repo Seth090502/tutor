@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { Check, Minus, X } from "lucide-react"
 
-import { Eyebrow, Kbd, KbdHint, Keycap, Panel, QuestionCard, type KeycapStatus } from "@/components/kit"
+import { Eyebrow, Kbd, KbdHint, KeycapGroup, Panel, QuestionCard, type KeycapStatus } from "@/components/kit"
 import { isEditableTarget } from "@/components/kit/keycap-logic"
 import { useReducedMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -108,12 +108,13 @@ function AttemptView({ attempt, onAnswer, onRate }: { attempt: Attempt } & Pick<
       <QuestionCard
         className="tv-card"
         eyebrow="Practice question"
+        mastery={null}
         flipped={flipped}
         onFlippedChange={(f) => setBackToFront(!f)}
+        verdict={checked ? <Verdict correct={checked.correct} chosen={attempt.answer} /> : undefined}
         explanation={
           checked ? (
             <div className="flex flex-col gap-4">
-              <Verdict correct={checked.correct} chosen={attempt.answer} />
               {checked.correctAnswer ? (
                 <div>
                   <Eyebrow as="div" className="mb-1.5">
@@ -135,21 +136,21 @@ function AttemptView({ attempt, onAnswer, onRate }: { attempt: Attempt } & Pick<
             {attempt.question}
           </p>
           {options.length ? (
-            <div role="group" aria-label="Answer choices" className="flex flex-col gap-1.5">
-              {options.map((o, i) => (
-                <Keycap
-                  key={o.id}
-                  legend={o.id.length === 1 ? o.id.toUpperCase() : String(i + 1)}
-                  latched={attempt.answer === o.id}
-                  status={statusOf(o.id)}
-                  disabled={!checked && !onAnswer}
-                  aria-disabled={checked || attempt.answer !== null ? true : undefined}
-                  onClick={() => answer(o.id)}
-                >
-                  {o.text}
-                </Keycap>
-              ))}
-            </div>
+            <KeycapGroup
+              aria-label="Answer choices"
+              className="items-stretch"
+              choices={options.map((o, i) => ({
+                id: o.id,
+                legend: o.id.length === 1 ? o.id.toUpperCase() : String(i + 1),
+                label: o.text,
+                status: statusOf(o.id),
+              }))}
+              value={attempt.answer}
+              sendOnPress
+              onSubmit={answer}
+              hotkeys="none"
+              disabled={!checked && !onAnswer}
+            />
           ) : (
             <KbdHint>Answer aloud, or type it in the message box.</KbdHint>
           )}
@@ -169,22 +170,16 @@ function AttemptView({ attempt, onAnswer, onRate }: { attempt: Attempt } & Pick<
                 </span>
               ) : null}
             </div>
-            <div role="group" aria-label="How sure are you?" className="tv-conf">
-              {CONFIDENCE_WORDS.map((word, i) => {
-                const level = (i + 1) as Confidence
-                return (
-                  <Keycap
-                    key={word}
-                    legend={String(level)}
-                    latched={attempt.confidence === level}
-                    disabled={!onRate}
-                    onClick={() => onRate?.(level)}
-                  >
-                    {word}
-                  </Keycap>
-                )
-              })}
-            </div>
+            <KeycapGroup
+              aria-label="How sure are you?"
+              className="tv-conf items-stretch"
+              choices={CONFIDENCE_WORDS.map((word, i) => ({ id: String(i + 1), legend: String(i + 1), label: word }))}
+              value={attempt.confidence ? String(attempt.confidence) : null}
+              sendOnPress
+              onSubmit={(id) => onRate?.(Number(id) as Confidence)}
+              hotkeys="none"
+              disabled={!onRate}
+            />
           </div>
         ) : null}
         <HintLadder rung={attempt.rung} text={attempt.hintText} isAnswer={attempt.hintIsAnswer} />

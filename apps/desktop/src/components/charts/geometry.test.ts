@@ -13,6 +13,7 @@ import {
   lineageOf,
   linearScale,
   linePath,
+  loneEntries,
   markerPath,
   navigateArcs,
   nearestIndex,
@@ -28,6 +29,8 @@ import {
   repelLabels,
   ROOT_ID,
   runsOf,
+  tickStride,
+  whiskerPath,
   sparklinePoints,
   stackLayout,
   truncateLabel,
@@ -433,5 +436,30 @@ describe("sparklinePoints / truncateLabel", () => {
   it("truncates with an ellipsis", () => {
     expect(truncateLabel("abcdef", 4)).toBe("abc…")
     expect(truncateLabel("abc", 4)).toBe("abc")
+  })
+})
+
+describe("single-point whiskers", () => {
+  it("picks out only the entries that have no neighbour in their run", () => {
+    const runs = runsOf([1, 2, 0, 3, 0, 4, 5, 6], (n) => n > 0)
+    expect(runs).toEqual([[1, 2], [3], [4, 5, 6]])
+    expect(loneEntries(runs)).toEqual([3])
+    expect(loneEntries([])).toEqual([])
+  })
+
+  it("draws a stem with a cap at each end", () => {
+    expect(whiskerPath(10, 50, 20, 4)).toBe("M10 50V20M6 50H14M6 20H14")
+  })
+})
+
+describe("tickStride", () => {
+  it("labels every tick when they fit and thins them when they do not", () => {
+    expect(tickStride(4, 300, 60)).toBe(1)
+    expect(tickStride(10, 300, 60)).toBe(3)
+    expect(tickStride(20, 200, 40)).toBe(5)
+  })
+  it("handles degenerate input", () => {
+    expect(tickStride(1, 300, 60)).toBe(1)
+    expect(tickStride(5, 0, 60)).toBe(1)
   })
 })

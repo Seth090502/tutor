@@ -14,6 +14,12 @@ describe("hotkeyIndex", () => {
     expect(hotkeyIndex("c", 3)).toBe(2)
   })
 
+  it("letters mode leaves the digits alone, and none maps nothing", () => {
+    expect(["a", "B", "c", "D"].map((k) => hotkeyIndex(k, 4, "letters"))).toEqual([0, 1, 2, 3])
+    for (const k of ["1", "2", "3", "4"]) expect(hotkeyIndex(k, 4, "letters")).toBeNull()
+    for (const k of ["a", "d", "1", "4"]) expect(hotkeyIndex(k, 4, "none")).toBeNull()
+  })
+
   it("ignores other keys and named keys", () => {
     for (const k of ["e", "5", "0", "Enter", "ArrowDown", " ", ""]) expect(hotkeyIndex(k, 4)).toBeNull()
   })

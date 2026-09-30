@@ -170,13 +170,7 @@
   margin-top: 0.75em;
 }
 
-/* ---- The question card: the kit labels every card with a mastery word, but the practice events
-   carry no mastery, so "New" would be wrong on a card the learner has seen before. */
-
-.tv-card .qc-body > div:first-child > span:last-child {
-  display: none;
-}
-/* A little tighter than the kit's default so the keys below stay on screen. */
+/* ---- The question card. A little tighter than the kit's default so the keys below stay on screen. */
 .tv-card .qc-body {
   gap: 1.1rem;
   padding: 1.4rem 1.6rem 1.3rem;
@@ -225,12 +219,4 @@
 .tv-scroll * {
   scrollbar-width: thin;
   scrollbar-color: var(--hairline-strong) transparent;
-}
-
-/* ---- Call bar: the shadcn ConversationBar prints its idle label at 10px and 50% opacity, which
-   misses the 11px and 4.5:1 floor. Raised here, since the component is not ours to edit. */
-
-[data-area="composer"] [class*="text-[10px]"] {
-  font-size: 11px;
-  color: var(--ink-2);
 }

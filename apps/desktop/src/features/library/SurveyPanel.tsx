@@ -5,7 +5,6 @@ import { DataTable } from "@/components/charts"
 import { Eyebrow, Panel } from "@/components/kit"
 import { fmtBytes, fmtCompact, fmtInt } from "./format"
 import type { Survey } from "./logic"
-import "./library.css"
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (

@@ -1,12 +1,11 @@
 // Settings: services, API keys and the ElevenLabs agent id (Tauri commands: contract C3).
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { ChevronRight, RotateCw, Save, Trash2 } from "lucide-react"
 
-import { Eyebrow, LedStatus, ServiceRow, type LedTone } from "@/components/kit"
+import { Eyebrow, LedStatus, PasswordField, ServiceRow, TextField, riseStyle, type LedTone } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { DesktopRequired } from "@/features/plan/DesktopRequired"
 import { inTauri, shell, type SecretName, type ServiceState, type ServicesStatus } from "@/lib/backend"
-import "@/features/plan/rise.css"
 
 const KEYS: { name: SecretName; label: string; use: string; env?: string }[] = [
   { name: "elevenlabs", label: "ElevenLabs", use: "Voice tutor conversations" },
@@ -28,17 +27,13 @@ const STATE_STYLE: Record<ServiceState["state"], { label: string; tone: LedTone;
   failed: { label: "Failed", tone: "bad" },
 }
 
-// `::-ms-reveal` hides the WebView's own show-password eye: a typed key is never displayed either.
-const inputClass =
-  "[&::-ms-reveal]:hidden border-hairline-strong placeholder:text-muted-foreground h-9 min-w-0 flex-1 rounded-lg border bg-transparent px-3 font-mono text-[13px] tracking-[0.02em] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-
 function errorText(e: unknown) {
   return e instanceof Error ? e.message : String(e)
 }
 
 function Group({ index, title, note, children }: { index: number; title: string; note: ReactNode; children: ReactNode }) {
   return (
-    <section className="screen-rise flex flex-col" style={{ "--i": index } as CSSProperties} aria-labelledby={`settings-${index}`}>
+    <section className="kit-rise flex flex-col" style={riseStyle(index)} aria-labelledby={`settings-${index}`}>
       <header className="mb-4 flex flex-col gap-3">
         <Eyebrow rule className="text-muted-foreground">{String(index + 1).padStart(2, "0")}</Eyebrow>
         <div>
@@ -227,15 +222,12 @@ function KeyRow({
           />
         </div>
         <div className="flex gap-2">
-          <input
+          <PasswordField
             id={id}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={saved ? "Paste a new key to replace the saved one" : "Paste the key"}
-            className={inputClass}
+            className="flex-1"
           />
           <Button type="submit" variant={value.trim() ? "default" : "outline"} className="h-9" disabled={busy || !value.trim()}>
             <Save />
@@ -337,14 +329,14 @@ function AgentSection() {
           />
         </div>
         <div className="flex gap-2">
-          <input
+          <TextField
             id="elevenlabs-agent-id"
             autoComplete="off"
             spellCheck={false}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="agent_…"
-            className={inputClass}
+            className="flex-1"
           />
           <Button type="submit" variant={dirty ? "default" : "outline"} className="h-9" disabled={!dirty}>
             <Save />
