@@ -40,12 +40,15 @@ _PROVIDER_REASONING_PATTERNS = {
 _PROVIDER_DEFAULT_OFF_PATTERNS: dict[str, tuple[str, ...]] = {
     "gemini": ("gemini-2.5", "gemini-3"),
 }
-# Models matched above that cannot turn thinking off at all: they reject
+# Models that cannot turn thinking off at all: they reject
 # ``reasoning_effort="none"`` with a 400, and "minimal" is the lowest level
 # they accept (#734). Kept beside the patterns it narrows so adding a family
-# to one table is an obvious prompt to check the other.
+# to one table is an obvious prompt to check the other. OpenRouter marks Meta
+# Muse Spark's reasoning as mandatory and says not to send ``none`` to such
+# models; it has no default-off entry above, so only explicit requests reach it.
 _MINIMAL_NOT_OFF_PATTERNS: dict[str, tuple[str, ...]] = {
     "gemini": ("gemini-3", "gemini-2.5-pro"),
+    "openrouter": ("meta/muse-spark",),
 }
 _CUSTOM_MODEL_THINKING_STYLES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("qwen3", "qwen-3", "qwq", "qwen-plus"), "enable_thinking"),
@@ -172,6 +175,7 @@ def build_openai_compatible_reasoning_kwargs(
                 patterns = custom_patterns
 
     resolved_effort = reasoning_effort
+    off_requested = False
     if resolved_effort is None:
         if patterns and _matches(model_name, patterns):
             resolved_effort = "high"
@@ -180,6 +184,7 @@ def build_openai_compatible_reasoning_kwargs(
     elif str(resolved_effort).strip().lower() == "none":
         # An explicit "off" is subject to the same vendor limit as an inferred
         # one — see ``thinking_off_effort_for``.
+        off_requested = True
         resolved_effort = thinking_off_effort_for(provider_name, model_name)
 
     semantic_effort: str | None = None
@@ -192,26 +197,22 @@ def build_openai_compatible_reasoning_kwargs(
     # OpenRouter exposes a provider-neutral reasoning object.  Keep the
     # explicit off request and exclude any reasoning trace from the response;
     # this is important for models whose gateway response otherwise uses the
-    # ``reasoning`` field alongside ``content``.
-    if provider_name == "openrouter" and semantic_effort == "none":
+    # ``reasoning`` field alongside ``content``.  ``effort`` is whatever the
+    # model accepts as off (``minimal`` where ``none`` is rejected).
+    openrouter_off = provider_name == "openrouter" and off_requested
+    if openrouter_off:
         kwargs["extra_body"] = {
-            "reasoning": {"effort": "none", "exclude": True},
+            "reasoning": {"effort": semantic_effort, "exclude": True},
         }
     if resolved_effort:
         suppress_top_level = bool(
             thinking_style
             and (semantic_effort in _THINKING_OFF_EFFORTS or thinking_style == "enable_thinking")
         )
-        if not suppress_top_level and not (
-            provider_name == "openrouter" and semantic_effort == "none"
-        ):
+        if not suppress_top_level and not openrouter_off:
             kwargs["reasoning_effort"] = resolved_effort
 
-    if (
-        thinking_style
-        and resolved_effort is not None
-        and not (provider_name == "openrouter" and semantic_effort == "none")
-    ):
+    if thinking_style and resolved_effort is not None and not openrouter_off:
         thinking_enabled = semantic_effort not in _THINKING_OFF_EFFORTS
         extra = _THINKING_STYLE_MAP.get(thinking_style, lambda _enabled: None)(thinking_enabled)
         if extra:

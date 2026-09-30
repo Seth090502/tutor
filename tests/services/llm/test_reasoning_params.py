@@ -7,6 +7,7 @@ import pytest
 from deeptutor.services.llm.reasoning_params import (
     build_openai_compatible_reasoning_kwargs,
     default_reasoning_effort_for,
+    thinking_off_effort_for,
 )
 
 
@@ -122,3 +123,31 @@ def test_an_explicitly_requested_off_is_narrowed_like_an_inferred_one() -> None:
     assert effort("gemini-2.5-flash") == "none"
     assert thinking_off_effort_for("openai", "gpt-4o") == "none"
     assert thinking_off_effort_for(None, None) == "none"
+
+
+class TestOpenRouterMandatoryReasoning:
+    """Muse Spark's reasoning is mandatory on OpenRouter, so it rejects ``"none"``."""
+
+    @staticmethod
+    def _kwargs(model: str, effort: str) -> dict:
+        return build_openai_compatible_reasoning_kwargs(
+            spec=None, binding="openrouter", model=model, reasoning_effort=effort
+        )
+
+    def test_none_is_sent_as_minimal_and_still_hidden(self) -> None:
+        assert self._kwargs("meta/muse-spark-1.3", "none") == {
+            "extra_body": {"reasoning": {"effort": "minimal", "exclude": True}}
+        }
+
+    def test_other_efforts_are_unchanged(self) -> None:
+        assert self._kwargs("meta/muse-spark-1.3", "xhigh") == {"reasoning_effort": "xhigh"}
+
+    def test_none_on_other_openrouter_models_is_unchanged(self) -> None:
+        assert self._kwargs("z-ai/glm-4.5-air", "none") == {
+            "extra_body": {"reasoning": {"effort": "none", "exclude": True}}
+        }
+
+    def test_thinking_off_effort_is_keyed_by_provider(self) -> None:
+        assert thinking_off_effort_for("openrouter", "meta/muse-spark-1.3") == "minimal"
+        assert thinking_off_effort_for("openrouter", "z-ai/glm-4.5-air") == "none"
+        assert thinking_off_effort_for("openai", "meta/muse-spark-1.3") == "none"
