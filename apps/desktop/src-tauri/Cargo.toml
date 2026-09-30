@@ -22,3 +22,21 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Windows Credential Manager (keyring 4's v1 API selects windows-native-keyring-store on Windows).
+keyring = "4.2"
+# HTTPS with rustls on the ring provider (installed in `http_client`): ring is Apache-2.0 AND ISC
+# and far lighter to build than the default aws-lc-rs.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio = { version = "1", features = ["time"] }
+# The shell is Windows-only: Job Objects keep sidecar process trees tied to the app.
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"

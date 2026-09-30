@@ -20,7 +20,27 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "blob:"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "blob:", "data:", "https://storage.googleapis.com"],
+        "connect-src": [
+          "'self'",
+          "ipc:",
+          "http://ipc.localhost",
+          "http://127.0.0.1:8001",
+          "ws://127.0.0.1:8001",
+          "http://127.0.0.1:8811",
+          "ws://127.0.0.1:8811",
+          "https://api.elevenlabs.io",
+          "wss://api.elevenlabs.io",
+          "wss://livekit.rtc.elevenlabs.io",
+          "https://livekit.rtc.elevenlabs.io"
+        ],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"]
+      }
     }
   },
   "bundle": {
