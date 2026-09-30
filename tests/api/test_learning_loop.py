@@ -639,3 +639,28 @@ def test_answers_captured_elsewhere_create_items_not_evidence(env):
         assert tuple(state) == (1, 0)
         assert conn.execute("SELECT COUNT(*) FROM practice_review_events").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM learning_events").fetchone()[0] == 0
+
+
+def test_item_opened_carries_skills_and_family_from_tags(env):
+    store, repo, client = env
+    entry = seed(store)
+    with repo.connect() as conn:
+        for tag in ("skill:arith.add", "skill:arith.count", "family:add-small", "Math"):
+            conn.execute(
+                "INSERT OR IGNORE INTO notebook_categories(name, created_at) VALUES(?, 0)", (tag,)
+            )
+            conn.execute(
+                """INSERT INTO notebook_entry_categories(entry_id, category_id)
+                SELECT ?, id FROM notebook_categories WHERE name=?""",
+                (entry, tag),
+            )
+    me = Learner(client)
+    me.start()
+    opened = me.open(entry)
+    item = opened["public_state"]["attempt"]["item"]
+    assert (item["skill_ids"], item["family_id"]) == (["arith.add", "arith.count"], "add-small")
+    event = next(e for e in opened["events"] if e["kind"] == "item_opened")
+    assert (event["payload"]["skill_ids"], event["payload"]["family_id"]) == (
+        ["arith.add", "arith.count"],
+        "add-small",
+    )

@@ -455,6 +455,9 @@ Event:   {event_id, seq, kind, attempt_id, recorded_at, source, payload}   (publ
 | `invalidate_item {reason}` | any | item quarantined; a live attempt closes `invalidated` without a review |
 | `close_session {}` | an active session | submitted items close and release; the rest close `abandoned` |
 
+Items carry `skill_ids` (from `skill:<id>` category tags) and `family_id` (from a `family:<id>` tag) in
+`attempt.item` and in the `item_opened` event, so projections (C13) need only events.
+
 Check verdicts:
 - `correct`: in practice, the attempt closes `correct`.
 - `incorrect`: in practice, `remediating`. A dont_know response is `incorrect` with checker `dont_know`.

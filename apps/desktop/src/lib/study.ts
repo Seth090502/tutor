@@ -78,6 +78,10 @@ export type StudyAttempt = {
     options: Record<string, string>
     lang: string | null
     rungs_available: number
+    /** From the item's `skill:<id>` tags, for projections (C13). */
+    skill_ids?: string[]
+    /** From a `family:<id>` tag: variants of one seed are not independent evidence. */
+    family_id?: string | null
   }
   first_response: StudyResponse | null
   repairs: StudyResponse[]

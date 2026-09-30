@@ -628,6 +628,19 @@ def _open_item(cmd: _Command) -> None:
     if recent:
         reasons.append("exposed_within_24h")
     hints = json.loads(entry["hints_json"] or "[]")
+    # Skills and the variant family travel with the event so projections (C13) never read items.
+    tags = [
+        row["name"]
+        for row in cmd.conn.execute(
+            """SELECT c.name FROM notebook_entry_categories ec
+            JOIN notebook_categories c ON c.id=ec.category_id WHERE ec.entry_id=? ORDER BY c.name""",
+            (entry_id,),
+        )
+    ]
+    skill_ids = [t[len("skill:") :] for t in tags if t.startswith("skill:") and len(t) > 6]
+    family_id = next(
+        (t[len("family:") :] for t in tags if t.startswith("family:") and len(t) > 7), None
+    )
     attempt = {
         "attempt_id": uuid.uuid4().hex,
         "session_id": cmd.session["session_id"],
@@ -644,6 +657,8 @@ def _open_item(cmd: _Command) -> None:
             "rungs_available": 0
             if cmd.session["mode"] == "assessment"
             else min(len(hints), LADDER_TOP),
+            "skill_ids": skill_ids,
+            "family_id": family_id,
         },
         "first_response": None,
         "repairs": [],
@@ -662,7 +677,13 @@ def _open_item(cmd: _Command) -> None:
     cmd.save(attempt)
     cmd.emit(
         "item_opened",
-        {"entry_id": entry_id, "item_version": attempt["item_version"], "exposure": reasons},
+        {
+            "entry_id": entry_id,
+            "item_version": attempt["item_version"],
+            "skill_ids": skill_ids,
+            "family_id": family_id,
+            "exposure": reasons,
+        },
         attempt,
     )
 
