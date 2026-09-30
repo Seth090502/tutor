@@ -1,0 +1,21 @@
+{
+    "name": "get_next_question",
+    "description": "Get the next practice question due for review from the learner's question bank. Returns question_id, question, question_type and options (option letter to text), or a sentence when nothing is due. It never contains the answer.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for get_next_question",
+        "properties": {
+            "domain": {
+                "type": "string",
+                "description": "Preferred subject, such as math, science, chemistry or english. Omit for any subject."
+            }
+        },
+        "required": []
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}

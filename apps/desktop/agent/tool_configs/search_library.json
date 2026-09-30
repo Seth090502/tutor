@@ -1,0 +1,27 @@
+{
+    "name": "search_library",
+    "description": "Search the learner's own books, papers and notes. Returns up to 5 passages with title, domain, source_type, pages and an excerpt. Use it to ground explanations and cite title and page.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for search_library",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What to look for, in a few focused words."
+            },
+            "domain": {
+                "type": "string",
+                "description": "Limit to one subject, such as math, science, chemistry or english. Omit to search everything."
+            }
+        },
+        "required": [
+            "query"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}
