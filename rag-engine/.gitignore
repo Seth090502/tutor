@@ -1,0 +1,4 @@
+/target/
+/vendor/
+# The repository root ignores *.pdf; keep the generated test fixtures.
+!/tests/fixtures/**/*.pdf
