@@ -107,6 +107,8 @@ JS. Typed wrappers live in `apps/desktop/src/lib/backend.ts`.
 | `config_set` | `key, value` | nothing; non-secret settings in the app config dir |
 | `evals_runs` | none | `{"runs": [Run, ...], "warnings": ["…"]}`: every `<root>/evals/runs/*.json` (C2), newest `created_at` first; unreadable files are skipped and named in `warnings` |
 | `plan_markdown` | none | `{"markdown": "…"}`: contents of `<root>/docs/tutor/PLAN.md` |
+| `learning_skills` | `timezone: string` (IANA name) | `{"store_id", "policy_version", "last_event_seq", "skills": [SkillState], "excluded": {reason: count}, "skipped_unknown", "limitations": ["…"]}`; first catches up from `/api/study/feed` into `<app data dir>/learning.sqlite` (C13) |
+| `learning_plan` | `request: PlanRequest` (C13) | `Plan {items: [PlanItem], summary: PlanSummary}` over `/api/study/candidates` |
 
 The shell starts both services as child processes in a Windows Job Object (killed with the app),
 passes the allowed browser origins to DeepTutor via `CORS_ORIGINS`, and passes stored secrets to the
@@ -538,8 +540,8 @@ code already does, `services/workspace/data_migration.py`) while the backend is 
 
 ## C13. Learner projections, study plan and probes (Rust `learning-core`, desktop shell, backend feed)
 
-Status (2026-09-30): the backend feed and candidates routes and the `learning-core` skills and plan modules
-are implemented and tested; the shell projection host, probes and the Progress screen are not built yet. Every
+Status (2026-09-30): the backend feed and candidates routes, the `learning-core` skills and plan modules and
+the shell projection host are implemented and tested; probes and the Progress screen are not built yet. Every
 number below is a **local policy default**, versioned and provisional (evidence ledger EV-023); none of them
 establishes improved learning.
 
@@ -562,12 +564,19 @@ establishes improved learning.
       name; `lang:`, `card:`, `skill:`, `family:`, `chunk:` and `provisional` are not ordinary), else `general`.
   - The feed passes stored payloads unchanged, so `assistance_given.payload.text` carries the hints the learner
     requested (already shown to the learner); unrequested hints and keys never appear.
-- Projection host (desktop shell, `src-tauri/src/learning.rs`, not built yet): `<app data>/learning.sqlite`
-  holds a serialised `SkillFold` snapshot per `(store_id, policy_version, last_event_seq)`; the fold, not a
-  table of observations, is the resume point, because exposures and `families_available` also need the
-  ineligible attempts. JSON snapshots need serde_json's `float_roundtrip` so a resume is bit-exact. It catches
-  up from the feed on demand and is rebuilt from scratch when the policy version changes or on request.
-  Tauri commands: `learning_skills()`, `learning_plan(request)`.
+- Projection host (desktop shell, `src-tauri/src/learning.rs`): `<app data>/learning.sqlite` (`user_version`
+  1) holds one row per `(store_id, policy_version, timezone)` with `last_event_seq`, the serialised `SkillFold`
+  and the attempts opened but not yet closed. The fold, not a table of observations, is the resume point,
+  because exposures and `families_available` also need the ineligible attempts; serde_json's `float_roundtrip`
+  keeps a resume bit-exact. Each call catches up from the feed in 500-event pages and saves in one
+  transaction; a save never replaces a row that got further. A different `store_id` starts a new row; a policy
+  or timezone change, or an unreadable fold, rebuilds from event 0; a newer database file is refused. An
+  `attempt_closed` without its `item_opened` is skipped and counted (`skipped_unknown`); a malformed or
+  out-of-order event is a readable error and nothing is saved. Tauri commands: `learning_skills(timezone)`,
+  `learning_plan(request)` (C3). Candidate kinds: a `lang:` track is `language_card`; `question_type` essay,
+  writing or free_response is `writing`; proof, derivation, calculation, problem or multi_step is `procedure`;
+  everything else is `atom`. Open: a manual rebuild command, and detecting a backend restored from an older
+  backup under the same `store_id`.
 
 **Observations.** One per skill id of an `attempt_closed` event whose `measurement_eligibility.eligible`
 is true: `y = 1` when the first outcome is `correct`, else 0, at the event's `recorded_at`; skills and
