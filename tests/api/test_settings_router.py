@@ -1386,6 +1386,112 @@ async def test_fetch_models_resolves_masked_key_server_side(
     assert response == {"models": [{"id": "gpt-4o-mini", "name": "gpt-4o-mini"}]}
 
 
+def _stored_key_catalog() -> dict[str, Any]:
+    return _build_catalog(
+        llm_model="gpt-4o-mini",
+        llm_base_url="https://llm.example/v1",
+        llm_api_key="stored-secret",
+        embedding_model="text-embedding-3-small",
+        embedding_base_url="https://emb.example/v1/embeddings",
+        embedding_api_key="emb-key",
+    )
+
+
+async def _never_called(*args: Any, **kwargs: Any) -> Any:
+    raise AssertionError("the stored key must not be sent to another server")
+
+
+def _patch_probe_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    import deeptutor.services.llm.factory as factory_module
+    import deeptutor.services.settings.provider_probe as probe_module
+
+    service = _FakeCatalogService(_stored_key_catalog())
+    monkeypatch.setattr(settings_router, "get_model_catalog_service", lambda: service)
+    monkeypatch.setattr(
+        settings_router,
+        "get_settings_draft_service",
+        lambda: SimpleNamespace(load=lambda: {"catalog": None}),
+    )
+    monkeypatch.setattr(factory_module, "fetch_models", _never_called)
+    monkeypatch.setattr(probe_module, "probe_provider", _never_called)
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_refuses_a_saved_key_for_another_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deeptutor.services.config.model_catalog import CatalogSecretEndpointError
+
+    _patch_probe_sources(monkeypatch)
+
+    with pytest.raises(CatalogSecretEndpointError, match="Enter the key"):
+        await settings_router.fetch_models_from_provider(
+            settings_router.FetchModelsPayload(
+                binding="openai",
+                base_url="https://attacker.example/v1",
+                api_key=settings_router.CATALOG_SECRET_MASK,
+                profile_id="llm-profile-default",
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_probe_refuses_a_saved_key_for_another_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deeptutor.services.config.model_catalog import CatalogSecretEndpointError
+
+    _patch_probe_sources(monkeypatch)
+
+    with pytest.raises(CatalogSecretEndpointError, match="Enter the key"):
+        await settings_router.test_provider_connection(
+            settings_router.ProviderProbePayload(
+                binding="openai",
+                base_url="https://attacker.example:443/v1",
+                api_key=settings_router.CATALOG_SECRET_MASK,
+                profile_id="llm-profile-default",
+            )
+        )
+
+
+_ATTACKER_PROBE = {
+    "binding": "openai",
+    "base_url": "https://attacker.example/v1",
+    "api_key": "***",
+    "profile_id": "llm-profile-default",
+}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/api/settings/fetch-models", _ATTACKER_PROBE),
+        ("POST", "/api/settings/test-provider", _ATTACKER_PROBE),
+        ("PUT", "/api/settings/catalog", None),
+    ],
+)
+def test_saved_key_for_another_server_answers_400(
+    monkeypatch: pytest.MonkeyPatch, method: str, path: str, body: dict[str, Any] | None
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from deeptutor.api import main as api_main
+    from deeptutor.api.routers import auth as auth_router
+
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", False)
+    _patch_probe_sources(monkeypatch)
+    if body is None:
+        catalog = settings_router.redact_catalog_secrets(_stored_key_catalog())
+        catalog["services"]["llm"]["profiles"][0]["base_url"] = "https://attacker.example/v1"
+        body = {"catalog": catalog}
+
+    client = TestClient(api_main.app, base_url="http://127.0.0.1:8001")
+    response = client.request(method, path, json=body)
+
+    assert response.status_code == 400, response.text
+    assert "Enter the key" in response.json()["detail"]
+
+
 @pytest.mark.asyncio
 async def test_fetch_models_requires_base_url() -> None:
     from fastapi import HTTPException

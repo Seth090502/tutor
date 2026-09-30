@@ -7,12 +7,14 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from deeptutor.api.request_guard import RequestGuardMiddleware, allowed_hosts_from_env
 from deeptutor.logging import configure_logging
 from deeptutor.services.config import (
     ensure_runtime_settings_files,
     export_runtime_settings_to_env,
     load_system_settings,
 )
+from deeptutor.services.config.model_catalog import CatalogSecretEndpointError
 from deeptutor.services.config.origins import app_origins
 from deeptutor.services.path_service import get_path_service
 
@@ -394,6 +396,27 @@ app = FastAPI(
     redirect_slashes=False,
 )
 app.add_middleware(WorkspaceActivityMiddleware)
+
+# --- Request guard (docs/tutor/CONTRACTS.md, C3) ---------------------------------
+# Refuses a Host that is not this server's loopback address (DNS rebinding) and
+# state-changing requests from pages outside the app origins. Registered before
+# the access log and CORS, so it runs inside them: refusals are logged, and CORS
+# still answers preflights. Extra Host values (a LAN or Docker name) go in
+# DEEPTUTOR_ALLOWED_HOSTS.
+app.add_middleware(
+    RequestGuardMiddleware,
+    allowed_origins=app_origins(load_system_settings()),
+    extra_hosts=allowed_hosts_from_env(),
+)
+
+
+@app.exception_handler(CatalogSecretEndpointError)
+async def catalog_secret_endpoint_error(request: Request, exc: CatalogSecretEndpointError):
+    """A saved key was proposed for another server: ask for the key again."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+# --- end request guard ---
 
 
 @app.middleware("http")

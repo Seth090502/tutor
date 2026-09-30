@@ -11,8 +11,8 @@ Times are epoch seconds (float), like DeepTutor.
 | Desktop dev server (Vite) | `http://127.0.0.1:1420` |
 
 Browser origins the app uses (must be allowed by both services' CORS and DeepTutor's WebSocket
-origin guard): `http://localhost:1420`, `http://127.0.0.1:1420`, `http://tauri.localhost`,
-`tauri://localhost`.
+origin guard): `http://tauri.localhost`, `tauri://localhost`, and in debug builds only the dev
+server's `http://localhost:1420`, `http://127.0.0.1:1420` (C3).
 
 ## C1. rag-engine service
 
@@ -44,7 +44,8 @@ origin guard): `http://localhost:1420`, `http://127.0.0.1:1420`, `http://tauri.l
 `active_job` is null or a job object (below).
 
 `POST /survey {"root": "<optional dir>"}` and `POST /ingest {"root": "<optional>", "rebuild": false}`
-return `202 {"job_id": "…"}`, or `409 {"error": "…"}` while another job runs.
+return `202 {"job_id": "…"}`, or `409 {"error": "…"}` while another job runs. A `root` outside the
+corpus and notes folders answers `400 {"error": "…"}`.
 
 `GET /jobs/{job_id}` returns:
 ```json
@@ -110,6 +111,17 @@ JS. Typed wrappers live in `apps/desktop/src/lib/backend.ts`.
 The shell starts both services as child processes in a Windows Job Object (killed with the app),
 passes the allowed browser origins to DeepTutor via `CORS_ORIGINS`, and passes stored secrets to the
 services as environment variables at launch.
+
+**Host and Origin rule (both services).** A release build trusts only `http://tauri.localhost` and
+`tauri://localhost`; a debug build also trusts the dev server's `http://localhost:1420` and
+`http://127.0.0.1:1420` (the shell's `APP_ORIGINS`, rag-engine's `ALLOWED_ORIGINS`); DeepTutor adds
+its web frontend's defaults (`app_origins` in `deeptutor/services/config/origins.py`). Each service
+answers 403 when the `Host` header is not `127.0.0.1`, `localhost` or `[::1]` on the port it listens
+on (DeepTutor also accepts values listed in `DEEPTUTOR_ALLOWED_HOSTS`; rag-engine in token mode also
+accepts its `--bind` address, and checks no Host when bound to `0.0.0.0` or `::`). A request other
+than GET, HEAD or OPTIONS answers 403 when it carries an `Origin` that is not a trusted origin, or
+no `Origin` and `Sec-Fetch-Site: cross-site`. Requests without `Origin` (native clients, the
+shell's health checks) pass.
 
 ## C4. Desktop module ownership
 
@@ -270,7 +282,7 @@ corpus that will grow by orders of magnitude.
   - With `RAG_ENGINE_TOKEN` set, every route except `GET /health` requires
     `Authorization: Bearer <token>`, or it returns 401 `{"error": "…"}`.
   - A non-loopback `--bind` without a token refuses to start.
-  - CORS keeps the four app origins and allows the `Authorization` header.
+  - CORS keeps the app origins (C3) and allows the `Authorization` header.
 - **`GET /documents?domain=&source_type=&q=&sort=title|added|pages&limit=50&offset=0`** returns
   `{"total": int, "documents": [Doc]}`.
   - `Doc = {doc_id, path, title, domain, source_type, pages, chunks, bytes, added_at, ocr_pending}`.

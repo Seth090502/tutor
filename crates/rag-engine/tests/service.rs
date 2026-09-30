@@ -42,7 +42,13 @@ const ENGINE_VARS: [&str; 12] = [
     "RAG_BM25_COMMIT_CHUNKS",
 ];
 
-const ALLOWED: [&str; 4] = ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"];
+/// The app origins (docs/tutor/CONTRACTS.md, C3). The binary under test is built with this test's
+/// profile, so it trusts the Vite dev server's origins exactly when this is a debug build.
+const ALLOWED: &[&str] = if cfg!(debug_assertions) {
+    &["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
+} else {
+    &["http://tauri.localhost", "tauri://localhost"]
+};
 
 fn library() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/library")
@@ -481,9 +487,9 @@ async fn service_contract_with_bm25_only() {
     let (status, old) = server.get(&format!("/jobs/{}", job["job_id"].as_str().unwrap())).await;
     assert_eq!((status, &old), (StatusCode::OK, &job));
 
-    // CORS: exactly the four app origins.
+    // CORS: exactly the app origins.
     let client = reqwest::Client::new();
-    for origin in ALLOWED {
+    for &origin in ALLOWED {
         let preflight = client
             .request(Method::OPTIONS, format!("{}/search", server.base))
             .header("Origin", origin)
@@ -574,6 +580,63 @@ async fn bearer_token_guards_every_route_but_health() {
     assert_eq!(refused.headers()["access-control-allow-origin"], ALLOWED[0]);
 
     assert!(!server.log().contains(TOKEN), "the token was logged:\n{}", server.log());
+}
+
+/// Contract C3: what a web page other than the app could send is refused, even without a token.
+#[tokio::test(flavor = "multi_thread")]
+async fn foreign_pages_are_refused() {
+    let server = Server::start("guard", &[]);
+    let client = reqwest::Client::new();
+    let url = |path: &str| format!("{}{path}", server.base);
+    let port = server.base.rsplit(':').next().unwrap();
+    let app_origin = ALLOWED[ALLOWED.len() - 1];
+
+    // DNS rebinding: a page on another name that resolves to 127.0.0.1 sends its own Host.
+    for host in [format!("evil.example:{port}"), "evil.example".into(), "127.0.0.1:1".into()] {
+        let response = client.get(url("/health")).header("Host", &host).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{host}");
+        assert!(response.json::<Value>().await.unwrap()["error"].as_str().unwrap().contains("Host"));
+    }
+    for host in [format!("localhost:{port}"), format!("[::1]:{port}")] {
+        let response = client.get(url("/health")).header("Host", &host).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{host}");
+    }
+
+    // A foreign page's POST, including a "simple" text/plain one that no CORS preflight stops.
+    let inside = json!({"root": library().join("corpus/math")}).to_string();
+    for origin in ["http://evil.example", "null", "http://localhost:3000"] {
+        let response = client
+            .post(url("/survey"))
+            .header("Origin", origin)
+            .header("Content-Type", "text/plain")
+            .body(inside.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{origin}");
+    }
+    let response = client.post(url("/survey")).header("Sec-Fetch-Site", "cross-site").body(inside.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // The app's pages are cross-site to 127.0.0.1 and send their Origin; <img> loads send none.
+    let search = client
+        .post(url("/search"))
+        .header("Origin", app_origin)
+        .header("Sec-Fetch-Site", "cross-site")
+        .json(&json!({"query": "limits"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(search.status(), StatusCode::OK);
+    let read = client.get(url("/documents")).header("Sec-Fetch-Site", "cross-site").send().await.unwrap();
+    assert_eq!(read.status(), StatusCode::OK);
+
+    // A survey reads only inside the library.
+    let (status, body) = server.post("/survey", json!({"root": std::env::temp_dir()})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("not inside"), "{body}");
+    let job = server.wait_job(&server.start_job("/survey", json!({"root": library().join("corpus/math")})).await).await;
+    assert_eq!(job["state"], "done", "{job}");
 }
 
 #[test]

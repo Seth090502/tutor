@@ -14,14 +14,23 @@ use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use crate::job::Job;
 
-/// Browser origins the app is served from (contract header). DeepTutor's CORS and WebSocket
-/// origin guard must allow them, and only they get the microphone.
-pub const APP_ORIGINS: [&str; 4] = [
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-    "http://tauri.localhost",
-    "tauri://localhost",
-];
+/// Browser origins the app is served from (contract header and C3). DeepTutor's CORS and WebSocket
+/// origin guard must allow them, and only they get the microphone. The Vite dev server's origins
+/// are trusted in debug builds only.
+pub const APP_ORIGINS: &[&str] = app_origins(cfg!(debug_assertions));
+
+const fn app_origins(debug: bool) -> &'static [&'static str] {
+    if debug {
+        &[
+            "http://localhost:1420",
+            "http://127.0.0.1:1420",
+            "http://tauri.localhost",
+            "tauri://localhost",
+        ]
+    } else {
+        &["http://tauri.localhost", "tauri://localhost"]
+    }
+}
 
 const POLL_EVERY: Duration = Duration::from_secs(2);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -673,10 +682,11 @@ mod tests {
             ]
         );
         let env = env_map(&spec);
+        let origins = APP_ORIGINS.join(",");
         assert_eq!(
             env,
             BTreeMap::from([
-                ("CORS_ORIGINS", "http://localhost:1420,http://127.0.0.1:1420,http://tauri.localhost,tauri://localhost"),
+                ("CORS_ORIGINS", origins.as_str()),
                 ("PYTHONUTF8", "1"),
                 ("PYTHONIOENCODING", "utf-8"),
                 ("PYTHONUNBUFFERED", "1"),
@@ -685,6 +695,24 @@ mod tests {
                 ("OPENROUTER_API_KEY", "openrouter-value"),
             ])
         );
+    }
+
+    #[test]
+    fn release_builds_trust_only_the_built_app() {
+        assert_eq!(
+            app_origins(false),
+            ["http://tauri.localhost", "tauri://localhost"]
+        );
+        assert_eq!(
+            app_origins(true),
+            [
+                "http://localhost:1420",
+                "http://127.0.0.1:1420",
+                "http://tauri.localhost",
+                "tauri://localhost",
+            ]
+        );
+        assert_eq!(APP_ORIGINS, app_origins(cfg!(debug_assertions)));
     }
 
     #[test]
