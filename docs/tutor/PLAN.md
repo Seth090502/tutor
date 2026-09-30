@@ -103,6 +103,17 @@ containment and release hardening. 8. Independent review and final gate. Tasks, 
 - **D10. Routes:** study sessions live at `/api/study`; upstream retired `/api/learning`.
 - **D11. Rollback safety:** review provenance is stored in `outcome_json`, not a new column, so an older
   build still runs against a migrated database.
+- **D12. Decisions the owner delegated (2026-09-30):**
+  - The literal key in `data/user/settings/model_catalog.json` is left untouched: moving it would mean reading
+    and copying a secret value, which the machine rules keep with the owner; key-to-host binding (C3) now stops
+    it being sent to another server. If it is real, re-enter it in Settings so it lives in Credential Manager.
+  - `sandbox_allow_subprocess` is now off in `data/user/settings/system.json` (backup:
+    `system.json.bak-2026-09-30`), so text in imported books cannot make an agent run code as the owner.
+  - The live ElevenLabs smoke test waits for the key; then one short call (a couple of minutes).
+- **D13. RAG direction (sweep of 2026-09-30, `research/rag-sota/`):** tantivy stays the lexical engine with
+  per-language analyzers; disk, not CPU, is the binding constraint; pages are routed (text layer first, OCR or
+  vision models only where needed, on the GPU desktop); whole-library dense embedding waits for the GPU desktop;
+  whole-library graph extraction is rejected on cost and evidence. The deep dive and adoption plan follow.
 
 ## Pending owner decisions
 
@@ -116,10 +127,7 @@ containment and release hardening. 8. Independent review and final gate. Tasks, 
 6. **Target programmes** per subject (which qualifying-exam formats to use as labelled templates).
 7. **Second desktop hardware**, and vector precision (float32 about 41 GB per 10M vectors; float16 or int8
    less).
-8. **Found in Phase 0 (local settings, not code):** `data/user/settings/model_catalog.json` line 14 holds a
-   22-character literal `api_key` for the `openai` profile; confirm whether it is real so it can move to
-   Credential Manager. `data/user/settings/system.json` enables `sandbox_allow_subprocess` (code default:
-   off), which lets model-written code run as you from agents that read documents.
+8. Resolved by delegation: see D12.
 
 ## Known issues
 
