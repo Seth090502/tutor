@@ -1,55 +1,25 @@
 // Progress: DeepTutor practice summary, daily analytics and mastery topics.
 // Never call /api/mastery-paths/progress/{id}/map or /board: they create paths as a side effect.
 import { useCallback, useEffect, useState } from "react"
-import { Clock, RefreshCw, ServerOff } from "lucide-react"
+import { BookOpenCheck, RefreshCw, ServerOff } from "lucide-react"
 
+import { Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
 import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
-import {
-  LegendDot,
-  Notice,
-  Page,
-  Panel,
-  ScreenBoundary,
-  StackedBar,
-  Stat,
-  StateMessage,
-  errorText,
-  fmtDateTime,
-  fmtInt,
-  niceStep,
-  type Segment,
-} from "./ui"
-
-type Summary = {
-  total: number
-  mistakes: number
-  due: number
-  overdue: number
-  reviewed_today: number
-  next_due_at: number | null
-}
-type Counts = { questions: number; mistakes: number; reviews: number }
-type Analytics = { days: number; daily: (Counts & { date: string })[]; totals: Counts }
-type Topic = {
-  path_id: string
-  name: string
-  metadata?: { emoji?: string }
-  map?: { counts?: { mastered: number; learning: number; new: number; total: number }; due_reviews?: number }
-}
-
-const DAYS = 30
-const SERIES: { key: keyof Counts; label: string; color: string }[] = [
-  { key: "questions", label: "Questions", color: "var(--viz-1)" },
-  { key: "mistakes", label: "Mistakes", color: "var(--viz-2)" },
-  { key: "reviews", label: "Reviews", color: "var(--viz-3)" },
-]
+import { ActivityChart, ReviewDiscs } from "@/features/progress/Activity"
+import { Hero } from "@/features/progress/Hero"
+import { AssistancePanel, CalibrationPanel } from "@/features/progress/Learning"
+import { MasteryMap, TopicList } from "@/features/progress/Mastery"
+import { DAYS, errorText, type Analytics, type Summary, type Topic } from "@/features/progress/model"
+import { Notice, Quiet, Rise, ScreenBoundary, StateBlock } from "@/features/progress/parts"
+import { ProgressSkeleton } from "@/features/progress/Skeleton"
 
 type Loaded = {
   summary: Summary | null
   analytics: Analytics | null
   topics: Topic[] | null
   errors: string[]
+  at: Date
 }
 
 export function ProgressScreen() {
@@ -63,7 +33,7 @@ export function ProgressScreen() {
 function ProgressView() {
   const [data, setData] = useState<Loaded | null>(null)
   const [offline, setOffline] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,6 +51,7 @@ function ProgressView() {
       analytics: analytics.status === "fulfilled" ? analytics.value : null,
       topics: topics.status === "fulfilled" ? (topics.value.topics ?? []) : null,
       errors: failures.map(errorText),
+      at: new Date(),
     })
     setLoading(false)
   }, [])
@@ -89,153 +60,119 @@ function ProgressView() {
     void load()
   }, [load])
 
-  if (offline) return <StateMessage icon={ServerOff} title="Backend not running; start it from Settings" />
-  if (!data) return <StateMessage title="Loading…" />
-
-  const { summary, analytics, topics, errors } = data
   return (
-    <Page>
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw />
+    <div className="mx-auto flex max-w-[1120px] flex-col gap-5 px-6 py-7 lg:px-8">
+      {!data ? (
+        <ProgressSkeleton />
+      ) : offline ? (
+        <StateBlock
+          icon={ServerOff}
+          title="The backend is not running"
+          detail="Progress is read from the DeepTutor backend on this machine. Start it from Settings, then try again."
+          onRetry={() => void load()}
+          busy={loading}
+        />
+      ) : (
+        <ProgressBody data={data} loading={loading} onRefresh={() => void load()} />
+      )}
+    </div>
+  )
+}
+
+function ProgressBody({ data, loading, onRefresh }: { data: Loaded; loading: boolean; onRefresh: () => void }) {
+  const { summary, analytics, topics, errors, at } = data
+  const empty =
+    summary !== null &&
+    analytics !== null &&
+    topics !== null &&
+    summary.total === 0 &&
+    topics.length === 0 &&
+    (analytics.daily ?? []).every((d) => !d.questions && !d.mistakes && !d.reviews)
+
+  const days = analytics?.days || DAYS
+  const learning = [
+    analytics?.calibration ? <CalibrationPanel key="cal" calibration={analytics.calibration} days={days} /> : null,
+    analytics?.assistance ? <AssistancePanel key="ast" assistance={analytics.assistance} days={days} /> : null,
+  ].filter((p) => p !== null)
+
+  return (
+    <>
+      <div className="flex items-center justify-end gap-4">
+        <span className="text-ink-3 font-mono text-[11px] tracking-[0.08em]">
+          Updated {at.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+        </span>
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+          <RefreshCw className={loading ? "opacity-60" : undefined} />
           Refresh
         </Button>
       </div>
-      {errors.length > 0 && (
+
+      {errors.length > 0 ? (
         <Notice>
-          <ul className="space-y-1">
+          <p className="font-medium">Some of this screen could not load.</p>
+          <ul className="text-ink-2 mt-1 space-y-1">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
             ))}
           </ul>
         </Notice>
-      )}
+      ) : null}
 
-      {summary && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-            <Stat label="Due" value={fmtInt(summary.due)} />
-            <Stat label="Overdue" value={fmtInt(summary.overdue)} />
-            <Stat label="Reviewed today" value={fmtInt(summary.reviewed_today)} />
-            <Stat label="Total" value={fmtInt(summary.total)} />
-            <Stat label="Mistakes" value={fmtInt(summary.mistakes)} />
-          </div>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
-            <Clock className="size-4" />
-            {summary.next_due_at ? `Next due ${fmtDateTime(summary.next_due_at)}` : "Nothing scheduled"}
-          </p>
-        </div>
-      )}
+      {empty ? (
+        <StateBlock
+          icon={BookOpenCheck}
+          title="No practice yet"
+          detail="Answer a few questions with the tutor and your reviews, mistakes and mastery will build up here."
+        />
+      ) : (
+        <>
+          {summary ? <Hero summary={summary} /> : <Unavailable what="Due and review counts" />}
 
-      {analytics && (
-        <Panel title={`Last ${analytics.days || DAYS} days`}>
-          <DailyChart analytics={analytics} />
-        </Panel>
-      )}
-
-      {topics && (
-        <Panel title="Mastery topics">
-          {topics.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No mastery topics yet.</p>
+          {analytics ? (
+            <>
+              <Rise index={2}>
+                <ReviewDiscs analytics={analytics} />
+              </Rise>
+              <Rise index={3}>
+                <ActivityChart analytics={analytics} />
+              </Rise>
+            </>
           ) : (
-            <ul className="divide-y">
-              {topics.map((t) => (
-                <TopicRow key={t.path_id} topic={t} />
-              ))}
-            </ul>
+            <Unavailable what="The last 30 days" />
           )}
-        </Panel>
+
+          {learning.length > 0 ? (
+            <div className={learning.length > 1 ? "grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : undefined}>
+              {learning.map((panel, i) => (
+                <Rise key={panel.key} index={4 + i}>
+                  {panel}
+                </Rise>
+              ))}
+            </div>
+          ) : null}
+
+          {topics ? (
+            <>
+              <Rise index={6}>
+                <MasteryMap topics={topics} />
+              </Rise>
+              <Rise index={7}>
+                <TopicList topics={topics} />
+              </Rise>
+            </>
+          ) : (
+            <Unavailable what="Mastery topics" />
+          )}
+        </>
       )}
-    </Page>
+    </>
   )
 }
 
-function DailyChart({ analytics }: { analytics: Analytics }) {
-  const daily = analytics.daily ?? []
-  const W = 760
-  const H = 220
-  const m = { l: 40, r: 16, t: 12, b: 28 }
-  const iw = W - m.l - m.r
-  const ih = H - m.t - m.b
-  const peak = Math.max(0, ...daily.flatMap((d) => SERIES.map((s) => d[s.key] ?? 0)))
-  const step = peak <= 5 ? 1 : niceStep(peak / 4)
-  const yMax = Math.max(step, Math.ceil(peak / step) * step)
-  const ticks: number[] = []
-  for (let t = 0; t <= yMax; t += step) ticks.push(t)
-  const x = (i: number) => m.l + (daily.length <= 1 ? iw / 2 : (i * iw) / (daily.length - 1))
-  const y = (v: number) => m.t + ih - (v / yMax) * ih
-  const col = daily.length <= 1 ? iw : iw / (daily.length - 1)
-  const labelEvery = Math.max(1, Math.ceil(daily.length / 7))
-
+function Unavailable({ what }: { what: string }) {
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Questions, mistakes and reviews per day">
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={m.l} x2={W - m.r} y1={y(t)} y2={y(t)} style={{ stroke: "var(--border)" }} />
-            <text x={m.l - 8} y={y(t)} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground text-[11px]">
-              {t}
-            </text>
-          </g>
-        ))}
-        {SERIES.map((s) => (
-          <polyline
-            key={s.key}
-            points={daily.map((d, i) => `${x(i)},${y(d[s.key] ?? 0)}`).join(" ")}
-            fill="none"
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            style={{ stroke: s.color }}
-          />
-        ))}
-        {daily.map((d, i) => (
-          <g key={d.date}>
-            {i % labelEvery === 0 && (
-              <text x={x(i)} y={H - 8} textAnchor="middle" className="fill-muted-foreground text-[11px]">
-                {d.date.slice(5)}
-              </text>
-            )}
-            <rect x={x(i) - col / 2} y={m.t} width={col} height={ih} fill="transparent">
-              <title>{`${d.date}: ${d.questions} questions, ${d.mistakes} mistakes, ${d.reviews} reviews`}</title>
-            </rect>
-          </g>
-        ))}
-      </svg>
-      <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
-        {SERIES.map((s) => (
-          <LegendDot key={s.key} color={s.color} label={s.label} value={fmtInt(analytics.totals?.[s.key])} />
-        ))}
-      </ul>
-      {peak === 0 && <p className="text-muted-foreground mt-3 text-sm">No practice activity in this period.</p>}
-    </div>
-  )
-}
-
-function TopicRow({ topic }: { topic: Topic }) {
-  const c = topic.map?.counts ?? { mastered: 0, learning: 0, new: 0, total: 0 }
-  const due = topic.map?.due_reviews ?? 0
-  const segments: Segment[] = [
-    { key: "mastered", label: "Mastered", value: c.mastered, color: "var(--viz-3)" },
-    { key: "learning", label: "Learning", value: c.learning, color: "var(--viz-1)" },
-    { key: "new", label: "New", value: c.new, color: "var(--viz-neutral)" },
-  ]
-  return (
-    <li className="grid gap-x-6 gap-y-2 py-3 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_7.5rem] md:items-center">
-      <div className="min-w-0 truncate text-sm font-medium">
-        {topic.metadata?.emoji && <span className="mr-1.5">{topic.metadata.emoji}</span>}
-        {topic.name}
-      </div>
-      <div>
-        <StackedBar segments={segments} label={`${topic.name}: mastery`} height={10} />
-        <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-          {c.total > 0 ? `${c.mastered} mastered · ${c.learning} learning · ${c.new} new` : "No objectives yet"}
-        </p>
-      </div>
-      <div className="flex items-center gap-1.5 text-xs md:justify-end">
-        <Clock className="size-3.5" style={due > 0 ? { color: "var(--viz-warn)" } : undefined} />
-        <span className={due > 0 ? "" : "text-muted-foreground"}>{due > 0 ? `${due} due` : "No reviews due"}</span>
-      </div>
-    </li>
+    <Panel>
+      <Quiet>{what} could not be loaded. Refresh to try again.</Quiet>
+    </Panel>
   )
 }
