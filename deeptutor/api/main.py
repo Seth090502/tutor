@@ -516,6 +516,7 @@ from deeptutor.api.routers import (
     courses,
     dashboard,
     file_preview,
+    guided_reading,
     imports,
     knowledge,
     library,
@@ -631,6 +632,9 @@ app.include_router(
     prefix="/api/reading",
     tags=["reading-extensions"],
     dependencies=_auth,
+)
+app.include_router(
+    guided_reading.router, prefix="/api/reading", tags=["guided-reading"], dependencies=_auth
 )
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"], dependencies=_auth)
 app.include_router(
