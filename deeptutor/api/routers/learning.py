@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Header, Path, Query
 from fastapi.responses import JSONResponse
 
+from deeptutor.services.practice import feed as study_feed
 from deeptutor.services.practice.loop import CommandError, LearningLoop
 from deeptutor.services.practice.storage import PracticeStore
 from deeptutor.services.session import get_sqlite_session_store
@@ -74,3 +75,15 @@ async def queue(
     tag: str | None = Query(default=None, max_length=100),
 ):
     return {"items": await asyncio.to_thread(_loop().queue, limit, tag)}
+
+
+@router.get("/feed")
+async def feed(
+    after_event_seq: int = Query(default=0, ge=0), limit: int = Query(default=500, ge=1, le=1000)
+):
+    return await asyncio.to_thread(study_feed.feed, _loop().store, after_event_seq, limit)
+
+
+@router.get("/candidates")
+async def candidates():
+    return await asyncio.to_thread(study_feed.candidates, _loop().store)
