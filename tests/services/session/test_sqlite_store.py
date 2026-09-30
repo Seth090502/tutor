@@ -124,6 +124,45 @@ def test_store_migrates_legacy_notebook_review_columns(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         indexes = {row[1] for row in conn.execute("PRAGMA index_list(notebook_entries)")}
     assert "idx_notebook_entries_review" in indexes
+    # The origin rebuild copies an explicit column list; misconception must
+    # still exist afterwards, and reopening must not add it twice.
+    assert entry["misconception"] is None
+    SQLiteSessionStore(db_path=db_path)
+    assert _notebook_columns(db_path).count("misconception") == 1
+
+
+def _notebook_columns(db_path: Path) -> list[str]:
+    with sqlite3.connect(db_path) as conn:
+        return [row[1] for row in conn.execute("PRAGMA table_info(notebook_entries)")]
+
+
+def test_misconception_column_migrates_fresh_and_rebuilt_dbs_idempotently(
+    tmp_path: Path,
+) -> None:
+    fresh = tmp_path / "fresh.db"
+    for _ in range(2):
+        SQLiteSessionStore(db_path=fresh)
+        assert _notebook_columns(fresh).count("misconception") == 1
+
+    # A DB that already went through the origin rebuild, before this column.
+    rebuilt = tmp_path / "rebuilt.db"
+    item = {
+        "origin_type": "external_import",
+        "origin_ref": "notes",
+        "question_id": "q1",
+        "question": "Kept?",
+    }
+    asyncio.run(SQLiteSessionStore(db_path=rebuilt).upsert_notebook_entries(None, [item]))
+    with sqlite3.connect(rebuilt) as conn:
+        conn.execute("ALTER TABLE notebook_entries DROP COLUMN misconception")
+    assert "misconception" not in _notebook_columns(rebuilt)
+    for _ in range(2):
+        store = SQLiteSessionStore(db_path=rebuilt)
+        assert _notebook_columns(rebuilt).count("misconception") == 1
+        (entry,) = asyncio.run(store.list_notebook_entries())["items"]
+        assert (entry["question"], entry["misconception"]) == ("Kept?", None)
+    asyncio.run(store.upsert_notebook_entries(None, [{**item, "misconception": "Stored."}]))
+    assert asyncio.run(store.get_notebook_entry(entry["id"]))["misconception"] == "Stored."
 
 
 def test_store_migrates_legacy_workspace_ownership_without_reordering(
@@ -441,6 +480,30 @@ def test_upsert_notebook_entries_with_answer_images(store: SQLiteSessionStore) -
     # The new column defaults are exposed by _serialize_notebook_entry.
     assert after["bookmarked"] is False
     assert after["followup_session_id"] == ""
+
+
+def test_upsert_keeps_updates_and_clears_misconception(store: SQLiteSessionStore) -> None:
+    sid = asyncio.run(store.create_session())["id"]
+    base = {"question_id": "q1", "question": "1/2 + 1/3?", "is_correct": False}
+
+    def stored() -> dict:
+        return asyncio.run(store.find_notebook_entry(sid, "q1"))
+
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "misconception": " Adds tops. "}]))
+    assert stored()["misconception"] == "Adds tops."
+    # An answer save that does not carry the field keeps the stored value.
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "user_answer": "2/5"}]))
+    assert stored()["misconception"] == "Adds tops."
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "misconception": "Adds bottoms."}]))
+    assert stored()["misconception"] == "Adds bottoms."
+    assert asyncio.run(store.list_notebook_entries())["items"][0]["misconception"] == (
+        "Adds bottoms."
+    )
+    # An explicit empty value clears it; entries without one serialize to null.
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "misconception": ""}]))
+    assert stored()["misconception"] is None
+    asyncio.run(store.upsert_notebook_entries(sid, _make_items(("q2", "Q2?", False))))
+    assert asyncio.run(store.find_notebook_entry(sid, "q2"))["misconception"] is None
 
 
 def test_upsert_skips_blank_questions(store: SQLiteSessionStore) -> None:

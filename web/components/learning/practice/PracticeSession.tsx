@@ -372,6 +372,14 @@ function PracticeTurn({
                       <Markdown content={entry.explanation} />
                     </div>
                   )}
+                  {correct !== true && entry.misconception && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      <p className="mb-1 text-xs font-semibold text-muted-foreground">
+                        {t('Common misconception')}
+                      </p>
+                      <Markdown content={entry.misconception} allowHtml={false} />
+                    </div>
+                  )}
                 </div>
               </div>
               {correct !== null ? (

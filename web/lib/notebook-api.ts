@@ -211,6 +211,8 @@ export interface NotebookEntry {
   options: Record<string, string>;
   correct_answer: string;
   explanation: string;
+  /** The specific misconception behind a likely wrong answer; null when none is recorded. */
+  misconception?: string | null;
   difficulty: string;
   user_answer: string;
   user_answer_images?: NotebookAnswerImage[];

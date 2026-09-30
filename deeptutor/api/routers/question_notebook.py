@@ -58,6 +58,7 @@ class NotebookEntryItem(BaseModel):
     options: dict[str, str] = {}
     correct_answer: str = ""
     explanation: str = ""
+    misconception: str | None = None
     difficulty: str = ""
     user_answer: str = ""
     user_answer_images: list[AnswerImageItem] = []
@@ -166,6 +167,8 @@ class UpsertEntryRequest(BaseModel):
     options: dict[str, str] | None = None
     correct_answer: str = ""
     explanation: str = ""
+    # ``None`` keeps the stored misconception on update; "" clears it.
+    misconception: str | None = None
     difficulty: str = ""
     user_answer: str = ""
     # Optional: list of images attached as part of the learner's answer.

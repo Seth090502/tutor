@@ -6320,6 +6320,17 @@
             "title": "Material Title",
             "type": "string"
           },
+          "misconception": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Misconception"
+          },
           "options": {
             "additionalProperties": {
               "type": "string"
@@ -11745,6 +11756,17 @@
             "default": "",
             "title": "Material Title",
             "type": "string"
+          },
+          "misconception": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Misconception"
           },
           "options": {
             "anyOf": [

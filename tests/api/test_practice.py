@@ -2,9 +2,11 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import csv
 from datetime import datetime, timezone
 import io
 import json
+from pathlib import Path
 import sqlite3
 
 from fastapi import FastAPI
@@ -212,6 +214,7 @@ def test_template_round_trips_and_formulas_are_rejected(bank):
     for format in ("csv", "xlsx"):
         data = client.get(f"/practice/import/template?format={format}").content
         assert len(preview(data, f"template.{format}")["questions"]) == 4
+        assert preview(data, f"template.{format}")["questions"][0]["misconception"]
     book = Workbook()
     book.active.append(["question", "answer"])
     book.active.append(["=1+1", "2"])
@@ -229,6 +232,62 @@ def test_multi_select_text_and_json_validation():
     assert preview(json.dumps([row]).encode(), "q.json")["questions"][0]["question"] == "Primes?"
     with pytest.raises(ValueError, match="500"):
         preview(json.dumps([row] * 501).encode(), "many.json")
+
+
+QUESTION_BANK_CSV = Path(__file__).resolve().parents[2] / "content" / "question_bank.csv"
+
+
+def test_question_bank_csv_import_keeps_every_misconception(bank):
+    _, _, client = bank
+    with QUESTION_BANK_CSV.open(encoding="utf-8", newline="") as handle:
+        expected = {row["question"]: row["misconception"] for row in csv.DictReader(handle)}
+    assert len(expected) == 60 and all(expected.values())
+    staged = client.post(
+        "/practice/import/preview",
+        files={"file": ("question_bank.csv", QUESTION_BANK_CSV.read_bytes())},
+        data={"target": "bank"},
+    ).json()
+    assert (staged["valid"], staged["errors"]) == (60, [])
+    assert staged["samples"][0]["misconception"] == expected[staged["samples"][0]["question"]]
+    commit = client.post("/practice/import/commit", json={"token": staged["token"]})
+    assert commit.json() == {"created": 60, "duplicates": 0, "total": 60}
+    listing = client.get("/bank/entries?limit=200").json()
+    assert {item["question"]: item["misconception"] for item in listing["items"]} == expected
+    for item in listing["items"]:
+        practice_entry = client.get(f"/practice/questions/{item['id']}").json()["entry"]
+        assert practice_entry["misconception"] == expected[item["question"]]
+
+
+def test_misconception_is_optional_and_not_part_of_the_import_identity():
+    plain = normalize_question({"question": "Q", "answer": "A"})
+    noted = normalize_question({"question": "Q", "answer": "A", "Misconception": " Thinks B "})
+    assert plain["misconception"] is None
+    assert noted["misconception"] == "Thinks B"
+    assert noted["question_id"] == plain["question_id"]
+    assert normalize_question({"题目": "Q", "答案": "A", "误区": "B"})["misconception"] == "B"
+
+
+def test_notebook_api_keeps_misconception_across_answer_saves(bank):
+    _, _, client = bank
+    base = {"origin_type": "external_import", "origin_ref": "notes", "question": "1/2 + 1/3?"}
+    saved = client.post(
+        "/bank/entries/upsert",
+        json={**base, "question_id": "q1", "misconception": "Adds the denominators."},
+    ).json()
+    # Saving an answer without the field must not erase the stored misconception.
+    client.post(
+        "/bank/entries/upsert",
+        json={**base, "question_id": "q1", "user_answer": "2/5", "is_correct": False},
+    )
+    assert client.get(f"/bank/entries/{saved['id']}").json()["misconception"] == (
+        "Adds the denominators."
+    )
+    bare = client.post("/bank/entries/upsert", json={**base, "question_id": "q2"}).json()
+    assert bare["misconception"] is None
+    listed = {item["id"]: item for item in client.get("/bank/entries").json()["items"]}
+    assert listed[saved["id"]]["misconception"] == "Adds the denominators."
+    assert listed[bare["id"]]["misconception"] is None
+    assert client.get(f"/practice/questions/{bare['id']}").json()["entry"]["misconception"] is None
 
 
 def test_additive_migration_is_idempotent(bank):
