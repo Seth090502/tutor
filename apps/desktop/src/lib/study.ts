@@ -245,10 +245,10 @@ export class StudySession {
     this.snapshot = snapshot
   }
 
-  static async start(mode: StudyMode, fetchImpl: Fetch = fetch): Promise<StudySession> {
+  static async start(mode: StudyMode, fetchImpl: Fetch = fetch, source: StudySource = "ui"): Promise<StudySession> {
     const result = await sendCommand(
       { session_id: null, attempt_id: null, expected_version: null, kind: "start_session", payload: { mode } },
-      "ui",
+      source,
       fetchImpl,
     )
     return new StudySession(result.public_state, fetchImpl)

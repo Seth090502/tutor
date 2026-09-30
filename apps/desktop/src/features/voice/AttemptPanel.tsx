@@ -30,6 +30,8 @@ type AttemptPanelProps = {
   actions?: PanelActions
   /** A problem reaching the practice service, shown while there is no attempt. */
   notice?: string | null
+  /** Starts typed practice without a call (source ui); absent while it cannot. */
+  onStart?: () => void
   className?: string
 }
 
@@ -39,15 +41,15 @@ type AttemptPanelProps = {
  * card with the answer. No subject colour here; green and red appear only as the verdict, always
  * with a word and a mark.
  */
-export function AttemptPanel({ attempt, actions, notice, className }: AttemptPanelProps) {
+export function AttemptPanel({ attempt, actions, notice, onStart, className }: AttemptPanelProps) {
   return (
     <section aria-label="Practice question" className={cn("flex min-w-0 flex-col gap-4", className)}>
-      {attempt ? <AttemptView key={attempt.attempt_id} attempt={attempt} actions={actions} /> : <EmptyAttempt notice={notice} />}
+      {attempt ? <AttemptView key={attempt.attempt_id} attempt={attempt} actions={actions} /> : <EmptyAttempt notice={notice} onStart={onStart} />}
     </section>
   )
 }
 
-function EmptyAttempt({ notice }: { notice?: string | null }) {
+function EmptyAttempt({ notice, onStart }: { notice?: string | null; onStart?: () => void }) {
   return (
     <div className="tv-fade border-hairline-strong flex min-h-44 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed px-8 py-10 text-center @max-4xl:hidden">
       <Eyebrow>Practice</Eyebrow>
@@ -56,6 +58,11 @@ function EmptyAttempt({ notice }: { notice?: string | null }) {
         When the tutor asks one it appears here. Press <Kbd>A</Kbd>–<Kbd>D</Kbd> to answer and <Kbd>1</Kbd>–<Kbd>4</Kbd> for how sure
         you are.
       </KbdHint>
+      {onStart ? (
+        <Button variant="outline" size="sm" onClick={onStart}>
+          Practise without a call
+        </Button>
+      ) : null}
       {notice ? <QuietNote tone="warn">{notice}</QuietNote> : null}
     </div>
   )

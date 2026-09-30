@@ -79,11 +79,11 @@ export function createVoicePractice() {
   }
 
   /** The session, starting one in practice mode the first time practice starts. */
-  const ensure = async (): Promise<StudySession> => {
+  const ensure = async (source: StudySource = "ui"): Promise<StudySession> => {
     const existing = await current()
     if (existing) return existing
     if (session) return session
-    starting ??= StudySession.start("practice")
+    starting ??= StudySession.start("practice", undefined, source)
       .then(adopt)
       .finally(() => {
         starting = null

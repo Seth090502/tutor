@@ -11,7 +11,7 @@ import type { StudyAttempt } from "@/lib/study"
 import { cn } from "@/lib/utils"
 import { AttemptPanel } from "./AttemptPanel"
 import { confidenceWord } from "./attempt"
-import { type PanelAction, type VoicePractice, createVoicePractice, panelActions, studyErrorText } from "./practice"
+import { type PanelAction, type VoicePractice, createVoicePractice, openNext, panelActions, studyErrorText } from "./practice"
 import { SessionChrome } from "./SessionChrome"
 import { stageState } from "./session"
 import { OrbStage, VOICES, VoiceSwatches } from "./stage"
@@ -205,6 +205,17 @@ function VoiceTutor({
     [session],
   )
 
+  // Typed practice without a call: start (or resume) the session and open the next due item.
+  const startTyped = useCallback(async () => {
+    setPracticeError(null)
+    try {
+      const opened = await openNext(await practice.ensure("ui"), "ui")
+      if (!opened) setPracticeError("Nothing is due right now.")
+    } catch (e) {
+      setPracticeError(`Could not start practice: ${studyErrorText(e)}.`)
+    }
+  }, [practice])
+
   const agentState: AgentState =
     pendingTool || status === "connecting" ? "thinking" : !connected ? null : isSpeaking ? "talking" : "listening"
   const state = stageState(agentState)
@@ -246,7 +257,12 @@ function VoiceTutor({
         />
       }
       attempt={
-        <AttemptPanel attempt={snapshot?.attempt ?? null} actions={actions} notice={snapshot ? null : practiceError} />
+        <AttemptPanel
+          attempt={snapshot?.attempt ?? null}
+          actions={actions}
+          notice={snapshot?.attempt ? null : practiceError}
+          onStart={() => void startTyped()}
+        />
       }
       transcript={<Transcript messages={messages} className="h-full" />}
       composer={

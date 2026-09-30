@@ -75,7 +75,7 @@ describe("get_next_question", () => {
     expect(out).not.toMatch(SECRETS)
     expect(out).not.toMatch(/HINT-|Think about/)
     expect(server.calls.map((c) => [c.method, c.url.replace(STUDY, ""), c.source])).toEqual([
-      ["POST", "/commands", "ui"],
+      ["POST", "/commands", "voice_tool"],
       ["GET", "/queue?limit=20", null],
       ["POST", "/commands", "voice_tool"],
     ])
@@ -321,7 +321,7 @@ describe("sources", () => {
     await tools.give_up({})
 
     expect(sent()).toEqual([
-      ["start_session", "ui"],
+      ["start_session", "voice_tool"],
       ["open_item", "voice_tool"],
       ["request_assistance", "voice_tool"],
       ["propose_response", "voice_tool"],

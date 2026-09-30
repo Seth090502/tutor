@@ -231,7 +231,7 @@ export function createTutorTools(practice: VoicePractice) {
   return {
     get_next_question: safe("get_next_question", PRACTICE_SERVICE, async ({ domain }) => {
       const tag = optionalText(domain)
-      const session = await practice.ensure()
+      const session = await practice.ensure("voice_tool")
       const current = session.state.attempt
       if (isLive(current)) return `Finish the current question first: it is waiting for ${WAITING[current.status]}.`
       const result = await openNext(session, "voice_tool", tag)

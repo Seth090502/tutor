@@ -231,34 +231,47 @@ keep working. New clients use C12; reviews recorded here are labelled `legacy_*`
   - `hard` is no longer produced (evidence ledger EV-002, EV-014); policy 1 gave `good` after rung 1 and
     `hard` after rungs 2-3.
   - Confidence never changes the rating.
-- **`GET /analytics`** adds (see also C8 for how the voice screen shows attempts):
+- **`GET /analytics`** adds (C7 attempts only; C12 attempts are reported from Phase 2):
   - `calibration: [{"level": 1-4, "attempts": int, "correct": int}]`;
   - `assistance: {"attempts": int, "hinted": int, "revealed": int}`.
 
-## C8. Voice tutor events (desktop)
+## C8. Voice tutor and the Tutor screen (desktop)
 
-`apps/desktop/src/features/voice/tools.ts` owns the client tools and publishes what they did, so the Tutor
-screen can show the current question without the answer key leaking to the model.
+Supersedes the C8 event list of 2026-09-30 (`TutorEvent`, `"My answer: B"` messages), which is removed.
 
-```ts
-export type TutorEvent =
-  | { type: "question"; attempt_id: string; question_id: number; question: string;
-      question_type: string; options: Record<string, string> }
-  | { type: "confidence"; attempt_id: string; level: 1 | 2 | 3 | 4 }
-  | { type: "hint"; attempt_id: string; rung: number; text: string | null; is_answer: boolean }
-  | { type: "checked"; attempt_id: string; correct: boolean | null; correct_answer: string;
-      explanation: string; misconception: string | null }
-  | { type: "reviewed"; attempt_id: string; rating: string; next_due: string | null }
-export function onTutorEvent(listener: (e: TutorEvent) => void): () => void
-```
+The Tutor screen keeps one C12 study session in practice mode (`apps/desktop/src/features/voice/practice.ts`).
+Its id is stored in localStorage under `tutor.study.voice`. On mount the screen resumes it
+(`GET /api/study/sessions/{id}`) and forgets the id when the session is closed or unknown. A new session starts
+when practice first starts: the first `get_next_question`, "Practise without a call", or Next question.
 
-- **Showing the attempt:** the screen renders the question card, the A-D keycaps, the confidence keys 1-4
-  and the hint rung from these events.
-- **Answers and confidence from the screen:** they are sent to the agent as user messages
-  (`"My answer: B"`, `"Confidence: 3"`), so the agent still calls the tools. The screen never calls the
-  practice API directly.
-- **After the check:** the card flips to show the explanation and misconception only after a `checked`
-  event.
+- **One attempt, one writer.** The voice tools (`X-Tutor-Source: voice_tool`) and the typed controls (`ui`) send
+  commands to that session through one `StudySession`, one at a time. The screen renders only the accepted public
+  state from `StudySession.subscribe`; nothing is optimistic. A session started by a tool is recorded as
+  `voice_tool`.
+- **Voice tools** (`tools.ts`, `createTutorTools`):
+  - `get_next_question {domain?}`: queue by tag, then `open_item`; refuses while an attempt is live, and says
+    nothing is due when the domain has nothing due.
+  - `propose_answer {transcript}`: `propose_response` only; it never commits.
+  - `set_confidence {level}`: only in `committed`.
+  - `get_hint {}`, `check_answer {}`, `give_up {}`.
+  - `search_library {query, domain?}`: sends `attempt_id` while an attempt is live.
+  - `get_progress {}`: still reads the C7 summary and analytics (C12 attempts join it in Phase 2).
+  - There is no `record_review`: the server schedules FSRS at closure. Results carry `correct_answer`,
+    `explanation` and `misconception` only from `attempt.released`.
+- **Typed controls** (`ui`):
+  - A-D or a text field commit a typed answer; "I don't know" commits `dont_know`.
+  - A pending proposal shows "Tutor heard: ..." with Confirm and an editable field. Confirm sends a spoken
+    commit (or a spoken repair while remediating) with `transcript_confirmation {raw_transcript, confirmed_text}`.
+  - In `committed`: confidence 1-4, or Skip with a reason.
+  - In `ready`: Check. In `remediating`: hint, typed repair, Give up.
+  - In `awaiting_self_assessment`: I got it / I missed it. When closed: Next question.
+  - A hint before answering is allowed, and the panel says the item will not count as unaided.
+- **Screen to agent:** once the server accepts a typed action and a call is live, the screen sends the agent a
+  user message starting with `On screen:`. It carries the same public data the matching tool would return.
+- **Showing answers:** answer, explanation and misconception appear only from `attempt.released`. The closed view
+  shows the rating with its provenance in words (for example "Again, because a hint was used").
+- **Session lifetime:** practice sessions stay active across restarts; nothing closes them yet (assessment
+  sessions will close explicitly).
 
 ## C9. rag-engine: remote host, library browsing, scale
 
