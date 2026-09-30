@@ -1,107 +1,99 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Mic, MicOff } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
-import { type AgentState, Orb } from "@/components/ui/orb"
+import { IdleDim, LedStatus, Panel, idleDimClass, type LedTone } from "@/components/kit"
+import { Orb } from "@/components/ui/orb"
+import { STAGE_WORD, stageState, type StageState } from "@/features/voice/session"
+import { OrbStage, StateTint, VOICES, VoiceSwatches } from "@/features/voice/stage"
 import { cn } from "@/lib/utils"
 import { useMicVolume } from "./useMicVolume"
 
-// Color presets from ElevenLabs' own Orb demo (github.com/elevenlabs/ui, MIT).
-export const VOICES: { name: string; colors: [string, string] }[] = [
-  { name: "Sky", colors: ["#CADCFC", "#A0B9D1"] },
-  { name: "Sand", colors: ["#F6E7D8", "#E0CFC2"] },
-  { name: "Slate", colors: ["#E5E7EB", "#9CA3AF"] },
+import "@/features/voice/tutor.css"
+
+/** Why the live call is not available, shown as a quiet status row above the preview. */
+export type TutorNotice = { tone: LedTone; state: string; message: string }
+
+const PREVIEW_STATES: { state: StageState; agent: null | "listening" | "thinking" | "talking" }[] = [
+  { state: "idle", agent: null },
+  { state: "listening", agent: "listening" },
+  { state: "thinking", agent: "thinking" },
+  { state: "speaking", agent: "talking" },
 ]
 
-const STATES: { label: string; value: AgentState }[] = [
-  { label: "Idle", value: null },
-  { label: "Listening", value: "listening" },
-  { label: "Thinking", value: "thinking" },
-  { label: "Talking", value: "talking" },
-]
+const PILL =
+  "border-hairline-strong text-ink-2 hover:bg-world-soft hover:text-foreground focus-visible:outline-world aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:border-foreground disabled:opacity-50 rounded-full border px-3.5 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase outline-offset-2 transition-colors duration-(--dur-quick) focus-visible:outline-2"
 
-/** The inset ring ElevenLabs frames the orb with in their demo. */
-export function OrbFrame({ className, children }: { className: string; children: ReactNode }) {
-  return (
-    <div
-      className={cn(
-        "bg-muted relative rounded-full p-1 shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]",
-        className,
-      )}
-    >
-      <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-export function TutorScreen() {
+/**
+ * The orb preview. It is what the Tutor shows while the voice call is not set up: no Tauri shell,
+ * no ElevenLabs key or no agent id. The state buttons and the live microphone drive the orb so
+ * the stage can be checked without a call.
+ */
+export function TutorScreen({ notice }: { notice?: TutorNotice }) {
   const [voice, setVoice] = useState(0)
-  const [agent, setAgent] = useState<AgentState>(null)
+  const [agent, setAgent] = useState<null | "listening" | "thinking" | "talking">(null)
   const [live, setLive] = useState(false)
   const mic = useMicVolume(live)
 
+  const agentState = live ? "listening" : agent
+  const state = stageState(agentState)
+
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-10 p-8">
-      <OrbFrame className="size-72">
-        <Orb
-          colors={VOICES[voice].colors}
-          seed={(voice + 1) * 1000}
-          agentState={live ? "listening" : agent}
-          volumeMode={live ? "manual" : "auto"}
-          inputVolumeRef={mic.level}
-          getOutputVolume={() => 0.3}
+    <div className="@container relative isolate min-h-full">
+      <StateTint state={state} />
+      <IdleDim className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-7 px-6 py-8">
+        {notice ? (
+          <Panel role="status" className="tv-enter w-full p-4">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <LedStatus tone={notice.tone} state={notice.state} />
+              <p className="text-ink-2 min-w-0 flex-1 basis-64 text-sm leading-relaxed">{notice.message}</p>
+            </div>
+          </Panel>
+        ) : null}
+
+        <OrbStage
+          state={state}
+          orbClass="size-44 @2xl:size-56"
+          status={
+            mic.error
+              ? `Microphone unavailable: ${mic.error}`
+              : "Preview. The teacher's voice connects once ElevenLabs is set up."
+          }
+          error={Boolean(mic.error)}
+          orb={
+            <Orb
+              colors={VOICES[voice].colors}
+              seed={(voice + 1) * 1000}
+              agentState={agentState}
+              volumeMode={live ? "manual" : "auto"}
+              inputVolumeRef={mic.level}
+              getOutputVolume={() => 0.3}
+            />
+          }
         />
-      </OrbFrame>
 
-      <div className="flex flex-col items-center gap-4">
-        <div className="flex gap-6" role="radiogroup" aria-label="Voice">
-          {VOICES.map((v, i) => (
-            <button
-              key={v.name}
-              role="radio"
-              aria-checked={voice === i}
-              onClick={() => setVoice(i)}
-              className="flex flex-col items-center gap-2 text-xs"
-            >
-              <OrbFrame
-                className={cn(
-                  "size-14 transition",
-                  voice === i ? "ring-ring ring-2 ring-offset-2 ring-offset-background" : "opacity-60 hover:opacity-100",
-                )}
+        <div className={cn("flex flex-col items-center gap-4", idleDimClass)}>
+          <div role="group" aria-label="Orb state" className="flex flex-wrap justify-center gap-2">
+            {PREVIEW_STATES.map((p) => (
+              <button
+                key={p.state}
+                type="button"
+                className={PILL}
+                aria-pressed={!live && agent === p.agent}
+                disabled={live}
+                onClick={() => setAgent(p.agent)}
               >
-                <Orb colors={v.colors} seed={(i + 1) * 1000} agentState={null} />
-              </OrbFrame>
-              <span className={voice === i ? "text-foreground" : "text-muted-foreground"}>{v.name}</span>
+                {STAGE_WORD[p.state]}
+              </button>
+            ))}
+            <button type="button" className={cn(PILL, "inline-flex items-center gap-2")} aria-pressed={live} onClick={() => setLive(!live)}>
+              {live ? <MicOff aria-hidden className="size-3.5" /> : <Mic aria-hidden className="size-3.5" />}
+              {live ? "Stop mic" : "Live mic"}
             </button>
-          ))}
+          </div>
+          <VoiceSwatches value={voice} onChange={setVoice} />
+          <p className="text-ink-3 max-w-md text-center text-xs">Live mic drives the orb from your microphone.</p>
         </div>
-
-        <div className="flex flex-wrap justify-center gap-2">
-          {STATES.map((s) => (
-            <Button
-              key={s.label}
-              size="sm"
-              variant="outline"
-              disabled={live || agent === s.value}
-              onClick={() => setAgent(s.value)}
-            >
-              {s.label}
-            </Button>
-          ))}
-          <Button size="sm" variant={live ? "default" : "outline"} onClick={() => setLive(!live)}>
-            {live ? <MicOff /> : <Mic />}
-            {live ? "Stop mic" : "Live mic"}
-          </Button>
-        </div>
-
-        <p className="text-muted-foreground max-w-md text-center text-xs">
-          {mic.error
-            ? `Microphone unavailable: ${mic.error}`
-            : "Preview. The teacher's voice connects once ElevenLabs is set up; Live mic drives the orb from your microphone."}
-        </p>
-      </div>
+      </IdleDim>
     </div>
   )
 }

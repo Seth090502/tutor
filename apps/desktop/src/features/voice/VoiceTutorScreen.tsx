@@ -1,28 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react"
 import { ConversationProvider, useConversation } from "@elevenlabs/react"
-import { Settings } from "lucide-react"
 
-import { Card } from "@/components/ui/card"
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "@/components/ui/conversation"
+import { idleDimClass } from "@/components/kit"
 import { ConversationBar } from "@/components/ui/conversation-bar"
-import { Message, MessageContent } from "@/components/ui/message"
 import { type AgentState, Orb } from "@/components/ui/orb"
-import { Response } from "@/components/ui/response"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
-import { OrbFrame, TutorScreen, VOICES } from "@/features/tutor/TutorScreen"
+import { TutorScreen, type TutorNotice } from "@/features/tutor/TutorScreen"
 import { inTauri, shell } from "@/lib/backend"
 import { cn } from "@/lib/utils"
-import { type TutorToolName, tutorTools } from "./tools"
+import { AttemptPanel } from "./AttemptPanel"
+import { answerMessage, attemptReducer, confidenceMessage, confidenceWord, type Confidence } from "./attempt"
+import { SessionChrome } from "./SessionChrome"
+import { stageState } from "./session"
+import { OrbStage, VOICES, VoiceSwatches } from "./stage"
+import { TutorFrame } from "./TutorFrame"
+import { type ChatMessage, Transcript } from "./Transcript"
+import { type TutorToolName, onTutorEvent, tutorTools } from "./tools"
 
-// Adapted from ElevenLabs UI's voice-chat-03 block (github.com/elevenlabs/ui, MIT).
+// The orb stage, the transcript and the call bar adapt ElevenLabs UI's voice-chat-03 block
+// (github.com/elevenlabs/ui, MIT).
 
 type Setup = { kind: "loading" } | { kind: "blocked"; message: string } | { kind: "ready"; agentId: string }
-type ChatMessage = { role: "user" | "assistant"; content: string }
 
 const TOOL_STATUS: Record<TutorToolName, string> = {
   get_next_question: "Finding a question",
@@ -83,22 +81,11 @@ export function VoiceTutorScreen() {
   const setup = useSetup()
   if (setup.kind === "ready") return <VoiceSession agentId={setup.agentId} />
 
-  return (
-    <div className="flex h-full flex-col">
-      {setup.kind === "blocked" && (
-        <div
-          role="status"
-          className="bg-muted/50 mx-auto mt-6 flex max-w-xl items-start gap-3 rounded-lg border px-4 py-3 text-sm"
-        >
-          <Settings className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-          <p>{setup.message}</p>
-        </div>
-      )}
-      <div className="min-h-0 flex-1">
-        <TutorScreen />
-      </div>
-    </div>
-  )
+  const notice: TutorNotice =
+    setup.kind === "blocked"
+      ? { tone: "warn", state: "Voice offline", message: setup.message }
+      : { tone: "off", state: "Checking", message: "Reading your voice settings." }
+  return <TutorScreen notice={notice} />
 }
 
 function VoiceSession({ agentId }: { agentId: string }) {
@@ -137,14 +124,21 @@ function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: Tu
   const [voice, setVoice] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [startError, setStartError] = useState<string | null>(null)
+  const [attempt, dispatch] = useReducer(attemptReducer, null)
 
-  const { status, message, isSpeaking, getInputVolume, getOutputVolume } = useConversation({
-    onConnect: () => setMessages([]),
+  const { status, message, isSpeaking, getInputVolume, getOutputVolume, sendUserMessage } = useConversation({
+    onConnect: () => {
+      setMessages([])
+      dispatch({ type: "reset" })
+    },
     onMessage: (m) => {
       if (!m.message) return
       setMessages((prev) => [...prev, { role: m.role === "user" ? "user" : "assistant", content: m.message }])
     },
   })
+
+  // What the agent's tools did (contract C8) becomes the attempt panel.
+  useEffect(() => onTutorEvent(dispatch), [])
 
   const getConversationToken = useCallback(async () => {
     setStartError(null)
@@ -157,94 +151,86 @@ function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: Tu
   }, [agentId])
 
   const connected = status === "connected"
+  const attemptId = attempt?.attemptId
+
+  // Keys send what the learner pressed as a user message, so the agent calls the tools itself.
+  const sendKey = useCallback(
+    (text: string, caption: string) => {
+      sendUserMessage(text)
+      setMessages((prev) => [...prev, { role: "user", kind: "action", content: caption }])
+    },
+    [sendUserMessage],
+  )
+  const onAnswer = useCallback(
+    (choice: string) => {
+      if (!attemptId) return
+      sendKey(answerMessage(choice), `Answered ${choice}`)
+      dispatch({ type: "answered", attempt_id: attemptId, choice })
+    },
+    [attemptId, sendKey],
+  )
+  const onRate = useCallback(
+    (level: Confidence) => {
+      if (!attemptId) return
+      sendKey(confidenceMessage(level), `Confidence ${level}, ${confidenceWord(level)}`)
+      dispatch({ type: "rated", attempt_id: attemptId, level })
+    },
+    [attemptId, sendKey],
+  )
+
   const agentState: AgentState =
     pendingTool || status === "connecting" ? "thinking" : !connected ? null : isSpeaking ? "talking" : "listening"
+  const state = stageState(agentState)
 
   let statusText: { text: string; shimmer: boolean }
   if (startError) statusText = { text: startError, shimmer: false }
   else if (status === "error") statusText = { text: message ?? "The call failed.", shimmer: false }
   else if (status === "connecting") statusText = { text: "Connecting", shimmer: true }
   else if (pendingTool) statusText = { text: TOOL_STATUS[pendingTool], shimmer: true }
-  else if (connected) statusText = { text: isSpeaking ? "Speaking" : "Listening", shimmer: false }
+  else if (connected) statusText = { text: isSpeaking ? "" : "Say your answer, or type it below.", shimmer: false }
   else statusText = { text: "Start a call to begin a lesson. Once connected you can also type.", shimmer: false }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4 px-6 py-5">
-      <div className="flex flex-col items-center gap-3">
-        <OrbFrame className="size-44">
-          <Orb
-            colors={VOICES[voice].colors}
-            seed={(voice + 1) * 1000}
-            agentState={agentState}
-            // Live volumes while talking or listening; the orb's own animation while thinking.
-            volumeMode={connected && agentState !== "thinking" ? "manual" : "auto"}
-            getInputVolume={getInputVolume}
-            getOutputVolume={getOutputVolume}
-          />
-        </OrbFrame>
-
-        <p
-          aria-live="polite"
-          className={cn(
-            "min-h-5 text-center text-sm",
-            startError || status === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {statusText.shimmer ? <ShimmeringText text={statusText.text} /> : statusText.text}
-        </p>
-
-        <div className="flex gap-4" role="radiogroup" aria-label="Voice style">
-          {VOICES.map((v, i) => (
-            <button
-              key={v.name}
-              role="radio"
-              aria-checked={voice === i}
-              onClick={() => setVoice(i)}
-              className="flex items-center gap-2 text-xs"
-            >
-              <OrbFrame
-                className={cn(
-                  "size-7 transition",
-                  voice === i ? "ring-ring ring-offset-background ring-2 ring-offset-2" : "opacity-60 hover:opacity-100",
-                )}
-              >
-                <Orb colors={v.colors} seed={(i + 1) * 1000} agentState={null} />
-              </OrbFrame>
-              <span className={voice === i ? "text-foreground" : "text-muted-foreground"}>{v.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <Card className="relative min-h-0 flex-1 gap-0 p-0">
-        <Conversation className="absolute inset-0">
-          <ConversationContent className="flex min-w-0 flex-col gap-2 p-6">
-            {messages.length === 0 ? (
-              <ConversationEmptyState
-                title="No lesson yet"
-                description="Ask for a practice question, how you're doing, or anything in your library."
-              />
-            ) : (
-              messages.map((m, i) => (
-                <Message key={i} from={m.role}>
-                  <MessageContent className="max-w-full min-w-0">
-                    <Response className="w-auto [overflow-wrap:anywhere] whitespace-pre-wrap">{m.content}</Response>
-                  </MessageContent>
-                </Message>
-              ))
-            )}
-          </ConversationContent>
-          <ConversationScrollButton />
-        </Conversation>
-      </Card>
-
-      <ConversationBar
-        className="p-0"
-        agentId={agentId}
-        label="Tutor"
-        getConversationToken={getConversationToken}
-        onSendMessage={(text) => setMessages((prev) => [...prev, { role: "user", content: text }])}
-      />
-    </div>
+    <TutorFrame
+      state={state}
+      chrome={
+        <SessionChrome live={connected}>
+          <div className={idleDimClass}>
+            <VoiceSwatches value={voice} onChange={setVoice} />
+          </div>
+        </SessionChrome>
+      }
+      stage={
+        <OrbStage
+          state={state}
+          error={Boolean(startError) || status === "error"}
+          status={statusText.shimmer ? <ShimmeringText text={statusText.text} /> : statusText.text}
+          orb={
+            <Orb
+              colors={VOICES[voice].colors}
+              seed={(voice + 1) * 1000}
+              agentState={agentState}
+              // Live volumes while talking or listening; the orb's own animation while thinking.
+              volumeMode={connected && agentState !== "thinking" ? "manual" : "auto"}
+              getInputVolume={getInputVolume}
+              getOutputVolume={getOutputVolume}
+            />
+          }
+        />
+      }
+      attempt={
+        <AttemptPanel attempt={attempt} onAnswer={connected ? onAnswer : undefined} onRate={connected ? onRate : undefined} />
+      }
+      transcript={<Transcript messages={messages} className="h-full" />}
+      composer={
+        <ConversationBar
+          className={cn("p-0", idleDimClass)}
+          agentId={agentId}
+          label="Tutor"
+          getConversationToken={getConversationToken}
+          onSendMessage={(text) => setMessages((prev) => [...prev, { role: "user", content: text }])}
+        />
+      }
+    />
   )
 }
