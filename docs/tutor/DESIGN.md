@@ -1,7 +1,9 @@
 # Tutor design direction
 
-Status: draft from the gallery study (2026-09-30). The subject worlds will be revised after the pedagogy
-research lands (evidence on per-subject theming and context-dependent memory).
+Status: from the gallery study and the pedagogy research (2026-09-30). The research
+(`research/tools.md`) limits subject theming to the app chrome. Learning panes (question, explanation,
+reading, writing) stay neutral and identical across subjects. Decoration in learning panes hurts learning
+(seductive details g -0.16), so there is none. Colour signals function, never decoration.
 
 Source: the 100 Sonnet 5.5 HTML pieces at miaai-lab/Sonnet-5.5-100-HTML-Files, studied by seven agents. That
 repository has no licence, so we take design ideas only and write our own code. Piece numbers are cited so
@@ -77,6 +79,7 @@ Neutral base, warm rather than grey (017, 005):
 | Library | Book-spine shelf (height = pages, colour = subject, 2D lean on hover). Filter chips with counts. The ingest log is typed mono lines with a spring check-stamp | 081, 071 |
 | Plan | Editorial reading column, progress hairline, sticky outline with scroll-spy | 017, 064 |
 | Settings | Dot-leader service rows with an LED plus a state word | 051 |
+| Train (Dual N-Back) | Neutral stage: 3x3 grid of soft cells, the active cell lit in the world accent with shape redundancy, keycap response keys (A position, L letter), level and rule shown, block-end summary, separate training-curve and transfer panels, no streaks. Spec: `NBACK.md` | 061, 025 |
 | Session chrome | Session timer. After 5 s idle, chrome dims to 40% over 1.8 s and returns on hover or focus | 079 |
 
 ## Motion and performance
