@@ -4,7 +4,7 @@ Rust retrieval engine for the tutor's library of textbooks, papers and notes. It
 commands:
 
 - `survey` measures a corpus (files, duplicates, pages needing OCR, tokens per GB).
-- `serve` runs the HTTP service of contracts C1 and C9 (`docs/tutor/CONTRACTS.md`).
+- `serve` runs the HTTP service of contracts C1, C9 and C11 (`docs/tutor/CONTRACTS.md`).
 - `ingest` builds and updates the indexes incrementally.
 - `search` queries them from the command line.
 
@@ -71,7 +71,7 @@ Logs go to stderr. Only one process may ingest into a data directory at a time, 
 tantivy's writer lock refuses a second one. Stop `serve` before running `ingest` from the
 command line on the same `--data`.
 
-## Service (contracts C1 and C9)
+## Service (contracts C1, C9 and C11)
 
 `serve` binds `127.0.0.1` unless `--bind <ip>` names another address. It allows CORS for
 exactly the app's four origins: `http://localhost:1420`, `http://127.0.0.1:1420`,
@@ -104,6 +104,7 @@ routes, or it answers `401 {"error": ...}`.
 | `GET /documents` | `?domain=&source_type=&q=&sort=title\|added\|pages&limit=50&offset=0`; `{"total", "documents": [Doc]}` |
 | `GET /documents/{doc_id}` | `Doc` plus `outline: [{"heading_path", "page_start", "page_end", "chunk_id"}]` |
 | `GET /documents/{doc_id}/chunks` | `?from=<ordinal>&limit=20`; `{"chunks": [{"chunk_id", "ordinal", "text", "page_start", "page_end", "heading_path"}], "next"}` |
+| `GET /documents/{doc_id}/pages/{n}.png` | `?w=1200&highlight=<quote>`; the PDF page rendered by PDFium as PNG, with the quote marked (C11); see Page images |
 
 ### Library browsing (`src/library.rs`)
 
@@ -133,6 +134,28 @@ routes, or it answers `401 {"error": ...}`.
   last one replaces `chunks(doc_id)`, and is built once when an existing database is first
   opened.
 
+### Page images (`src/pages.rs`)
+
+`GET /documents/{doc_id}/pages/{n}.png` renders page `n` (1-based) of an indexed PDF for the
+source chip of a verified citation.
+
+- `w` is the width in pixels, clamped to 400-2000 (default 1200). The height follows the
+  page's aspect ratio, up to three times the width.
+- `highlight` is a quote. It is looked up in the page's text layer after the normalisation
+  of citation checking (C11 `/api/library/verify`): whitespace runs are one space, curly
+  quotes are straight, dashes are `-`, and soft hyphens are dropped. It may cross line
+  breaks. Every occurrence is marked with a translucent yellow over PDFium's text
+  rectangles. A quote that is not on the page, or an empty one, marks nothing.
+- 404 for an unknown or non-PDF document (EPUB, Markdown, text), a page outside 1..pages,
+  a path that does not end in `.png`, or a file no longer in the library. 400 for a `w` that
+  is not a number and for unknown parameters. The token rule applies as on every route.
+- The response is `image/png` (8-bit RGB) with `Cache-Control: private, max-age=86400`:
+  `doc_id` is a content hash, so a page image never changes.
+- **PDFium is not thread-safe.** Every PDFium call in the process (survey and ingest
+  extraction, and rendering) runs while holding one lock (`extract::pdfium_lock`).
+  Extraction releases it between pages, so a render during an ingest waits for at most one
+  page. PNG encoding and marking run outside PDFium on the pixels.
+
 One job runs at a time. A second `POST /survey` or `POST /ingest` gets
 `409 {"error": "job <id> is still running"}`. Jobs are stored in SQLite, so finished jobs stay
 readable after a restart, and a job that was running when the service stopped is recorded as
@@ -145,7 +168,8 @@ Errors are `{"error": "<message>"}`. The statuses are:
   a `limit` outside 1..200, an unknown `sort` or `source_type`, or a `root` outside the roots.
 - 401: a token is configured and the request does not carry it (every route but
   `GET /health`).
-- 404: an unknown job, route, survey or document.
+- 404: an unknown job, route, survey or document, or a page image that does not exist (see
+  Page images).
 - 409: a job is already running, or `mode: "vector"` was asked for without vectors.
 - 502: the embedding provider failed on the query.
 - 500: anything else.
@@ -182,6 +206,10 @@ canonical path, which decides the metadata, is the first of its paths in sorted 
 | `RAG_OCR_PROVIDER` | OCR provider. None is implemented yet, so any value is rejected at startup. Unset: pages stay queued. |
 | `PDFIUM_DYNAMIC_LIB_PATH` | PDFium library or folder (same as `--pdfium`). |
 | `RAG_ENGINE_TOKEN` | Bearer token that `serve` requires on every route but `GET /health`. Needed for a non-loopback `--bind`. Read directly, so it never appears in `--help`. |
+| `RAG_BM25_TITLE_BOOST` | Query-time weight of the book-title field (default 2.0; 0 turns it off). See Search. |
+| `RAG_BM25_HEADING_BOOST` | Query-time weight of the heading-path field (default 2.0; 0 turns it off). |
+| `RAG_BM25_WRITER_HEAP_MB` | Indexing memory of the tantivy writer, 128-32768 (default 1024). See Scale and memory. |
+| `RAG_BM25_COMMIT_CHUNKS` | Commit the BM25 index after this many new chunks (default 100000). |
 
 A configuration error, such as a provider without a model, stops the service at startup
 rather than being ignored. Corpus text goes only to the configured provider. Check its
@@ -211,8 +239,9 @@ out.
      pages in one SQLite transaction. The result is the same as a serial ingest: a test
      compares every stored chunk and document row.
    - A parser or chunker panic becomes that document's error.
-   - Add the chunks to the BM25 batch. The batch is committed every 64 documents or 20,000
-     chunks.
+   - Add the chunks to the BM25 batch, with the document's title and each chunk's heading
+     path. The batch is committed every `RAG_BM25_COMMIT_CHUNKS` chunks (default 100,000)
+     and at the end of the run.
    - A document stays `indexing` until its batch is committed and then becomes `indexed`. An
      interrupted batch is undone and redone by the next ingest.
    - Encrypted or unreadable files become `error` documents (counted in `/status` `errors`).
@@ -233,6 +262,23 @@ out.
 `rebuild: true` clears the database's documents, chunks and files, the BM25 index and the
 vector table, then ingests everything again. Finished OCR text is kept, because it is paid for
 and keyed by content.
+
+**BM25 schema version.** The BM25 fields and analyzer carry a version (`bm25::SCHEMA_VERSION`,
+now 2; version 1 indexed chunk text only). It is recorded in the database's `meta` table once
+the index holds every stored chunk.
+
+- When the engine opens an index built with other fields or another analyzer, it deletes it
+  and creates an empty one, and logs `the BM25 index in <dir> was built with an older schema;
+  it is cleared now and re-indexed from the database by the next ingest`. BM25 search finds
+  nothing until then. A missing `bm25/` folder is recreated empty and re-indexed the same
+  way, without that log line.
+- The next ingest (service job or command) sees the old or missing version, logs `the BM25
+  index has schema version <old> but this build uses <new>; re-indexing <n> chunks from the
+  database`, and adds every stored chunk of every indexed document again. Nothing is
+  extracted, OCR'd or embedded again. Then it records the version and continues as usual. An
+  interrupted re-index starts over at the next ingest.
+- A change to the fields or the analyzer (including the maths mappings) must bump the
+  version.
 
 ### Chunks and headings
 
@@ -262,7 +308,7 @@ and keyed by content.
 
 | `mode` | What runs | `score` |
 |---|---|---|
-| `bm25` | tantivy, English stemming analyzer (`en_stem`), top `k` | BM25 |
+| `bm25` | tantivy over chunk text, book title and heading path, maths-aware English analyzer, top `k` | sum of the fields' BM25 scores, title and heading boosted |
 | `vector` | LanceDB, cosine distance, top `k` | cosine similarity (1 - distance) |
 | `hybrid` (default) | top 50 of each, reciprocal rank fusion `sum 1/(60 + rank)` | fused score |
 
@@ -273,15 +319,44 @@ and keyed by content.
 - `domains` and `source_types` filter inside both engines (tantivy term filters and LanceDB
   pre-filtering). An empty list means no filter.
 - Query text is not parsed as query syntax. It goes through the analyzer, and every distinct
-  term becomes an optional clause, so input like `f(x) = a:b` cannot fail to parse.
+  term becomes an optional clause on each field, so input like `f(x) = a:b` cannot fail to
+  parse.
 - Query embeddings are billed as spend too.
+
+**Fields and boosts** (`src/bm25.rs`). Each chunk is indexed with three text fields: its
+text, its document's title, and its heading path. A query term scores in each field by BM25,
+and the title and heading scores are multiplied by `RAG_BM25_TITLE_BOOST` and
+`RAG_BM25_HEADING_BOOST` (both 2.0 by default, 0 turns a field off). With the defaults and
+fields of even length, a chunk whose title or heading contains the query term ranks above a
+chunk that mentions it twice in its text only; a unit test checks this, and that without
+the boosts the body match ranks first. BM25 still weighs rarity and field length, so this is
+a tendency, not a rule. These defaults are starting points for the `evals/` arms (CORPUS.md
+Stage 0 step 8), not tuned values.
+
+**Maths normalisation** (`src/tokenize.rs`). PDFium emits the glyphs a page shows, not
+LaTeX. Before tantivy's `en_stem` chain (simple tokenizer, tokens over 40 bytes dropped,
+lowercase, English stemmer), indexed text and queries alike are normalised:
+
+- Unicode NFKC maps mathematical alphanumerics (`𝑥`, `𝐯`, `𝛼`), letterlike symbols
+  (`ℝ`, `ℏ`), ligatures (`ﬁ`) and full-width forms to plain characters. Superscripts and
+  subscripts become plain digits (`x²` is `x2`, `H₂O` is `H2O`), which is also how PDFium
+  reads positioned superscripts.
+- Greek letters (and their variants, the micro and ohm signs, and `∆`) become their names:
+  `2π` is `2 pi`, `Δx` is `delta x`.
+- Common operators become their LaTeX command names: `∑ sum`, `∏ prod`, `∫ int`,
+  `∂ partial`, `∇ nabla`, `∞ infty`, `√ sqrt`, `∈ in`, `⊆ subseteq`, `≤ leq`, `≠ neq`,
+  `≈ approx`, `± pm`, `× times`, `→ to`, `⇒ implies` and about thirty more (the table is in
+  the source).
+
+So glyph text, LaTeX queries (`\partial u`, `\alpha`) and spelled-out Greek meet on the
+same terms. ASCII text passes through unchanged. Accented letters keep their accents.
 
 ## Data directory (`--data`)
 
 | Path | What |
 |---|---|
 | `rag.sqlite3` | files, documents (with page counts by class), chunks (text, pages, heading path), OCR queue, jobs, spend, meta (WAL mode) |
-| `bm25/` | tantivy index: chunk text (frequencies, no positions) and filter fields |
+| `bm25/` | tantivy index: chunk text, title and heading path (frequencies, no positions) and filter fields |
 | `lancedb/` | LanceDB table `chunks` (chunk_id, doc_id, domain, source_type, vector). It is created only when an embedding provider has produced vectors. |
 | `survey/latest.json` | the last survey report from the service |
 
@@ -290,16 +365,31 @@ The service refuses a `--data` inside `--corpus` or `--notes`.
 ## Scale and memory
 
 - Memory holds the documents in flight (at most two per worker thread, each with its text and
-  chunks), one BM25 batch, and up to 1,024 vectors. The tantivy writer has a 256 MB budget,
-  and SQLite has a 64 MB page cache. The file list (one small entry per file) is the only
-  structure that grows with the corpus.
+  chunks), one BM25 batch, and up to 1,024 vectors. SQLite has a 64 MB page cache. The file
+  list (one small entry per file) is the only structure that grows with the corpus.
+- **tantivy growth tuning** (CORPUS.md Stage 0 step 7):
+  - The writer's indexing memory is `RAG_BM25_WRITER_HEAP_MB` (default 1024 MB, shared by
+    its threads; CORPUS.md asks for 1-2 GB). It is a budget, allocated as needed; when it
+    fills, a segment is written to disk. Fewer, larger segments make searches faster at
+    10M chunks.
+  - Commits come every `RAG_BM25_COMMIT_CHUNKS` new chunks (default 100,000; CORPUS.md
+    asks for 50-200k) instead of every 64 documents, so a large ingest makes few small
+    segments. Documents stay `indexing`, and invisible to search, until their batch is
+    committed; an interrupted batch is redone by the next ingest.
+  - The merge policy is tantivy's log merge policy with its defaults, except that a segment
+    is also merged once 20% of its documents are deleted (tantivy's default, 100%, never
+    merges for deletes alone). Re-indexed, moved and removed documents free their space.
+  - The title and heading fields add a few postings per chunk.
+  - The throughput table below was measured before these settings (256 MB, commits every
+    64 documents or 20,000 chunks) and has not been re-measured.
 - `/status` sums per-document counters instead of counting chunk rows, so it stays fast at
   10M chunks. Chunks waiting for embeddings are counted through a partial index.
 - There is no per-page table. Only pages that need OCR get a row.
 - BM25 stores no term positions, and the chunk text lives once, in SQLite.
 - Vectors stay on disk in LanceDB. With the IVF-PQ index, searches do not scan all vectors.
-- PDFium is not thread-safe, so PDF text extraction runs on one thread. Other extraction,
-  chunking and hashing are parallel. For a PDF-heavy library, that one thread is the likely
+- PDFium is not thread-safe, so PDF text extraction runs on one thread, and every PDFium
+  call in the process holds one lock (see Page images). Other extraction, chunking and
+  hashing are parallel. For a PDF-heavy library, that one thread is the likely
   limit; this has not been measured on real books yet.
 - **Throughput** (release build, 16-core Windows 11 machine, BM25 only, no embeddings). The
   corpus is `bench/synthetic_corpus.py`: 200 Markdown books, 33.7 MB, 38,648 chunks. Each
@@ -380,7 +470,14 @@ cargo clippy -p rag-engine --all-targets
   - embedding batching, retries and spend, including the Voyage and OpenAI-compatible request
     shapes against a local fake server;
   - the OCR queue with a mock provider, the job lifecycle, LanceDB operations, and triage and
-    survey helpers.
+    survey helpers;
+  - title and heading boosts (default ranking, unboosted, and off), tuning variables, the
+    merge policy's delete ratio, the maths normalisation (Greek, operators, mathematical
+    alphanumerics, scripts, LaTeX queries), and an index with an older schema being cleared
+    at open and re-indexed from the database by the next ingest without re-extraction;
+  - page rendering from the PDF fixtures: size, marks for a quote across line breaks (both
+    occurrences), maths glyphs, no marks for a missing quote, page bounds and an encrypted
+    file, plus the quote normalisation and blending helpers.
 - `tests/survey.rs` runs the binary's `survey` on `tests/fixtures/`.
 - `tests/service.rs` starts `serve` on a free port against `tests/library/`, a corpus-shaped
   tree made from the fixtures (see the file header), and checks:
@@ -391,6 +488,8 @@ cargo clippy -p rag-engine --all-targets
   - hit fields, filters in both engines, and error statuses;
   - `/documents` (filters, sort, paging and 400s), `/documents/{doc_id}` with its outline, and
     `/chunks` followed page by page through a whole document;
+  - page images: PNG type and width, a marked page differing from the plain one, width
+    clamping, a scanned page, and the 404s and 400s; a LaTeX query finding the maths PDF;
   - CORS for allowed and refused origins, and that the library files are unchanged;
   - with `RAG_ENGINE_TOKEN`: 401 on every route but `GET /health` without it, or with a wrong
     token or scheme; success with it; preflights allowed; and the token absent from the log;
@@ -398,8 +497,9 @@ cargo clippy -p rag-engine --all-targets
   - hybrid and vector search against a local fake OpenAI-compatible embeddings server, which
     holds its first request to keep a job running.
 
-  The tests remove every `RAG_*` and `VOYAGE_API_KEY` variable (including `RAG_ENGINE_TOKEN`)
-  from the server's environment, so they cannot reach a paid API.
+  The tests remove every `RAG_*` variable the engine reads (including `RAG_ENGINE_TOKEN` and
+  the `RAG_BM25_*` tuning) and `VOYAGE_API_KEY` from the server's environment, so they cannot
+  reach a paid API.
 
 PDFium must be in place for the binary tests. The fixtures are generated by
 `tests/fixtures/make_fixtures.py` (reportlab and Pillow).
@@ -417,6 +517,7 @@ kreuzberg 5.x (Elastic-2.0) are not allowed.
 | futures | 0.3.34 | MIT OR Apache-2.0 | stream and boxed-future helpers |
 | lancedb | 0.37.1 | Apache-2.0 | vector store (default features off) |
 | pdfium-render | 0.9.4 | MIT OR Apache-2.0 | PDFium bindings (`pdfium_latest`, default features off) |
+| png | 0.18.1 | MIT OR Apache-2.0 | page image encoding |
 | rayon | 1.12.0 | MIT OR Apache-2.0 | parallel hashing |
 | rbook | 0.7.10 | Apache-2.0 | EPUB reading (default features off) |
 | reqwest | 0.13.5 | MIT OR Apache-2.0 | embedding API client (`json`, `native-tls`: Windows SChannel, no C build) |
@@ -428,6 +529,7 @@ kreuzberg 5.x (Elastic-2.0) are not allowed.
 | tiktoken-rs | 0.12.1 | MIT | cl100k tokenizer |
 | tokio | 1.53.1 | MIT | async runtime |
 | tower-http | 0.7.1 | MIT | CORS |
+| unicode-normalization | 0.1.25 | MIT OR Apache-2.0 | NFKC for the maths analyzer |
 | walkdir | 2.5.0 | Unlicense OR MIT (used under MIT) | recursive walk |
 
 lancedb is pinned to 0.37.x because 0.38.0 and 0.39.0 do not compile without their `remote`

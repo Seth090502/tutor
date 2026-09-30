@@ -9,6 +9,7 @@ use crate::jobs::{self, JobKind, Jobs};
 use crate::library::{self, ChunksQuery, ListParams, ListQuery};
 use crate::meta::SOURCE_TYPES;
 use crate::ocr;
+use crate::pages;
 use crate::search::{self, SearchError, SearchRequest};
 use crate::store::{self, SpendKind};
 use crate::survey;
@@ -20,6 +21,7 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use rusqlite::OptionalExtension;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -87,6 +89,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/documents", get(documents))
         .route("/documents/{doc_id}", get(document))
         .route("/documents/{doc_id}/chunks", get(document_chunks))
+        .route("/documents/{doc_id}/pages/{page}", get(page_image))
         .route("/survey", post(start_survey))
         .route("/survey/latest", get(survey_latest))
         .route("/ingest", post(start_ingest))
@@ -358,6 +361,56 @@ async fn document_chunks(
     match read_db(&state, move |conn| library::chunks(conn, &id, from, limit)).await? {
         Some(page) => Ok(axum::Json(page).into_response()),
         None => Err(ApiError::new(StatusCode::NOT_FOUND, format!("no document {doc_id}"))),
+    }
+}
+
+/// `GET /documents/{doc_id}/pages/{n}.png` query parameters. An empty `highlight` means none.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PageQuery {
+    w: Option<u32>,
+    highlight: Option<String>,
+}
+
+/// A PDF page as PNG (C11), rendered by PDFium with `highlight` marked (`src/pages.rs`).
+async fn page_image(
+    State(state): State<Arc<AppState>>,
+    UrlPath((doc_id, page)): UrlPath<(String, String)>,
+    query: std::result::Result<Query<PageQuery>, QueryRejection>,
+) -> ApiResult<Response> {
+    let not_found = |message: String| ApiError::new(StatusCode::NOT_FOUND, message);
+    let number: u32 =
+        page.strip_suffix(".png").and_then(|n| n.parse().ok()).ok_or_else(|| not_found("not found".into()))?;
+    let query = query_params(query)?;
+    let (width, highlight) = (pages::clamp_width(query.w), query.highlight.filter(|h| !h.trim().is_empty()));
+    let id = doc_id.clone();
+    let doc = read_db(&state, move |conn| {
+        Ok(conn
+            .query_row("SELECT path, kind, pages FROM documents WHERE doc_id = ?1 AND state = 'indexed'", [&id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .optional()?)
+    })
+    .await?;
+    let Some((path, kind, page_count)) = doc else { return Err(not_found(format!("no document {doc_id}"))) };
+    if kind != "pdf" {
+        return Err(not_found(format!("document {doc_id} is not a PDF")));
+    }
+    if number == 0 || i64::from(number) > page_count {
+        return Err(not_found(format!("document {doc_id} has no page {number} (pages 1-{page_count})")));
+    }
+    let file = state.roots.resolve(&path).filter(|f| f.is_file()).ok_or_else(|| not_found(format!("{path} is no longer in the library")))?;
+    let lib = state.pdfium.clone();
+    let rendered = tokio::task::spawn_blocking(move || pages::render(&lib, &file, number, width, highlight.as_deref()))
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    match rendered {
+        // The document id is a content hash, so a page image never changes.
+        Ok(Some((png, _marked))) => {
+            Ok(([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "private, max-age=86400")], png).into_response())
+        }
+        Ok(None) => Err(not_found(format!("document {doc_id} has no page {number}"))),
+        Err(e) => Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{path}: {e}"))),
     }
 }
 

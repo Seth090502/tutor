@@ -7,6 +7,7 @@ use pdfium_render::prelude::*;
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
 /// Run a parser, turning a panic inside it into an error message.
 pub fn catch_panics<T>(parse: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
@@ -18,6 +19,16 @@ pub fn catch_panics<T>(parse: impl FnOnce() -> Result<T, String>) -> Result<T, S
             .unwrap_or_else(|| "unknown panic".to_string());
         Err(format!("parser panicked: {message}"))
     })
+}
+
+/// PDFium is not thread-safe. Every call into it (opening, reading, rendering and closing
+/// documents) happens while holding this lock, so ingest and survey extraction and page
+/// rendering in the service run one at a time. Extraction releases it between pages.
+static PDFIUM: Mutex<()> = Mutex::new(());
+
+pub fn pdfium_lock() -> MutexGuard<'static, ()> {
+    // A panic inside PDFium work (caught by `catch_panics`) must not disable PDFium for good.
+    PDFIUM.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Form XObjects can nest; stop looking for images below this depth.
@@ -34,6 +45,8 @@ pub struct Measurement {
 /// owner-password-only) and DRM-protected files are reported as errors and never opened
 /// further; no password is ever supplied.
 pub fn measure_pdf(pdfium: &Pdfium, path: &Path) -> Result<Measurement, String> {
+    // Declared before the document, so the document is closed while the lock is still held.
+    let mut guard = pdfium_lock();
     let document = open_pdf(pdfium, path)?;
     let mut counts = TriageCounts::default();
     let mut size = TextSize::default();
@@ -43,12 +56,21 @@ pub fn measure_pdf(pdfium: &Pdfium, path: &Path) -> Result<Measurement, String> 
         counts.add(page_class(&page, &page_text));
         size += text::measure(&page_text);
         pages += 1;
+        drop(page);
+        guard = yield_pdfium(guard);
     }
     Ok(Measurement { pages: Some(pages), triage: Some(counts), size })
 }
 
-/// Open a PDF that is not encrypted in any way; see [`measure_pdf`].
-fn open_pdf<'a>(pdfium: &'a Pdfium, path: &Path) -> Result<PdfDocument<'a>, String> {
+/// Let a waiting renderer in between two pages.
+fn yield_pdfium(guard: MutexGuard<'static, ()>) -> MutexGuard<'static, ()> {
+    drop(guard);
+    pdfium_lock()
+}
+
+/// Open a PDF that is not encrypted in any way; see [`measure_pdf`]. The caller holds
+/// [`pdfium_lock`].
+pub fn open_pdf<'a>(pdfium: &'a Pdfium, path: &Path) -> Result<PdfDocument<'a>, String> {
     let document = pdfium.load_pdf_from_file(path, None).map_err(|e| match e {
         PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => {
             "encrypted PDF: password required; not processed".to_string()
@@ -94,6 +116,8 @@ pub struct PdfText {
 /// Each page's text layer (line breaks normalised to `\n`, other control characters removed)
 /// and triage class, plus the document's metadata title. Same refusal rules as [`measure_pdf`].
 pub fn pdf_text(pdfium: &Pdfium, path: &Path) -> Result<PdfText, String> {
+    // Declared before the document, so the document is closed while the lock is still held.
+    let mut guard = pdfium_lock();
     let document = open_pdf(pdfium, path)?;
     let title = document
         .metadata()
@@ -105,6 +129,8 @@ pub fn pdf_text(pdfium: &Pdfium, path: &Path) -> Result<PdfText, String> {
         let raw = page_text(&page, index)?;
         let class = page_class(&page, &raw);
         pages.push(PdfPageText { text: clean_pdf_text(&raw), class });
+        drop(page);
+        guard = yield_pdfium(guard);
     }
     Ok(PdfText { title, pages })
 }
