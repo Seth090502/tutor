@@ -101,6 +101,8 @@ JS. Typed wrappers live in `apps/desktop/src/lib/backend.ts`.
 | `elevenlabs_conversation_token` | `agent_id` | `{"token": "…"}`; Rust calls ElevenLabs with the stored key |
 | `config_get` | none | `{"elevenlabs_agent_id": string|null}` |
 | `config_set` | `key, value` | nothing; non-secret settings in the app config dir |
+| `evals_runs` | none | `{"runs": [Run, ...], "warnings": ["…"]}`: every `<root>/evals/runs/*.json` (C2), newest `created_at` first; unreadable files are skipped and named in `warnings` |
+| `plan_markdown` | none | `{"markdown": "…"}`: contents of `<root>/docs/tutor/PLAN.md` |
 
 The shell starts both services as child processes in a Windows Job Object (killed with the app),
 passes the allowed browser origins to DeepTutor via `CORS_ORIGINS`, and passes stored secrets to the

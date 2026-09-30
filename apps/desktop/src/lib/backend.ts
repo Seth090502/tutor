@@ -37,6 +37,25 @@ export type ServiceState = {
 export type ServicesStatus = { backend: ServiceState; rag_engine: ServiceState }
 export type SecretName = "elevenlabs" | "opencode" | "anthropic" | "openrouter" | "voyage"
 
+/** One eval run file (contract C2). */
+export type SplitResult = {
+  n: number
+  metrics: Record<string, number>
+  ci95?: Record<string, [number, number]>
+}
+export type EvalRun = {
+  run_id: string
+  created_at: number
+  eval: string
+  dataset: string
+  change: string
+  config: Record<string, unknown>
+  splits: { train: SplitResult; test: SplitResult }
+  per_domain: Record<string, { train: SplitResult; test: SplitResult }>
+  decision: "baseline" | "keep" | "revert" | "pending"
+  cost_usd: number
+}
+
 export const shell = {
   servicesStatus: () => invoke<ServicesStatus>("services_status"),
   servicesRestart: (name: "backend" | "rag_engine") => invoke<void>("services_restart", { name }),
@@ -47,4 +66,6 @@ export const shell = {
     invoke<{ token: string }>("elevenlabs_conversation_token", { agentId }),
   configGet: () => invoke<{ elevenlabs_agent_id: string | null }>("config_get"),
   configSet: (key: string, value: string) => invoke<void>("config_set", { key, value }),
+  evalsRuns: () => invoke<{ runs: EvalRun[]; warnings: string[] }>("evals_runs"),
+  planMarkdown: () => invoke<{ markdown: string }>("plan_markdown"),
 }
