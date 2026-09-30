@@ -67,8 +67,24 @@ Layout map: `TUTOR.md`. Local commits only; nothing is pushed anywhere.
 
 ## In progress
 
-- **Design polish, round 1:** shell and motion, component kit, SVG chart kit (Sonnet 5.5 team).
-- **Next:** round 2 restyles every screen with the kit, then a visual-QA pass.
+Merged since this plan was written:
+- Design round 1: shell and motion, component kit, SVG chart kit.
+- The teaching-method backend (C7): attempts, hint ladder, server rating policy.
+- Voice tools and prompt (C8), and the chat teaching policy.
+- Dual N-Back: engine, audio, storage (C6), and the Train section.
+
+Running, each on its own `wt/*` branch and merged after review:
+- Design round 2: the Library, Evals, Progress, and Plan with Settings screens.
+- The Tutor and Train screen polish.
+- rag-engine remote mode, library browsing and parallel ingest (C9).
+- Research round 3: corpus exploitation.
+
+Next:
+- Languages (C10): the world and language picker, shell TTS/STT with a cache, language cards and
+  checking, the Languages screen, and per-language role-play agents.
+- A corpus-exploitation build from research round 3: guided reading, concept maps, question generation
+  from the library, and LLM query rewrite and rerank.
+- A visual-QA pass.
 
 ## Phases (remaining)
 
