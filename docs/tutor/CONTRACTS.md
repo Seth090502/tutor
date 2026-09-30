@@ -126,3 +126,31 @@ services as environment variables at launch.
 
 Screens must work in a plain browser too (`npm run dev`): when `inTauri` is false they show that
 the desktop shell is required instead of throwing.
+
+## C5. Design system (desktop)
+
+Direction: `docs/tutor/DESIGN.md`. Tokens live in `apps/desktop/src/index.css`.
+
+- **Tailwind colours:** `ink-2`, `ink-3` (secondary and tertiary text), `hairline`, `hairline-strong`,
+  `world`, `world-ink` (text on a `world` fill), `world-soft` (14% tint), `ok`, `warn`, `bad`,
+  `chart-1`..`chart-5` (`chart-1` is the world accent). shadcn tokens (`background`, `card`,
+  `muted-foreground`, `border`, ...) keep their names.
+- **Fonts and easing:** `font-sans` (Geist), `font-mono` (Geist Mono), `font-serif` (Newsreader, with
+  italic); easings `ease-soft`, `ease-spring`, `ease-inout`.
+- **CSS variables:** `--dur-quick|base|slow|world` (1ms under reduced motion), `--wash-1`, `--wash-2`
+  (ambient tints).
+- **Root state on `<html>`:** class `dark` (follows the OS), `data-world` = `neutral` | `math` |
+  `english` | `science` | `chemistry`, and `data-quality` = `lite` | `rich` (lite by default).
+- **`src/lib/motion.ts`:**
+  - `usePageVisible(): boolean`, `useReducedMotion(): boolean`, `useQuality(): "lite" | "rich"`.
+  - `useSpring(target, { stiffness, damping }, apply: (v: number) => void)`: one shared ticker that
+    sleeps when every spring is at rest. It snaps to the target under reduced motion or when hidden.
+- **`src/lib/world.tsx`:** `type World`, `WORLDS`, `<WorldProvider>`, `useWorld(): { world, setWorld }`.
+- **Folders:** `src/components/kit/` holds primitives and interactive pieces. `src/components/charts/` holds
+  the SVG charts. `src/components/shell/` holds the app frame, ambient layer and motifs.
+- **Rules:**
+  - Motion uses transform and opacity only.
+  - Every loop pauses when the page is hidden.
+  - No `backdrop-filter` over animated content.
+  - No new WebGL besides the Orb.
+  - Text contrast is at least 4.5:1, and labels are at least 11px.
