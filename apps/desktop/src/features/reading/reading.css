@@ -1,0 +1,94 @@
+/* Reading screens. One-shot entrances only (transform and opacity); nothing loops. The reading pane is
+   neutral and typographic: Newsreader at about 68ch, no subject colour. */
+
+.rd-rise {
+  animation: rd-rise 520ms cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes rd-rise {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-rise { animation: none; }
+}
+
+/* The reading measure: 68 characters of the 18px serif, for the prose and for the bar above it. */
+.rd-measure {
+  max-width: 68ch;
+  font-family: var(--font-serif);
+  font-size: 18px;
+}
+
+/* Reader text. */
+.rd-prose {
+  max-width: 68ch;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.6;
+  font-optical-sizing: auto;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+.rd-prose > p + p { margin-top: 1em; }
+
+/* Page marker: a hairline with the page label, between paragraphs. */
+.rd-page {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.6em 0 1em;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.rd-page::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--hairline);
+}
+.rd-page:first-child { margin-top: 0; }
+
+/* Thin reading-progress rule: scaleX written straight to the element on scroll. */
+.rd-progress {
+  height: 2px;
+  background: var(--hairline);
+}
+.rd-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+/* Page-crop modal (native <dialog>: focus trap, Esc and top layer come with it). */
+dialog.rd-dialog {
+  width: min(56rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 1rem;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.55);
+}
+dialog.rd-dialog::backdrop {
+  background: rgb(20 14 8 / 0.55);
+}
+dialog.rd-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Confidence keys: the kit's keycap group is a column; here the four keys sit in a row that wraps. */
+.rd-keys {
+  flex-direction: row;
+  flex-wrap: wrap;
+  column-gap: 1.25rem;
+  row-gap: 0.25rem;
+}
