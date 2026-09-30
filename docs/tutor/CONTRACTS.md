@@ -368,3 +368,23 @@ corpus that will grow by orders of magnitude.
 
 **Voice tools:** `search_library` calls `/api/library/search` with the open `attempt_id` when one exists,
 so the agent never sees withheld chunks.
+
+**C11 amendments (accepted 2026-09-30):**
+
+- **Chunk ids** are `<doc_id>:<ordinal>` (also C1).
+- **Library settings:** `GET/PUT /api/library/settings` read and write `{"rewrite", "rerank", "agentic", "model"}`.
+  The eval arms A-E use them.
+- **Pack hits:** each `section` entry is prefixed with its `[c:<chunk_id>]` tag, and each hit carries
+  `ranks.final` (the pack is not in rank order). Agentic search runs inside `/api/library/search`.
+- **Guided reading additions:**
+  - `GET /api/reading/sessions/{id}` returns the session state for resuming: its step, its answers so
+    far, and the section.
+  - `GET /api/reading/sessions/{id}/answers` returns
+    `{"prequestions": [{"id", "q", "answer", "explanation", "your_answer", "correct"}]}`, only after the
+    summary step (409 before).
+  - A paper session's `prepare` returns paper prequestions (predict from the abstract), and the summary
+    step scores a critique against the paper's claims.
+- **Provisional practice entries** (proof warrants, essays) are tagged `provisional`. The practice queue,
+  FSRS reviews and mastery exclude them. They can still be practised, with a note that they are unscored.
+- **rag-engine page images** report `X-Quote-Matches: <int>`. After a schema change, rag-engine starts a
+  re-index from SQLite on its own at startup (no re-extraction).
