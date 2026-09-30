@@ -3,4 +3,4 @@
 # (panic = "abort", fat LTO) would also apply to rag-engine.
 [workspace]
 resolver = "3"
-members = ["apps/desktop/src-tauri", "crates/rag-engine"]
+members = ["apps/desktop/src-tauri", "crates/learning-core", "crates/rag-engine"]
