@@ -40,6 +40,7 @@ from deeptutor.services.llm.provider_core.openai_responses import (
 )
 from deeptutor.services.llm.reasoning_params import (
     build_openai_compatible_reasoning_kwargs,
+    thinking_off_effort_for,
 )
 from deeptutor.services.llm.request_compat import (
     is_forced_tool_choice_unsupported,
@@ -740,6 +741,10 @@ class OpenAICompatProvider(LLMProvider):
             "stream": False,
         }
 
+        if reasoning_effort and reasoning_effort.strip().lower() == "none":
+            # Models with mandatory reasoning answer HTTP 400 to "none"; send
+            # the lowest level they accept, as the Chat Completions path does.
+            reasoning_effort = thinking_off_effort_for(self._binding_name(), model_name)
         if self._supports_temperature(model_name, reasoning_effort):
             body["temperature"] = temperature
         for key, value in model_overrides_for(model_name, self._spec).items():

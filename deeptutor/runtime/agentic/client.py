@@ -308,6 +308,7 @@ def _build_anthropic_adapter(config: LLMClientConfig, spec: Any) -> Any:
         default_model=config.model or "claude-sonnet-4-20250514",
         extra_headers=config.extra_headers,
         supports_prompt_caching=spec.supports_prompt_caching,
+        bearer_auth=spec.anthropic_bearer_auth,
     )
     return _ProviderOpenAIAdapter(anthropic_provider)
 

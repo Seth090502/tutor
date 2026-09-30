@@ -63,6 +63,10 @@ class ProviderSpec:
     # serving Anthropic Messages at ``/anthropic`` next to its OpenAI-style
     # ``/v1``. ``default_api_base`` stays the default format's endpoint.
     api_base_by_format: tuple[tuple[str, str], ...] = ()
+    # Anthropic Messages endpoints normally authenticate with ``x-api-key``.
+    # Gateways that document ``Authorization: Bearer`` instead set this; the
+    # Anthropic backend then sends only the bearer header.
+    anthropic_bearer_auth: bool = False
     # Set on entries kept only so stored catalogs keep resolving: the pair is
     # the (provider, api_format) that expresses the same thing today. Pickers
     # hide these; ``binding`` values in existing files are never rewritten.
@@ -226,6 +230,23 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         detect_by_base_keyword="openrouter",
         default_api_base="https://openrouter.ai/api/v1",
         supports_prompt_caching=True,
+    ),
+    # OpenCode Zen (https://opencode.ai/zen/v1) and OpenCode Go
+    # (https://opencode.ai/zen/go/v1) share one key. Muse Spark is served over
+    # the Responses API (api_format "openai_responses"); Claude over Anthropic
+    # Messages at the same base (api_format "anthropic"), with Bearer auth.
+    ProviderSpec(
+        name="opencode",
+        keywords=("opencode",),
+        env_key="OPENCODE_API_KEY",
+        display_name="OpenCode Zen / Go",
+        backend="openai_compat",
+        is_gateway=True,
+        detect_by_base_keyword="opencode.ai",
+        default_api_base="https://opencode.ai/zen/v1",
+        api_base_by_format=(("anthropic", "https://opencode.ai/zen/v1"),),
+        supports_prompt_caching=True,
+        anthropic_bearer_auth=True,
     ),
     ProviderSpec(
         name="orcarouter",

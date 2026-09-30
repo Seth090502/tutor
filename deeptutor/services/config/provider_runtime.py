@@ -47,6 +47,7 @@ from .model_catalog import (
     MODEL_CAPABILITY_KEYS,
     ModelCatalogService,
     get_model_catalog_service,
+    resolve_env_reference,
 )
 from .provider_links import resolve_profile_provider
 
@@ -665,6 +666,13 @@ def _as_api_key(value: Any) -> str | list[str]:
     return _as_str(value)
 
 
+def _resolve_api_key(value: str | list[str]) -> str | list[str]:
+    """Substitute ``"${NAME}"`` environment references in the key actually used."""
+    if isinstance(value, list):
+        return [resolve_env_reference(key) for key in value]
+    return resolve_env_reference(value)
+
+
 def _to_headers(value: Any) -> dict[str, str]:
     if isinstance(value, dict):
         return {str(k): str(v) for k, v in value.items() if str(k).strip() and v is not None}
@@ -902,7 +910,7 @@ def resolve_llm_runtime_config(
         if (profile or {}).get("provider_ref") or (model or {}).get("provider_ref")
         else provider_pool.get(spec.name)
     )
-    api_key = active_api_key or (mapped.api_key if mapped else "")
+    api_key = _resolve_api_key(active_api_key or (mapped.api_key if mapped else ""))
     api_base = active_api_base or ((mapped.api_base or "") if mapped else "")
     api_version = active_api_version or ((mapped.api_version or "") if mapped else "")
     if not api_base and spec.default_api_base:
@@ -1120,7 +1128,7 @@ def resolve_embedding_runtime_config(
         else provider_pool.get(provider_name)
     )
 
-    api_key = active_api_key or (mapped.api_key if mapped else "")
+    api_key = _resolve_api_key(active_api_key or (mapped.api_key if mapped else ""))
     api_base = active_api_base or ((mapped.api_base or "") if mapped else "")
     if not api_base:
         if provider_name == "gemini":

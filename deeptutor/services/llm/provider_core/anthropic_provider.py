@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import contextlib
 import re
 import secrets
 import string
@@ -15,6 +16,7 @@ from typing import Any
 
 import json_repair
 
+from deeptutor.services.llm.exceptions import LLMConfigError
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
 from deeptutor.services.provider_registry import ANTHROPIC_EFFORT_BASED_FAMILIES
 from deeptutor.services.session.provider_response_state import (
@@ -26,8 +28,41 @@ _ALNUM = string.ascii_letters + string.digits
 # reasoning_effort values that mean "thinking off" (see services/config
 # reasoning_params). On effort-based families the correct off/default
 # expression is omitting the `thinking` param entirely — explicit
-# `{type: "disabled"}` is itself rejected on Fable 5.
+# `{type: "disabled"}` is itself rejected on Fable 5 — except on the two
+# tables below.
 _THINKING_OFF_EFFORTS: frozenset[str] = frozenset({"none", "minimal", "minimum"})
+# Effort levels sent as ``output_config.effort`` on the effort-based families.
+_EFFORT_LEVELS: frozenset[str] = frozenset({"low", "medium", "high", "xhigh", "max"})
+# Thinking cannot be turned off on these (`disabled` and `budget_tokens` are a
+# 400); effort is the only control, so "off" is sent as the lowest effort.
+_THINKING_ALWAYS_ON_FAMILIES: tuple[str, ...] = (
+    "claude-opus-5-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
+# Sonnet 5.5 rejects `disabled` too; `between_tools` is its thinking-off setting
+# (effort `high` or below, no other field in `thinking`). Other models reject it.
+_BETWEEN_TOOLS_FAMILIES: tuple[str, ...] = ("claude-sonnet-5-5",)
+# These answer HTTP 400 to a forced tool_choice (`any` or `tool`).
+_NO_FORCED_TOOL_CHOICE_FAMILIES: tuple[str, ...] = (
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+)
+# These bind each thinking block to the conversation prefix it was produced
+# under ("preserved thinking"): replaying a block after the system prompt, the
+# tools or an earlier message changed is a 400 on enforced accounts.
+_CONVERSATION_BOUND_THINKING_FAMILIES: tuple[str, ...] = (
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+)
+_THINKING_BLOCK_TYPES: frozenset[str] = frozenset({"thinking", "redacted_thinking"})
+
+
+def _in_families(model_lower: str, families: tuple[str, ...]) -> bool:
+    return any(family in model_lower for family in families)
 
 
 def _gen_tool_id() -> str:
@@ -44,6 +79,7 @@ class AnthropicProvider(LLMProvider):
         default_model: str = "claude-sonnet-4-20250514",
         extra_headers: dict[str, str] | None = None,
         supports_prompt_caching: bool = True,
+        bearer_auth: bool = False,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
@@ -55,7 +91,15 @@ class AnthropicProvider(LLMProvider):
         from deeptutor.services.llm.utils import sanitize_url
 
         client_kw: dict[str, Any] = {"max_retries": 0}
-        if api_key:
+        if bearer_auth:
+            # The gateway documents `Authorization: Bearer`. Passing the key as
+            # auth_token sends only that header, and an explicit credential
+            # also stops the SDK from reading ANTHROPIC_API_KEY from the
+            # environment — another vendor's key, which must not reach it.
+            if not api_key:
+                raise LLMConfigError("No API key is configured for this Anthropic-format endpoint.")
+            client_kw["auth_token"] = api_key
+        elif api_key:
             client_kw["api_key"] = api_key
         if api_base:
             # The Anthropic SDK always appends its own `/v1/...` path. A base_url
@@ -271,6 +315,45 @@ class AnthropicProvider(LLMProvider):
                 merged.append(msg)
         return merged
 
+    @staticmethod
+    def _without_thinking(message: dict[str, Any]) -> dict[str, Any]:
+        content = message.get("content")
+        if message.get("role") != "assistant" or not isinstance(content, list):
+            return message
+        kept = [
+            block
+            for block in content
+            if not (isinstance(block, dict) and block.get("type") in _THINKING_BLOCK_TYPES)
+        ]
+        if len(kept) == len(content):
+            return message
+        return {**message, "content": kept or [{"type": "text", "text": "(empty)"}]}
+
+    @classmethod
+    def _drop_thinking_before_current_turn(
+        cls, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Keep thinking blocks only after the last user turn that is not tool results.
+
+        History replay here is not append-only: older turns are cut to a
+        budget, a summary is inserted and the system prompt is rebuilt each
+        turn, so an earlier turn's block would fail the conversation check.
+        Removing a leading run of blocks is allowed, and the current turn's
+        tool rounds keep theirs.
+        """
+        boundary = -1
+        for index, message in enumerate(messages):
+            content = message["content"]
+            has_tool_result = isinstance(content, list) and any(
+                isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+            )
+            if message["role"] == "user" and not has_tool_result:
+                boundary = index
+        return [
+            cls._without_thinking(message) if index < boundary else message
+            for index, message in enumerate(messages)
+        ]
+
     # ------------------------------------------------------------------
     # Tool definition conversion
     # ------------------------------------------------------------------
@@ -382,7 +465,10 @@ class AnthropicProvider(LLMProvider):
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
         model_name = self._strip_prefix(model or self.default_model)
+        model_lower = model_name.lower()
         system, anthropic_msgs = self._convert_messages(self._sanitize_empty_content(messages))
+        if _in_families(model_lower, _CONVERSATION_BOUND_THINKING_FAMILIES):
+            anthropic_msgs = self._drop_thinking_before_current_turn(anthropic_msgs)
         anthropic_tools = self._convert_tools(tools)
 
         if self._supports_prompt_caching:
@@ -399,9 +485,7 @@ class AnthropicProvider(LLMProvider):
         # value as the default budget, so a plain `bool(reasoning_effort)`
         # turned `none` into thinking ON with 4096 tokens.
         thinking_enabled = bool(effort) and effort not in _THINKING_OFF_EFFORTS
-        effort_based = any(
-            family in model_name.lower() for family in ANTHROPIC_EFFORT_BASED_FAMILIES
-        )
+        effort_based = _in_families(model_lower, ANTHROPIC_EFFORT_BASED_FAMILIES)
 
         kwargs: dict[str, Any] = {
             "model": model_name,
@@ -415,9 +499,11 @@ class AnthropicProvider(LLMProvider):
         if thinking_enabled and effort_based:
             # These families reject enabled+budget_tokens with a 400 —
             # adaptive is their only on-mode, so any real effort level maps
-            # to adaptive (no budget headroom needed). Off-sentinels omit
-            # the param entirely.
+            # to adaptive (no budget headroom needed). The level itself goes
+            # in output_config; without it Opus 5.5 runs at `medium`.
             kwargs["thinking"] = {"type": "adaptive"}
+            if effort in _EFFORT_LEVELS:
+                kwargs["output_config"] = {"effort": effort}
         elif thinking_enabled:
             # The older families are the mirror image: they take
             # enabled+budget_tokens and reject `adaptive`, so a stored
@@ -429,10 +515,24 @@ class AnthropicProvider(LLMProvider):
             kwargs.setdefault("extra_body", {})["temperature"] = 1.0
         elif not effort_based:
             kwargs.setdefault("extra_body", {})["temperature"] = temperature
+        elif effort in _THINKING_OFF_EFFORTS:
+            # Off-sentinels omit the param entirely, except where that would
+            # still think at the default effort.
+            if _in_families(model_lower, _BETWEEN_TOOLS_FAMILIES):
+                kwargs["thinking"] = {"type": "between_tools"}
+            elif _in_families(model_lower, _THINKING_ALWAYS_ON_FAMILIES):
+                kwargs["output_config"] = {"effort": "low"}
 
         if anthropic_tools:
             kwargs["tools"] = anthropic_tools
             tc = self._convert_tool_choice(tool_choice, thinking_enabled)
+            if (
+                tc
+                and tc["type"] in {"any", "tool"}
+                and _in_families(model_lower, _NO_FORCED_TOOL_CHOICE_FAMILIES)
+            ):
+                # A forced choice is a 400 here; `auto` still offers every tool.
+                tc = {"type": "auto"}
             if tc:
                 kwargs["tool_choice"] = tc
 
@@ -471,8 +571,21 @@ class AnthropicProvider(LLMProvider):
                     }
                 )
 
-        stop_map = {"tool_use": "tool_calls", "end_turn": "stop", "max_tokens": "length"}
+        # `refusal` is a safety classifier's decline (HTTP 200). The loop already
+        # treats `content_filter` as a terminal provider decision, so it is not
+        # retried as a truncated or reasoning-exhausted round.
+        stop_map = {
+            "tool_use": "tool_calls",
+            "end_turn": "stop",
+            "max_tokens": "length",
+            "refusal": "content_filter",
+        }
         finish_reason = stop_map.get(response.stop_reason or "", response.stop_reason or "stop")
+        provider_fields: dict[str, Any] = {}
+        stop_details = getattr(response, "stop_details", None)
+        if response.stop_reason == "refusal" and stop_details is not None:
+            dump = getattr(stop_details, "model_dump", None)
+            provider_fields["stop_details"] = dump() if callable(dump) else dict(stop_details)
 
         usage: dict[str, int] = {}
         if response.usage:
@@ -502,7 +615,38 @@ class AnthropicProvider(LLMProvider):
             ).strip()
             or None,
             thinking_blocks=thinking_blocks or None,
+            provider_specific_fields=provider_fields,
         )
+
+    @staticmethod
+    def _is_thinking_signature_rejection(exc: Exception) -> bool:
+        if getattr(exc, "status_code", None) != 400:
+            return False
+        text = str(exc).lower()
+        return "`thinking` block" in text and "signature" in text
+
+    async def _retry_without_thinking(
+        self,
+        send: Callable[[dict[str, Any]], Awaitable[Any]],
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Send once; if a replayed thinking block is rejected, resend without any.
+
+        Stripping every thinking block is the documented recovery for a block
+        bound to a different conversation, which an edit inside the current
+        turn (an evicted image, a folded checkpoint) can still cause. The
+        rejection is decided before any output, so nothing has been streamed.
+        """
+        try:
+            return await send(kwargs)
+        except Exception as exc:
+            if not self._is_thinking_signature_rejection(exc):
+                raise
+            messages = kwargs.get("messages") or []
+            stripped = [self._without_thinking(message) for message in messages]
+            if all(new is old for new, old in zip(stripped, messages)):
+                raise
+            return await send({**kwargs, "messages": stripped})
 
     # ------------------------------------------------------------------
     # Public API
@@ -532,7 +676,9 @@ class AnthropicProvider(LLMProvider):
             extra_kwargs.pop(key, None)
         kwargs.update({k: v for k, v in extra_kwargs.items() if v is not None})
         try:
-            response = await self._client.messages.create(**kwargs)
+            response = await self._retry_without_thinking(
+                lambda request: self._client.messages.create(**request), kwargs
+            )
             return self._parse_response(response)
         except Exception as e:
             return self._handle_error(e)
@@ -564,7 +710,13 @@ class AnthropicProvider(LLMProvider):
         kwargs.update({k: v for k, v in extra_kwargs.items() if v is not None})
         idle_timeout_s = 90
         try:
-            async with self._client.messages.stream(**kwargs) as stream:
+            async with contextlib.AsyncExitStack() as stack:
+                stream = await self._retry_without_thinking(
+                    lambda request: stack.enter_async_context(
+                        self._client.messages.stream(**request)
+                    ),
+                    kwargs,
+                )
                 if on_content_delta or on_reasoning_delta:
                     # Iterate the raw event stream rather than ``text_stream``.
                     # ``text_stream`` yields text blocks only, so an extended
