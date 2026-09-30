@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react"
-import { RotateCw, Save, Trash2 } from "lucide-react"
+// Settings: services, API keys and the ElevenLabs agent id (Tauri commands: contract C3).
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { ChevronRight, RotateCw, Save, Trash2 } from "lucide-react"
 
+import { Eyebrow, LedStatus, ServiceRow, type LedTone } from "@/components/kit"
 import { Button } from "@/components/ui/button"
+import { DesktopRequired } from "@/features/plan/DesktopRequired"
 import { inTauri, shell, type SecretName, type ServiceState, type ServicesStatus } from "@/lib/backend"
-import { cn } from "@/lib/utils"
+import "@/features/plan/rise.css"
 
-const KEYS: { name: SecretName; label: string; use: string }[] = [
+const KEYS: { name: SecretName; label: string; use: string; env?: string }[] = [
   { name: "elevenlabs", label: "ElevenLabs", use: "Voice tutor conversations" },
-  { name: "opencode", label: "OpenCode", use: "Backend LLM, as OPENCODE_API_KEY" },
-  { name: "anthropic", label: "Anthropic", use: "Backend LLM, as ANTHROPIC_API_KEY" },
-  { name: "openrouter", label: "OpenRouter", use: "Backend LLM, as OPENROUTER_API_KEY" },
-  { name: "voyage", label: "Voyage", use: "rag-engine embeddings, as VOYAGE_API_KEY" },
+  { name: "opencode", label: "OpenCode", use: "Backend LLM", env: "OPENCODE_API_KEY" },
+  { name: "anthropic", label: "Anthropic", use: "Backend LLM", env: "ANTHROPIC_API_KEY" },
+  { name: "openrouter", label: "OpenRouter", use: "Backend LLM", env: "OPENROUTER_API_KEY" },
+  { name: "voyage", label: "Voyage", use: "rag-engine embeddings", env: "VOYAGE_API_KEY" },
 ]
 
 const SERVICES: { name: keyof ServicesStatus; label: string }[] = [
@@ -18,27 +21,33 @@ const SERVICES: { name: keyof ServicesStatus; label: string }[] = [
   { name: "rag_engine", label: "rag-engine" },
 ]
 
-const STATE_STYLE: Record<ServiceState["state"], { label: string; dot: string }> = {
-  starting: { label: "Starting", dot: "bg-amber-500" },
-  running: { label: "Running", dot: "bg-emerald-500" },
-  stopped: { label: "Stopped", dot: "bg-muted-foreground" },
-  failed: { label: "Failed", dot: "bg-destructive" },
+const STATE_STYLE: Record<ServiceState["state"], { label: string; tone: LedTone; pulse?: boolean }> = {
+  starting: { label: "Starting", tone: "warn", pulse: true },
+  running: { label: "Running", tone: "ok" },
+  stopped: { label: "Stopped", tone: "off" },
+  failed: { label: "Failed", tone: "bad" },
 }
 
+// `::-ms-reveal` hides the WebView's own show-password eye: a typed key is never displayed either.
 const inputClass =
-  "border-input bg-background h-8 min-w-0 flex-1 rounded-lg border px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+  "[&::-ms-reveal]:hidden border-hairline-strong placeholder:text-muted-foreground h-9 min-w-0 flex-1 rounded-lg border bg-transparent px-3 font-mono text-[13px] tracking-[0.02em] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 function errorText(e: unknown) {
   return e instanceof Error ? e.message : String(e)
 }
 
-function Section({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+function Group({ index, title, note, children }: { index: number; title: string; note: ReactNode; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-muted-foreground text-xs">{note}</p>
-      </div>
+    <section className="screen-rise flex flex-col" style={{ "--i": index } as CSSProperties} aria-labelledby={`settings-${index}`}>
+      <header className="mb-4 flex flex-col gap-3">
+        <Eyebrow rule className="text-muted-foreground">{String(index + 1).padStart(2, "0")}</Eyebrow>
+        <div>
+          <h2 id={`settings-${index}`} className="text-[19px] leading-snug font-medium tracking-[-0.015em]">
+            {title}
+          </h2>
+          <p className="text-ink-2 mt-1 max-w-[60ch] text-[14px] leading-relaxed text-pretty">{note}</p>
+        </div>
+      </header>
       {children}
     </section>
   )
@@ -46,44 +55,67 @@ function Section({ title, note, children }: { title: string; note: string; child
 
 function ErrorLine({ text }: { text: string | null }) {
   return text ? (
-    <p role="alert" className="text-destructive text-xs whitespace-pre-wrap">
+    <p role="alert" className="border-bad/60 text-bad border-l-2 pl-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
       {text}
     </p>
   ) : null
 }
 
-function ServiceCard({
+function ServiceItem({
   label,
   service,
+  unknown,
   onRestart,
 }: {
   label: string
   service: ServiceState | undefined
-  onRestart: () => void
+  /** Status could not be read (and nothing is known yet). */
+  unknown: boolean
+  onRestart: () => Promise<void>
 }) {
+  const [restarting, setRestarting] = useState(false)
   const style = service ? STATE_STYLE[service.state] : null
+  const firstLine = service?.detail?.trim().split("\n")[0] ?? ""
+
+  const restart = async () => {
+    setRestarting(true)
+    try {
+      await onRestart()
+    } finally {
+      setRestarting(false)
+    }
+  }
+
   return (
-    <div className="bg-card flex min-w-0 flex-col gap-3 rounded-xl border p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium">{label}</h3>
-          <p className="text-muted-foreground truncate text-xs">{service?.url ?? "…"}</p>
-        </div>
-        <Button size="sm" variant="outline" onClick={onRestart} disabled={!service}>
+    <li className="border-hairline border-b py-1.5 first:border-t">
+      <div className="flex items-center gap-4">
+        <ServiceRow
+          className="min-w-0 flex-1"
+          label={label}
+          detail={<span className="text-muted-foreground">{service?.url ?? "…"}</span>}
+          tone={style?.tone ?? "off"}
+          pulse={style?.pulse}
+          state={style?.label ?? (unknown ? "Unknown" : "Checking")}
+          aria-live="polite"
+        />
+        <Button size="sm" variant="outline" onClick={() => void restart()} disabled={!service || restarting} aria-label={`Restart ${label}`}>
           <RotateCw />
           Restart
         </Button>
       </div>
-      <p className="flex items-center gap-2 text-sm" aria-live="polite">
-        <span className={cn("size-2 rounded-full", style?.dot ?? "bg-muted")} aria-hidden />
-        {style?.label ?? "Loading"}
-      </p>
       {service?.detail && (
-        <pre className="bg-muted max-h-48 overflow-auto rounded-lg p-2 text-xs whitespace-pre-wrap">
-          {service.detail}
-        </pre>
+        <details className="group/detail pb-2.5">
+          <summary className="text-ink-2 hover:text-foreground flex cursor-pointer list-none items-center gap-2 rounded-sm font-mono text-[11px] tracking-[0.14em] uppercase outline-none focus-visible:ring-2 focus-visible:ring-ring/60 [&::-webkit-details-marker]:hidden">
+            <ChevronRight aria-hidden className="size-3.5 shrink-0 transition-transform group-open/detail:rotate-90 motion-reduce:transition-none" />
+            <span className="shrink-0">{service.state === "failed" ? "Error detail" : "Detail"}</span>
+            <span className="text-muted-foreground min-w-0 truncate tracking-normal normal-case group-open/detail:hidden">{firstLine}</span>
+          </summary>
+          <pre className="border-hairline-strong text-ink-2 mt-2.5 max-h-56 overflow-auto border-l pl-4 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap">
+            {service.detail}
+          </pre>
+        </details>
       )}
-    </div>
+    </li>
   )
 }
 
@@ -101,27 +133,39 @@ function ServicesSection() {
     )
   }, [])
 
+  // Poll every 2 s, but not while the window is hidden; catch up as soon as it is shown again.
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 2000)
-    return () => clearInterval(id)
+    const id = setInterval(() => {
+      if (!document.hidden) refresh()
+    }, 2000)
+    const onVisible = () => {
+      if (!document.hidden) refresh()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
   }, [refresh])
 
-  const restart = (name: keyof ServicesStatus) =>
-    shell.servicesRestart(name).then(refresh, (e) => setError(errorText(e)))
+  const restart = (name: keyof ServicesStatus) => shell.servicesRestart(name).then(refresh, (e) => setError(errorText(e)))
 
   return (
-    <Section
+    <Group
+      index={0}
       title="Services"
       note="Started with the app and stopped when it closes. Keys reach a service when it starts, so restart it after changing its key."
     >
-      <ErrorLine text={error} />
-      <div className="grid gap-3 md:grid-cols-2">
-        {SERVICES.map((s) => (
-          <ServiceCard key={s.name} label={s.label} service={status?.[s.name]} onRestart={() => restart(s.name)} />
-        ))}
+      <div className="flex flex-col gap-3">
+        <ErrorLine text={error} />
+        <ul>
+          {SERVICES.map((s) => (
+            <ServiceItem key={s.name} label={s.label} service={status?.[s.name]} unknown={error !== null && status === null} onRestart={() => restart(s.name)} />
+          ))}
+        </ul>
       </div>
-    </Section>
+    </Group>
   )
 }
 
@@ -159,52 +203,60 @@ function KeyRow({
   }
 
   return (
-    <form className="flex flex-col gap-2 p-4" onSubmit={submit}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <label htmlFor={id} className="text-sm font-medium">
-            {spec.label}
-          </label>
-          <p className="text-muted-foreground text-xs">{spec.use}</p>
+    <li className="border-hairline border-b first:border-t">
+      <form className="flex flex-col gap-2.5 py-3.5" onSubmit={submit}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <label htmlFor={id} className="text-[15px] font-medium">
+              {spec.label}
+            </label>
+            <p className="text-ink-2 mt-0.5 text-[13px]">
+              {spec.use}
+              {spec.env && (
+                <>
+                  , as <code className="font-mono text-[12px]">{spec.env}</code>
+                </>
+              )}
+            </p>
+          </div>
+          <LedStatus
+            tone={saved ? "ok" : "off"}
+            state={saved === undefined ? "Checking" : saved ? "Saved" : "Missing"}
+            className="pt-1"
+            aria-live="polite"
+          />
         </div>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-xs",
-            saved ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground",
-          )}
-        >
-          {saved === undefined ? "…" : saved ? "Saved" : "Not set"}
-        </span>
-      </div>
-      <div className="flex gap-2">
-        <input
-          id={id}
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={saved ? "Enter a new key to replace the saved one" : "Paste the key"}
-          className={inputClass}
-        />
-        <Button type="submit" disabled={busy || !value.trim()}>
-          <Save />
-          Save
-        </Button>
-        {saved && (
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={busy}
-            onClick={() => void run(() => shell.secretDelete(spec.name))}
-          >
-            <Trash2 />
-            Delete
+        <div className="flex gap-2">
+          <input
+            id={id}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={saved ? "Paste a new key to replace the saved one" : "Paste the key"}
+            className={inputClass}
+          />
+          <Button type="submit" variant={value.trim() ? "default" : "outline"} className="h-9" disabled={busy || !value.trim()}>
+            <Save />
+            Save
           </Button>
-        )}
-      </div>
-      <ErrorLine text={error} />
-    </form>
+          {saved && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9"
+              disabled={busy}
+              onClick={() => void run(() => shell.secretDelete(spec.name))}
+            >
+              <Trash2 />
+              Delete
+            </Button>
+          )}
+        </div>
+        <ErrorLine text={error} />
+      </form>
+    </li>
   )
 }
 
@@ -225,17 +277,20 @@ function KeysSection() {
   useEffect(refresh, [refresh])
 
   return (
-    <Section
+    <Group
+      index={1}
       title="API keys"
       note="Stored in Windows Credential Manager. This window only learns whether a key is saved, never its value."
     >
-      <ErrorLine text={error} />
-      <div className="bg-card divide-y rounded-xl border">
-        {KEYS.map((k) => (
-          <KeyRow key={k.name} spec={k} saved={present?.[k.name]} onChange={refresh} />
-        ))}
+      <div className="flex flex-col gap-3">
+        <ErrorLine text={error} />
+        <ul>
+          {KEYS.map((k) => (
+            <KeyRow key={k.name} spec={k} saved={present?.[k.name]} onChange={refresh} />
+          ))}
+        </ul>
       </div>
-    </Section>
+    </Group>
   )
 }
 
@@ -265,12 +320,22 @@ function AgentSection() {
     }
   }
 
+  const dirty = saved !== undefined && value.trim() !== (saved ?? "")
+
   return (
-    <Section title="ElevenLabs agent" note="The Agents Platform agent the voice tutor talks to. Not a secret.">
-      <form className="bg-card flex flex-col gap-2 rounded-xl border p-4" onSubmit={submit}>
-        <label htmlFor="elevenlabs-agent-id" className="text-sm font-medium">
-          Agent id
-        </label>
+    <Group index={2} title="ElevenLabs agent" note="The Agents Platform agent the voice tutor talks to. Not a secret.">
+      <form className="border-hairline flex flex-col gap-3 border-y py-4" onSubmit={submit}>
+        <div className="flex items-start justify-between gap-4">
+          <label htmlFor="elevenlabs-agent-id" className="text-[15px] font-medium">
+            Agent id
+          </label>
+          <LedStatus
+            tone={saved ? "ok" : "off"}
+            state={saved === undefined ? "Checking" : saved ? "Saved" : "Not set"}
+            className="pt-1"
+            aria-live="polite"
+          />
+        </div>
         <div className="flex gap-2">
           <input
             id="elevenlabs-agent-id"
@@ -281,33 +346,29 @@ function AgentSection() {
             placeholder="agent_…"
             className={inputClass}
           />
-          <Button type="submit" disabled={saved === undefined || value.trim() === (saved ?? "")}>
+          <Button type="submit" variant={dirty ? "default" : "outline"} className="h-9" disabled={!dirty}>
             <Save />
             Save
           </Button>
         </div>
         <ErrorLine text={error} />
       </form>
-    </Section>
+    </Group>
   )
 }
 
 export function SettingsScreen() {
   if (!inTauri) {
     return (
-      <div className="mx-auto flex h-full max-w-2xl flex-col justify-center p-8">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="mb-2 text-sm font-medium">Settings need the desktop app</h3>
-          <p className="text-muted-foreground text-sm">
-            Keys live in Windows Credential Manager and the services are started by the Tauri shell, so this
-            screen works only inside the app. Run <code>npm run tauri dev</code> in <code>apps/desktop</code>.
-          </p>
-        </div>
-      </div>
+      <DesktopRequired title="Settings need the desktop app">
+        Keys live in Windows Credential Manager and the services are started by the Tauri shell, so this screen works only
+        inside the app. Run <code className="font-mono text-[13px]">npm run tauri dev</code> in{" "}
+        <code className="font-mono text-[13px]">apps/desktop</code>.
+      </DesktopRequired>
     )
   }
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-8">
+    <div className="flex max-w-3xl flex-col gap-12 px-8 pt-8 pb-24">
       <ServicesSection />
       <KeysSection />
       <AgentSection />
