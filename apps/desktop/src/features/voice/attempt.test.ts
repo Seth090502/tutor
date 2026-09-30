@@ -1,107 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  answerMessage,
-  attemptKey,
-  attemptReducer,
-  confidenceMessage,
-  correctOptionId,
-  optionList,
-  ratingWord,
-  type Attempt,
-} from "./attempt"
-import type { TutorEvent } from "./tools"
-
-const question: TutorEvent = {
-  type: "question",
-  attempt_id: "a1",
-  question_id: 7,
-  question: "Which limit exists?",
-  question_type: "multiple_choice",
-  options: { B: "Both sides agree", A: "f(a) is defined", D: "f is smooth", C: "Nothing" },
-}
-
-const run = (...events: Parameters<typeof attemptReducer>[1][]) =>
-  events.reduce<Attempt | null>((s, e) => attemptReducer(s, e), null)
-
-describe("attemptReducer", () => {
-  it("starts an attempt from a question event, with options in A-D order", () => {
-    const a = run(question)!
-    expect(a.attemptId).toBe("a1")
-    expect(a.options.map((o) => o.id)).toEqual(["A", "B", "C", "D"])
-    expect(a.rung).toBe(0)
-    expect(a.checked).toBeNull()
-  })
-
-  it("ignores events before any question and events for another attempt", () => {
-    expect(run({ type: "confidence", attempt_id: "a1", level: 2 })).toBeNull()
-    const a = run(question, { type: "confidence", attempt_id: "zzz", level: 4 })!
-    expect(a.confidence).toBeNull()
-  })
-
-  it("takes confidence from the agent and from the learner's own key", () => {
-    expect(run(question, { type: "confidence", attempt_id: "a1", level: 3 })!.confidence).toBe(3)
-    expect(run(question, { type: "rated", attempt_id: "a1", level: 1 })!.confidence).toBe(1)
-  })
-
-  it("records the chosen answer", () => {
-    expect(run(question, { type: "answered", attempt_id: "a1", choice: "B" })!.answer).toBe("B")
-  })
-
-  it("fills the hint ladder upward and keeps the latest text, which may be null", () => {
-    const a = run(
-      question,
-      { type: "hint", attempt_id: "a1", rung: 1, text: "Think about both sides", is_answer: false },
-      { type: "hint", attempt_id: "a1", rung: 2, text: null, is_answer: false },
-    )!
-    expect(a.rung).toBe(2)
-    expect(a.hintText).toBeNull()
-    // A late, lower rung never empties the ladder.
-    const b = attemptReducer(a, { type: "hint", attempt_id: "a1", rung: 1, text: "old", is_answer: false })!
-    expect(b.rung).toBe(2)
-    expect(b.hintText).toBeNull()
-  })
-
-  it("flags the answer rung", () => {
-    const a = run(question, { type: "hint", attempt_id: "a1", rung: 5, text: "B", is_answer: true })!
-    expect(a.rung).toBe(5)
-    expect(a.hintIsAnswer).toBe(true)
-  })
-
-  it("holds the verdict, explanation and misconception after the check, then the review", () => {
-    const a = run(
-      question,
-      {
-        type: "checked",
-        attempt_id: "a1",
-        correct: false,
-        correct_answer: "B",
-        explanation: "One-sided limits must agree.",
-        misconception: "The limit must equal f(a).",
-      },
-      { type: "reviewed", attempt_id: "a1", rating: "again", next_due: "Oct 2, 9:30 AM" },
-    )!
-    expect(a.checked).toEqual({
-      correct: false,
-      correctAnswer: "B",
-      explanation: "One-sided limits must agree.",
-      misconception: "The limit must equal f(a).",
-    })
-    expect(a.reviewed).toEqual({ rating: "again", nextDue: "Oct 2, 9:30 AM" })
-  })
-
-  it("clears the attempt on reset, such as when a new call connects", () => {
-    expect(run(question, { type: "reset" })).toBeNull()
-  })
-
-  it("replaces the attempt when the next question arrives", () => {
-    const a = run(question, { type: "confidence", attempt_id: "a1", level: 3 }, { ...question, attempt_id: "a2" } as TutorEvent)!
-    expect(a.attemptId).toBe("a2")
-    expect(a.confidence).toBeNull()
-  })
-})
+import type { StudyAssistance, StudyAttempt } from "@/lib/study"
+import { attemptKey, correctOptionId, offerWords, optionList, ratingWord, reviewWords } from "./attempt"
 
 describe("optionList", () => {
+  it("puts options in A-D order whatever order the server sent", () => {
+    expect(optionList({ B: "Both sides agree", A: "f(a) is defined", D: "f is smooth", C: "Nothing" }).map((o) => o.id)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+    ])
+  })
+
   it("sorts numbered options numerically", () => {
     expect(optionList({ "10": "x", "2": "y", "1": "z" }).map((o) => o.id)).toEqual(["1", "2", "10"])
   })
@@ -118,13 +29,6 @@ describe("correctOptionId", () => {
   it("returns null when the answer names no option", () => {
     expect(correctOptionId(options, "7")).toBeNull()
     expect(correctOptionId(options, "")).toBeNull()
-  })
-})
-
-describe("messages to the agent", () => {
-  it("match the C8 wording", () => {
-    expect(answerMessage("B")).toBe("My answer: B")
-    expect(confidenceMessage(3)).toBe("Confidence: 3")
   })
 })
 
@@ -151,5 +55,80 @@ describe("ratingWord", () => {
     expect(ratingWord("good")).toBe("Good")
     expect(ratingWord("AGAIN")).toBe("Again")
     expect(ratingWord("")).toBe("")
+  })
+})
+
+describe("reviewWords", () => {
+  const hint: StudyAssistance = {
+    kind: "nudge",
+    rung: 1,
+    source: "ui",
+    timestamp: 1,
+    content_ref: "hint:1",
+    text: "t",
+    before_commit: true,
+  }
+  const closed = (
+    disposition: NonNullable<StudyAttempt["closure"]>["scheduler_disposition"],
+    extra: Partial<StudyAttempt> = {},
+    reason: NonNullable<StudyAttempt["closure"]>["reason"] = "correct",
+  ) =>
+    ({
+      status: "closed",
+      assistance: [],
+      first_response: { response_id: "r", response: "B", input_mode: "typed", committed_at: 1, transcript_confirmation: null },
+      closure: { reason, closed_at: 2, scheduler_disposition: disposition },
+      ...extra,
+    }) as StudyAttempt
+
+  it("says nothing while the attempt is live", () => {
+    expect(reviewWords({ closure: null } as StudyAttempt)).toBeNull()
+  })
+
+  it("names why each rating was given (review-policy/2)", () => {
+    expect(reviewWords(closed({ eligible_for_fsrs: true, rating: "good", provenance: "verified", first_outcome: "correct" }))).toBe(
+      "Good, correct without help",
+    )
+    expect(
+      reviewWords(closed({ eligible_for_fsrs: true, rating: "again", provenance: "assisted", first_outcome: "correct" }, { assistance: [hint] })),
+    ).toBe("Again, because a hint was used")
+    expect(
+      reviewWords(
+        closed({ eligible_for_fsrs: true, rating: "again", provenance: "assisted", first_outcome: "correct" }, {
+          assistance: [{ ...hint, kind: "source_open", rung: null }],
+        }),
+      ),
+    ).toBe("Again, because you had help before answering")
+    expect(reviewWords(closed({ eligible_for_fsrs: true, rating: "again", provenance: "verified", first_outcome: "incorrect" }))).toBe(
+      "Again, because the first answer was not correct",
+    )
+    expect(
+      reviewWords(
+        closed(
+          { eligible_for_fsrs: true, rating: "again", provenance: "verified", first_outcome: "incorrect" },
+          { first_response: { response_id: "r", response: "", input_mode: "dont_know", committed_at: 1, transcript_confirmation: null } },
+          "revealed",
+        ),
+      ),
+    ).toBe("Again, because you did not know it")
+    expect(reviewWords(closed({ eligible_for_fsrs: true, rating: "good", provenance: "self_report", first_outcome: "correct" }))).toBe(
+      "Good, by your own judgement",
+    )
+  })
+
+  it("says when nothing was scheduled", () => {
+    expect(reviewWords(closed({ eligible_for_fsrs: false, rating: null }, {}, "invalidated"))).toBe(
+      "Not scheduled: the question was set aside",
+    )
+    expect(reviewWords(closed({ eligible_for_fsrs: false, rating: null }, {}, "abandoned"))).toBe(
+      "Not scheduled: the question was left before a check",
+    )
+  })
+})
+
+describe("offerWords", () => {
+  it("words the known offer and shows others readably", () => {
+    expect(offerWords("worked_example_then_fresh_problem")).toMatch(/worked example.*fresh problem/)
+    expect(offerWords("something_new")).toBe("something new")
   })
 })

@@ -1,384 +1,391 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import toolsIndex from "../../../agent/tools.json"
-import { type TutorEvent, onTutorEvent, tutorTools } from "./tools"
+import { CHOICE, DUE_AT, ESSAY, type FakeItem, type FakeStudy, SECRETS, TYPED, fakeStudyServer } from "./fakeStudy"
+import { type PanelAction, STORAGE_KEY, type VoicePractice, createVoicePractice, panelActions } from "./practice"
+import { type TutorTools, createTutorTools, screenMessage } from "./tools"
 
-type Call = { method: string; url: string; body: unknown }
-type Reply = { status?: number; body: unknown } | Error
-
-const BACKEND = "http://127.0.0.1:8001/api/question-notebook/practice"
+const STUDY = "http://127.0.0.1:8001/api/study"
+const PRACTICE = "http://127.0.0.1:8001/api/question-notebook/practice"
 const LIBRARY = "http://127.0.0.1:8001/api/library/search"
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+const expectedDue = new Date(DUE_AT * 1000).toLocaleString("en-US", { timeZone: tz, dateStyle: "medium", timeStyle: "short" })
+/** Hints the tests never ask for before they check for them. */
+const UNASKED_HINTS = /HINT-TWO-IBIS|HINT-ONE-HERON/
 
-let calls: Call[]
-let replies: Reply[]
-let events: TutorEvent[]
-let unsubscribe: () => void
+let server: FakeStudy
+let storage: Map<string, string>
+let practice: VoicePractice
+let tools: TutorTools
 
-/** Queue the fetch replies in order; every request is recorded in `calls`. */
-function reply(...r: Reply[]) {
-  replies.push(...r)
+/** A fresh screen (as after a restart) over the same server and storage. */
+function newScreen() {
+  practice = createVoicePractice()
+  tools = createTutorTools(practice)
+}
+
+function use(items?: FakeItem[]) {
+  server = fakeStudyServer(items)
+  vi.stubGlobal("fetch", server.fetch)
+  newScreen()
 }
 
 beforeEach(() => {
-  calls = []
-  replies = []
-  events = []
-  unsubscribe = onTutorEvent((e) => events.push(e))
+  storage = new Map()
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => storage.get(k) ?? null,
+    setItem: (k: string, v: string) => void storage.set(k, v),
+    removeItem: (k: string) => void storage.delete(k),
+  })
   vi.spyOn(console, "warn").mockImplementation(() => {})
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({
-        method: init?.method ?? "GET",
-        url,
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
-      })
-      const next = replies.shift()
-      if (!next) throw new Error(`unexpected fetch ${url}`)
-      if (next instanceof Error) throw next
-      return new Response(JSON.stringify(next.body), { status: next.status ?? 200 })
-    }),
-  )
+  use()
 })
 
 afterEach(() => {
-  unsubscribe()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-const entry = (id: number, extra: Record<string, unknown> = {}) => ({
-  id,
-  question: `Question ${id}?`,
-  question_type: "single_choice",
-  options: { A: "3", B: "4" },
-  correct_answer: "B",
-  explanation: "Two plus two is four.",
-  misconception: "Counts the starting number twice.",
-  hints: ["Count on from two.", "What is one more than three?"],
-  categories: [],
-  ...extra,
-})
+/** The typed controls, as the learner uses them on screen. */
+const screen = () => panelActions(practice.session!)
+const sent = () => server.commands().map((c) => [c.body?.kind, c.source])
+const kinds = () => server.commands().map((c) => c.body?.kind)
+const lastCommand = () => server.commands()[server.commands().length - 1]
+const status = () => practice.session?.state.attempt?.status
 
-const dueAt = 1_790_000_000
-const expectedDue = new Date(dueAt * 1000).toLocaleString("en-US", {
-  timeZone: tz,
-  dateStyle: "medium",
-  timeStyle: "short",
-})
+/** Opens the first due item, answers it on screen and records confidence by voice. */
+async function readyToCheck(response: string) {
+  await tools.get_next_question({})
+  await screen().answer(response)
+  expect(await tools.set_confidence({ level: 3 })).toBe('{"recorded":true,"level":3}')
+}
 
 describe("get_next_question", () => {
-  it("opens an attempt and returns only the question fields, never the answer key", async () => {
-    reply(
-      { body: [{ entry: entry(7), state: { version: 3 } }] },
-      { body: { attempt_id: "att-1", rungs_available: 2 } },
-    )
-
-    const out = await tutorTools.get_next_question({})
+  it("starts the session, opens the next due item as voice_tool and returns only public fields", async () => {
+    const out = await tools.get_next_question({})
 
     expect(JSON.parse(out)).toEqual({
-      attempt_id: "att-1",
+      attempt_id: practice.session?.state.attempt?.attempt_id,
       question_id: 7,
-      question: "Question 7?",
+      question: CHOICE.prompt,
       question_type: "single_choice",
-      options: { A: "3", B: "4" },
+      options: CHOICE.options,
       rungs_available: 2,
     })
-    expect(out).not.toMatch(/correct_answer|explanation|misconception|hints|Two plus two|Counts the|Count on/)
-    expect(calls).toEqual([
-      {
-        method: "GET",
-        url: `${BACKEND}/queue?limit=20&timezone=${encodeURIComponent(tz)}`,
-        body: undefined,
-      },
-      { method: "POST", url: `${BACKEND}/questions/7/attempts`, body: undefined },
+    expect(out).not.toMatch(SECRETS)
+    expect(out).not.toMatch(/HINT-|Think about/)
+    expect(server.calls.map((c) => [c.method, c.url.replace(STUDY, ""), c.source])).toEqual([
+      ["POST", "/commands", "ui"],
+      ["GET", "/queue?limit=20", null],
+      ["POST", "/commands", "voice_tool"],
     ])
-    expect(events).toEqual([
-      {
-        type: "question",
-        attempt_id: "att-1",
-        question_id: 7,
-        question: "Question 7?",
-        question_type: "single_choice",
-        options: { A: "3", B: "4" },
-      },
-    ])
-    expect(JSON.stringify(events)).not.toMatch(/Two plus two|Counts the|Count on/)
+    expect(kinds()).toEqual(["start_session", "open_item"])
+    expect(server.commands()[0].body).toMatchObject({ kind: "start_session", payload: { mode: "practice" } })
+    expect(lastCommand().body).toMatchObject({ payload: { entry_id: 7 } })
+    expect(storage.get(STORAGE_KEY)).toBe(practice.session?.state.session.session_id)
   })
 
-  it("prefers an entry whose tags contain the domain, else the first", async () => {
-    const queue = [
-      { entry: entry(1, { categories: [{ id: 1, name: "Math" }] }), state: {} },
-      { entry: entry(2, { categories: [{ id: 2, name: "Chemistry" }] }), state: {} },
-    ]
-    const attempt = { body: { attempt_id: "a", rungs_available: 0 } }
-    reply({ body: queue }, attempt, { body: queue }, attempt)
-
-    expect(JSON.parse(await tutorTools.get_next_question({ domain: "chemistry" })).question_id).toBe(2)
-    expect(calls[1].url).toBe(`${BACKEND}/questions/2/attempts`)
-    expect(JSON.parse(await tutorTools.get_next_question({ domain: "history" })).question_id).toBe(1)
-    expect(calls[3].url).toBe(`${BACKEND}/questions/1/attempts`)
+  it("asks the queue for the domain's tag", async () => {
+    expect(JSON.parse(await tools.get_next_question({ domain: "math" })).question_id).toBe(8)
+    expect(server.calls[1].url).toBe(`${STUDY}/queue?limit=20&tag=math`)
   })
 
-  it("says so when nothing is due, without opening an attempt", async () => {
-    reply({ body: [] })
-    expect(await tutorTools.get_next_question({})).toBe("No practice questions are due right now.")
-    expect(calls).toHaveLength(1)
-    expect(events).toEqual([])
+  it("says so when nothing is due, without opening an item", async () => {
+    expect(await tools.get_next_question({ domain: "history" })).toBe("No history practice questions are due right now.")
+    use([])
+    expect(await tools.get_next_question({})).toBe("No practice questions are due right now.")
+    expect(kinds()).toEqual(["start_session"])
   })
 
-  it("emits no event when the attempt cannot be opened", async () => {
-    reply({ body: [{ entry: entry(7), state: {} }] }, { status: 500, body: {} })
-    expect(await tutorTools.get_next_question({})).toBe("Error: the practice service returned HTTP 500.")
-    expect(events).toEqual([])
+  it("asks to finish a live question first and opens nothing", async () => {
+    await tools.get_next_question({})
+    expect(await tools.get_next_question({})).toBe(
+      "Finish the current question first: it is waiting for the learner's answer, confirmed on screen (propose_answer for a spoken one).",
+    )
+    expect(kinds()).toEqual(["start_session", "open_item"])
+  })
+
+  it("resumes the stored session after a restart instead of starting another", async () => {
+    await tools.get_next_question({})
+    newScreen()
+
+    expect(await tools.get_next_question({})).toMatch(/^Finish the current question first/)
+    expect(kinds()).toEqual(["start_session", "open_item"])
+    expect(server.calls[server.calls.length - 1].url).toBe(`${STUDY}/sessions/${storage.get(STORAGE_KEY)}?after_seq=0`)
+    expect(practice.getSnapshot()?.attempt?.status).toBe("open")
+  })
+
+  it("starts fresh when the stored session has closed", async () => {
+    await tools.get_next_question({})
+    const first = storage.get(STORAGE_KEY)
+    server.closeSession()
+    newScreen()
+
+    expect(await practice.current()).toBeNull()
+    expect(storage.has(STORAGE_KEY)).toBe(false)
+    expect(JSON.parse(await tools.get_next_question({})).question_id).toBe(7)
+    expect(kinds()).toEqual(["start_session", "open_item", "start_session", "open_item"])
+    expect(storage.get(STORAGE_KEY)).not.toBe(first)
+  })
+
+  it("ignores a stored id that is not a session id", async () => {
+    storage.set(STORAGE_KEY, "not-a-session")
+    expect(await practice.current()).toBeNull()
+    expect(server.calls).toHaveLength(0)
+  })
+})
+
+describe("propose_answer", () => {
+  it("proposes the learner's exact words for them to confirm, and never commits", async () => {
+    await tools.get_next_question({})
+
+    const out = await tools.propose_answer({ transcript: " carbon dioxide " })
+
+    expect(out).toMatch(/confirm/)
+    expect(out).toMatch(/"carbon dioxide"/)
+    expect(lastCommand()).toMatchObject({
+      source: "voice_tool",
+      body: { kind: "propose_response", payload: { raw_transcript: "carbon dioxide", input_mode: "spoken" } },
+    })
+    expect(status()).toBe("open")
+    expect(practice.session?.state.attempt?.pending_proposal?.raw_transcript).toBe("carbon dioxide")
+    expect(kinds()).not.toContain("commit_response")
+  })
+
+  it("needs a transcript and an open question", async () => {
+    expect(await tools.propose_answer({})).toBe("Error: transcript is required.")
+    expect(await tools.propose_answer({ transcript: "B" })).toBe(
+      "Error: there is no open question; call get_next_question first.",
+    )
+    expect(server.calls).toHaveLength(0)
   })
 })
 
 describe("set_confidence", () => {
-  it("posts the level to the attempt and emits a confidence event", async () => {
-    reply({ body: { ok: true } })
+  it("is refused until the learner has confirmed an answer on screen", async () => {
+    await tools.get_next_question({})
+    await tools.propose_answer({ transcript: "bee" })
 
-    const out = JSON.parse(await tutorTools.set_confidence({ attempt_id: "att-1", level: 3 }))
+    expect(await tools.set_confidence({ level: 3 })).toBe(
+      "Error: confidence can be set only after the learner has confirmed an answer on screen; the question is waiting for the learner's answer, confirmed on screen (propose_answer for a spoken one).",
+    )
+    expect(kinds()).not.toContain("record_confidence")
 
-    expect(calls).toEqual([{ method: "POST", url: `${BACKEND}/attempts/att-1/confidence`, body: { level: 3 } }])
-    expect(out).toEqual({ recorded: true, level: 3 })
-    expect(events).toEqual([{ type: "confidence", attempt_id: "att-1", level: 3 }])
+    await screen().confirm("bee", "B")
+    expect(JSON.parse(await tools.set_confidence({ level: "4" }))).toEqual({ recorded: true, level: 4 })
+    expect(lastCommand()).toMatchObject({ source: "voice_tool", body: { kind: "record_confidence", payload: { level: 4 } } })
+    expect(status()).toBe("ready")
   })
 
-  it("accepts a numeric string and rejects levels outside 1-4", async () => {
-    reply({ body: { ok: true } })
-    await tutorTools.set_confidence({ attempt_id: "att-1", level: "4" })
-    expect(calls[0].body).toEqual({ level: 4 })
-
+  it("rejects levels outside 1-4 without calling the backend", async () => {
     for (const level of [0, 5, 2.5, "sure", undefined]) {
-      expect(await tutorTools.set_confidence({ attempt_id: "att-1", level })).toBe(
-        "Error: level must be a whole number from 1 to 4.",
-      )
+      expect(await tools.set_confidence({ level })).toBe("Error: level must be a whole number from 1 to 4.")
     }
-    expect(calls).toHaveLength(1)
-  })
-
-  it("escapes the attempt id in the path", async () => {
-    reply({ body: { ok: true } })
-    await tutorTools.set_confidence({ attempt_id: "a/b", level: 1 })
-    expect(calls[0].url).toBe(`${BACKEND}/attempts/a%2Fb/confidence`)
+    expect(server.calls).toHaveLength(0)
   })
 })
 
 describe("get_hint", () => {
-  it("returns the server's rung and text and emits a hint event", async () => {
-    reply({ body: { rung: 1, text: "Count on from two.", is_answer: false } })
+  it("returns only the rung asked for, one per call", async () => {
+    await tools.get_next_question({})
 
-    const out = JSON.parse(await tutorTools.get_hint({ attempt_id: "att-1" }))
+    const first = await tools.get_hint({})
+    expect(JSON.parse(first)).toEqual({ rung: 1, text: CHOICE.hints[0] })
+    expect(first).not.toMatch(UNASKED_HINTS)
+    expect(first).not.toMatch(SECRETS)
+    expect(lastCommand()).toMatchObject({ source: "voice_tool", body: { kind: "request_assistance", payload: { kind: "hint" } } })
 
-    expect(calls).toEqual([{ method: "POST", url: `${BACKEND}/attempts/att-1/hint`, body: undefined }])
-    expect(out).toEqual({ rung: 1, text: "Count on from two.", is_answer: false })
-    expect(events).toEqual([
-      { type: "hint", attempt_id: "att-1", rung: 1, text: "Count on from two.", is_answer: false },
-    ])
+    expect(JSON.parse(await tools.get_hint({}))).toEqual({ rung: 2, text: "HINT-TWO-IBIS" })
   })
 
-  it("tells the tutor to write a conceptual nudge without the answer when a rung has no text", async () => {
-    reply({ body: { rung: 2, text: null, is_answer: false } })
+  it("tells the tutor what to do for rungs with no written text, and when the ladder is used up", async () => {
+    use([{ ...CHOICE, hints: [] }])
+    await tools.get_next_question({})
 
-    const out = JSON.parse(await tutorTools.get_hint({ attempt_id: "att-1" }))
+    const nudge = JSON.parse(await tools.get_hint({}))
+    expect(nudge).toMatchObject({ rung: 1, text: null })
+    expect(nudge.instruction).toMatch(/short conceptual nudge/)
+    expect(nudge.instruction).toMatch(/without (stating|giving) the answer/)
+    await tools.get_hint({})
+    await tools.get_hint({})
+    const example = JSON.parse(await tools.get_hint({}))
+    expect(example.rung).toBe(4)
+    expect(example.instruction).toMatch(/parallel problem/)
+    expect(example.instruction).toMatch(/not this one/)
 
-    expect(out.rung).toBe(2)
-    expect(out.text).toBeNull()
-    expect(out.is_answer).toBe(false)
-    expect(out.instruction).toMatch(/short conceptual nudge/)
-    expect(out.instruction).toMatch(/without (stating|giving) the answer/)
-    expect(events).toEqual([{ type: "hint", attempt_id: "att-1", rung: 2, text: null, is_answer: false }])
-  })
-
-  it("tells the tutor to work a parallel problem when the worked-example rung has no text", async () => {
-    reply({ body: { rung: 4, text: null, is_answer: false } })
-
-    const out = JSON.parse(await tutorTools.get_hint({ attempt_id: "att-1" }))
-
-    expect(out.instruction).toMatch(/parallel problem/)
-    expect(out.instruction).toMatch(/not this one/)
-  })
-
-  it("reports a closed attempt as an error sentence", async () => {
-    reply({ status: 409, body: { detail: "attempt already checked" } })
-    expect(await tutorTools.get_hint({ attempt_id: "att-1" })).toBe("Error: the practice service returned HTTP 409.")
-    expect(events).toEqual([])
+    expect(await tools.get_hint({})).toBe(
+      "Error: that step is not possible at this point; the question is waiting for the learner's answer, confirmed on screen (propose_answer for a spoken one).",
+    )
   })
 })
 
 describe("check_answer", () => {
-  it("checks the attempt and returns the verdict with the answer key", async () => {
-    reply({
-      body: {
-        correct: false,
-        rating: "again",
-        correct_answer: "B",
-        explanation: "Two plus two is four.",
-        misconception: "Counts the starting number twice.",
-      },
-    })
+  it("sends no answer, and keeps the answer hidden after a wrong one", async () => {
+    await readyToCheck("A")
 
-    const out = JSON.parse(await tutorTools.check_answer({ attempt_id: "att-1", answer: " A " }))
+    const out = await tools.check_answer({})
 
-    expect(calls).toEqual([{ method: "POST", url: `${BACKEND}/attempts/att-1/check`, body: { answer: "A" } }])
-    expect(out).toEqual({
-      correct: false,
+    expect(lastCommand()).toMatchObject({ source: "voice_tool", body: { kind: "check", payload: {} } })
+    const result = JSON.parse(out)
+    expect(result).toMatchObject({ verdict: "incorrect", diagnostic: "Not the expected answer." })
+    expect(result).not.toHaveProperty("correct_answer")
+    expect(result).not.toHaveProperty("explanation")
+    expect(result.instruction).toMatch(/try again/)
+    expect(result.instruction).toMatch(/hint/)
+    expect(result.instruction).toMatch(/give up/)
+    expect(out).not.toMatch(SECRETS)
+    expect(out).not.toMatch(UNASKED_HINTS)
+    expect(status()).toBe("remediating")
+  })
+
+  it("returns the released answer, explanation, misconception and the review after a correct one", async () => {
+    await readyToCheck("B")
+
+    expect(JSON.parse(await tools.check_answer({}))).toEqual({
+      verdict: "correct",
+      closed: "correct",
       correct_answer: "B",
-      explanation: "Two plus two is four.",
-      misconception: "Counts the starting number twice.",
+      explanation: CHOICE.explanation,
+      misconception: CHOICE.misconception,
+      review: "Good, correct without help",
+      next_due: expectedDue,
     })
-    expect(events).toEqual([
-      {
-        type: "checked",
-        attempt_id: "att-1",
-        correct: false,
-        correct_answer: "B",
-        explanation: "Two plus two is four.",
-        misconception: "Counts the starting number twice.",
-      },
-    ])
   })
 
-  it("omits a missing misconception for the model and sends null in the event", async () => {
-    reply({
-      body: { correct: null, rating: null, correct_answer: "Light to chemical energy.", explanation: "", misconception: null },
-    })
+  it("hands an unverifiable answer to the learner's judgement on screen, with the reference answer", async () => {
+    use([ESSAY])
+    await readyToCheck("Water moves to the saltier side.")
 
-    const out = JSON.parse(await tutorTools.check_answer({ attempt_id: "att-1", answer: "It makes sugar" }))
+    const result = JSON.parse(await tools.check_answer({}))
 
-    expect(out).toEqual({ correct: null, correct_answer: "Light to chemical energy.", explanation: "" })
-    expect(events[0]).toMatchObject({ type: "checked", correct: null, misconception: null })
+    expect(result).toMatchObject({ verdict: "unverifiable", correct_answer: ESSAY.key, explanation: ESSAY.explanation })
+    expect(result.instruction).toMatch(/judges their answer/)
+    expect(result.instruction).toMatch(/on screen/)
+    expect(result).not.toHaveProperty("closed")
+    expect(status()).toBe("awaiting_self_assessment")
+  })
+
+  it("says what the question is waiting for when asked too early", async () => {
+    await tools.get_next_question({})
+    await screen().answer("B")
+
+    expect(await tools.check_answer({})).toBe(
+      "Error: that step is not possible at this point; the question is waiting for the learner's confidence (set_confidence).",
+    )
   })
 })
 
-describe("record_review", () => {
-  it("reads the version and posts the review with the attempt, never a client rating", async () => {
-    reply(
-      { body: { entry: entry(7), state: { version: 4 } } },
-      { body: { rating: "hard", due_at: dueAt, correct: true } },
-    )
+describe("give_up", () => {
+  it("reveals the answer only once the server releases it", async () => {
+    const results: string[] = []
+    await tools.get_next_question({})
+    results.push(await tools.get_hint({}))
+    await screen().answer("A")
+    await tools.set_confidence({ level: 2 })
+    results.push(await tools.check_answer({}))
+    for (const r of results) expect(r).not.toMatch(SECRETS)
 
-    const out = JSON.parse(await tutorTools.record_review({ attempt_id: "att-1", question_id: 7, answer: "B" }))
-
-    expect(calls.map((c) => [c.method, c.url])).toEqual([
-      ["GET", `${BACKEND}/questions/7`],
-      ["POST", `${BACKEND}/questions/7/review`],
-    ])
-    const body = calls[1].body as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(["answer", "attempt_id", "request_id", "version"])
-    expect(body).toMatchObject({ attempt_id: "att-1", answer: "B", version: 4 })
-    expect(body.request_id).toMatch(/^[A-Za-z0-9]{32}$/)
-    expect(out).toEqual({ rating: "hard", next_due: expectedDue })
-    expect(events).toEqual([{ type: "reviewed", attempt_id: "att-1", rating: "hard", next_due: expectedDue }])
+    expect(JSON.parse(await tools.give_up({}))).toEqual({
+      verdict: "incorrect",
+      diagnostic: "Not the expected answer.",
+      closed: "revealed",
+      correct_answer: "B",
+      explanation: CHOICE.explanation,
+      misconception: CHOICE.misconception,
+      review: "Again, because the first answer was not correct",
+      next_due: expectedDue,
+    })
+    expect(lastCommand()).toMatchObject({ source: "voice_tool", body: { kind: "give_up" } })
   })
 
-  it("sends judged_correct when given and treats a missing version as 0", async () => {
-    reply({ body: { entry: entry(7), state: {} } }, { body: { rating: "again", due_at: null } })
+  it("counts giving up before any answer as not knowing it", async () => {
+    use([TYPED])
+    await tools.get_next_question({})
 
-    const out = JSON.parse(
-      await tutorTools.record_review({ attempt_id: "att-1", question_id: "7", answer: "It makes sugar", judged_correct: "false" }),
-    )
-
-    expect(calls[1].body).toMatchObject({ version: 0, judged_correct: false })
-    expect(calls[1].body).not.toHaveProperty("rating")
-    expect(out).toEqual({ rating: "again", next_due: null })
-  })
-
-  it("re-reads the version once after a 409 and retries with the same request id", async () => {
-    reply(
-      { body: { entry: entry(7), state: { version: 1 } } },
-      { status: 409, body: { detail: "changed" } },
-      { body: { entry: entry(7), state: { version: 2 } } },
-      { body: { rating: "good", due_at: dueAt } },
-    )
-
-    const out = JSON.parse(await tutorTools.record_review({ attempt_id: "att-1", question_id: 7, answer: "B" }))
-
-    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET", "POST"])
-    const [first, second] = [calls[1].body, calls[3].body] as Record<string, unknown>[]
-    expect(first.version).toBe(1)
-    expect(second.version).toBe(2)
-    expect(second.request_id).toBe(first.request_id)
-    expect(second.attempt_id).toBe("att-1")
-    expect(out.rating).toBe("good")
-    expect(events).toHaveLength(1)
-  })
-
-  it("gives up after one retry", async () => {
-    reply(
-      { body: { entry: entry(7), state: { version: 1 } } },
-      { status: 409, body: {} },
-      { body: { entry: entry(7), state: { version: 2 } } },
-      { status: 409, body: {} },
-    )
-
-    expect(await tutorTools.record_review({ attempt_id: "att-1", question_id: 7, answer: "B" })).toBe(
-      "Error: the practice service returned HTTP 409.",
-    )
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(2)
-    expect(events).toEqual([])
-  })
-
-  it("rejects bad arguments without calling the backend", async () => {
-    expect(
-      await tutorTools.record_review({ attempt_id: "att-1", question_id: 7, answer: "B", judged_correct: "maybe" }),
-    ).toBe("Error: judged_correct must be true or false.")
-    expect(await tutorTools.record_review({ question_id: 7, answer: "B" })).toBe(
-      "Error: attempt_id must be the attempt_id returned by get_next_question.",
-    )
-    expect(calls).toHaveLength(0)
+    expect(JSON.parse(await tools.give_up({}))).toMatchObject({
+      closed: "revealed",
+      correct_answer: TYPED.key,
+      review: "Again, because you did not know it",
+    })
   })
 })
 
-describe("events", () => {
-  it("are emitted in the order the tools ran, and stop after unsubscribing", async () => {
-    reply(
-      { body: [{ entry: entry(7), state: {} }] },
-      { body: { attempt_id: "att-1", rungs_available: 2 } },
-      { body: { rung: 1, text: "Count on from two.", is_answer: false } },
-      { body: { ok: true } },
-      { body: { correct: true, rating: "good", correct_answer: "B", explanation: "e", misconception: null } },
-      { body: { entry: entry(7), state: { version: 1 } } },
-      { body: { rating: "good", due_at: dueAt } },
-      { body: { ok: true } },
-    )
+describe("sources", () => {
+  it("sends every tool command as voice_tool; only the screen commits", async () => {
+    await tools.get_next_question({})
+    await tools.get_hint({})
+    await tools.propose_answer({ transcript: "oxygen" })
+    await screen().confirm("oxygen", "A")
+    await tools.set_confidence({ level: 4 })
+    await tools.check_answer({})
+    await tools.give_up({})
 
-    await tutorTools.get_next_question({})
-    await tutorTools.get_hint({ attempt_id: "att-1" })
-    await tutorTools.set_confidence({ attempt_id: "att-1", level: 2 })
-    await tutorTools.check_answer({ attempt_id: "att-1", answer: "B" })
-    await tutorTools.record_review({ attempt_id: "att-1", question_id: 7, answer: "B" })
-    unsubscribe()
-    await tutorTools.set_confidence({ attempt_id: "att-1", level: 2 })
+    expect(sent()).toEqual([
+      ["start_session", "ui"],
+      ["open_item", "voice_tool"],
+      ["request_assistance", "voice_tool"],
+      ["propose_response", "voice_tool"],
+      ["commit_response", "ui"],
+      ["record_confidence", "voice_tool"],
+      ["check", "voice_tool"],
+      ["give_up", "voice_tool"],
+    ])
+  })
+})
 
-    expect(events.map((e) => e.type)).toEqual(["question", "hint", "confidence", "checked", "reviewed"])
+describe("screenMessage", () => {
+  it("tells the tutor what the learner did on screen, with no answer before its release", async () => {
+    const heard: [PanelAction, string][] = []
+    await tools.get_next_question({})
+    const actions = panelActions(practice.session!, (action, attempt) => heard.push([action, screenMessage(action, attempt)]))
+
+    await actions.hint()
+    await actions.answer("C")
+    await actions.confidence(4)
+    await actions.check()
+    await actions.repair("A")
+    await actions.giveUp()
+
+    const before = heard.slice(0, -1)
+    expect(before.map(([a]) => a)).toEqual(["hint", "answer", "confidence", "check", "repair"])
+    for (const [, message] of before) {
+      expect(message).toMatch(/^On screen: /)
+      expect(message).not.toMatch(SECRETS)
+      expect(message).not.toMatch(UNASKED_HINTS)
+    }
+    expect(before[1][1]).toBe('On screen: the learner confirmed their answer: "C".')
+    expect(before[2][1]).toBe("On screen: confidence 4, certain.")
+    const [action, last] = heard[heard.length - 1]
+    expect(action).toBe("give_up")
+    expect(last).toMatch(/EXPLANATION-OCTOPUS/)
+  })
+})
+
+describe("errors", () => {
+  it("refreshes after a conflict and asks to try again", async () => {
+    await tools.get_next_question({})
+    server.failNext("conflict", 409)
+
+    expect(await tools.get_hint({})).toBe("Error: the session changed; state refreshed, try again.")
+    expect(server.calls[server.calls.length - 1].url).toMatch(`${STUDY}/sessions/`)
   })
 
-  it("keeps the tool result when a listener throws", async () => {
-    const off = onTutorEvent(() => {
-      throw new Error("render failed")
-    })
-    reply({ body: { ok: true } })
+  it("reports an unreachable or unavailable practice service", async () => {
+    await tools.get_next_question({})
+    server.dropNext(3)
+    expect(await tools.get_hint({})).toBe("Error: the practice service is not reachable.")
+    server.failNext("unavailable", 503)
+    expect(await tools.get_hint({})).toBe("Error: the practice service is unavailable right now.")
+  })
 
-    expect(JSON.parse(await tutorTools.set_confidence({ attempt_id: "att-1", level: 1 }))).toEqual({
-      recorded: true,
-      level: 1,
-    })
-    expect(events).toHaveLength(1)
-    off()
+  it("never throws, even when the tutor calls a tool with no parameters object", async () => {
+    await expect(tools.check_answer(undefined as unknown as Record<string, unknown>)).resolves.toBe(
+      "Error: there is no open question; call get_next_question first.",
+    )
   })
 })
 
 describe("search_library", () => {
-  // A fresh module per test: the open attempt is module state that other tests leave behind.
-  let tools: typeof tutorTools
-  beforeEach(async () => {
-    vi.resetModules()
-    tools = (await import("./tools")).tutorTools
-  })
-
   const hit = (extra: Record<string, unknown>) => ({
     chunk_id: "c",
     doc_id: "d",
@@ -395,96 +402,56 @@ describe("search_library", () => {
     section: ["[c:c] short text"],
     ...extra,
   })
-  const packOf = (hits: unknown[]) => ({ pack: hits, queries: ["limits"], mode_used: "bm25", withheld: 0 })
+  const packOf = (hits: unknown[]) => ({ body: { pack: hits, queries: ["limits"], mode_used: "bm25", withheld: 0 } })
+  const searches = () => server.calls.filter((c) => c.url === LIBRARY).map((c) => c.body)
 
   it("posts the query to DeepTutor's library search and maps the pack, truncating excerpts to 600 chars", async () => {
-    const long = "x".repeat(900)
-    reply({
-      body: packOf([hit({}), hit({ page_end: 14, text: long }), hit({ page_start: null, page_end: null })]),
-    })
+    server.replies.push(packOf([hit({}), hit({ page_end: 14, text: "x".repeat(900) }), hit({ page_start: null, page_end: null })]))
 
     const out = JSON.parse(await tools.search_library({ query: "limits", domain: "math" }))
 
-    expect(calls).toEqual([
-      { method: "POST", url: LIBRARY, body: { query: "limits", k: 5, domains: ["math"] } },
-    ])
-    expect(out.hits[0]).toEqual({
-      title: "Calculus",
-      domain: "math",
-      source_type: "book",
-      pages: "12",
-      excerpt: "short text",
-    })
+    expect(searches()).toEqual([{ query: "limits", k: 5, domains: ["math"] }])
+    expect(out.hits[0]).toEqual({ title: "Calculus", domain: "math", source_type: "book", pages: "12", excerpt: "short text" })
     expect(out.hits[1].pages).toBe("12-14")
     expect(out.hits[1].excerpt).toHaveLength(600)
     expect(out.hits[1].excerpt.endsWith("…")).toBe(true)
     expect(out.hits[2].pages).toBe("")
   })
 
-  it("leaves out domains and attempt_id when there are none", async () => {
-    reply({ body: packOf([]) })
+  it("sends the live attempt_id, and stops once the attempt has closed", async () => {
+    server.replies.push(packOf([]), packOf([]), packOf([]))
+    await tools.search_library({ query: "gases" })
+    await readyToCheck("B")
+    const attemptId = practice.session?.state.attempt?.attempt_id
+    await tools.search_library({ query: "gases" })
+    await tools.check_answer({})
+    await tools.search_library({ query: "gases" })
 
-    expect(JSON.parse(await tools.search_library({ query: "limits" }))).toEqual({ hits: [] })
-    expect(calls[0].body).toEqual({ query: "limits", k: 5 })
-  })
-
-  it("sends the open attempt_id while an attempt is open, and stops after check_answer closes it", async () => {
-    reply(
-      { body: [{ entry: entry(7), state: { version: 3 } }] },
-      { body: { attempt_id: "att-1", rungs_available: 2 } },
-      { body: packOf([]) },
-      { body: { correct: true, correct_answer: "B", explanation: "", misconception: null } },
-      { body: packOf([]) },
-    )
-
-    await tools.get_next_question({})
-    await tools.search_library({ query: "addition" })
-    await tools.check_answer({ attempt_id: "att-1", answer: "B" })
-    await tools.search_library({ query: "addition" })
-
-    const searches = calls.filter((c) => c.url === LIBRARY).map((c) => c.body)
-    expect(searches).toEqual([
-      { query: "addition", k: 5, attempt_id: "att-1" },
-      { query: "addition", k: 5 },
+    expect(searches()).toEqual([
+      { query: "gases", k: 5 },
+      { query: "gases", k: 5, attempt_id: attemptId },
+      { query: "gases", k: 5 },
     ])
   })
 
-  it("keeps the open attempt when a different attempt is checked", async () => {
-    reply(
-      { body: [{ entry: entry(7), state: { version: 3 } }] },
-      { body: { attempt_id: "att-2", rungs_available: 0 } },
-      { body: { correct: false, correct_answer: "B", explanation: "", misconception: null } },
-      { body: packOf([]) },
-    )
-
-    await tools.get_next_question({})
-    await tools.check_answer({ attempt_id: "att-old", answer: "A" })
-    await tools.search_library({ query: "addition" })
-
-    expect(calls[calls.length - 1].body).toEqual({ query: "addition", k: 5, attempt_id: "att-2" })
+  it("reports an unreachable library", async () => {
+    server.replies.push(new TypeError("Failed to fetch"))
+    expect(await tools.search_library({ query: "x" })).toBe("Error: the library search is not reachable.")
+    expect(await tools.search_library({})).toBe("Error: query is required.")
   })
 })
 
 describe("get_progress", () => {
-  const summary = {
-    total: 10,
-    mistakes: 2,
-    due: 3,
-    overdue: 1,
-    reviewed_today: 4,
-    next_due_at: null,
-    day_end: 0,
-    timezone: tz,
-  }
+  const summary = { total: 10, mistakes: 2, due: 3, overdue: 1, reviewed_today: 4, next_due_at: null, day_end: 0, timezone: tz }
 
   it("reads the summary and the 30-day calibration for the local timezone", async () => {
     const calibration = [
       { level: 1, attempts: 2, correct: 0 },
       { level: 4, attempts: 5, correct: 4 },
     ]
-    reply({ body: summary }, { body: { timezone: tz, days: 30, calibration, assistance: {} } })
+    server.replies.push({ body: summary }, { body: { timezone: tz, days: 30, calibration, assistance: {} } })
 
-    expect(JSON.parse(await tutorTools.get_progress({}))).toEqual({
+    expect(JSON.parse(await tools.get_progress({}))).toEqual({
       total: 10,
       due: 3,
       overdue: 1,
@@ -493,16 +460,20 @@ describe("get_progress", () => {
       next_due: null,
       calibration_30_days: calibration,
     })
-    expect(calls.map((c) => c.url)).toEqual([
-      `${BACKEND}/summary?timezone=${encodeURIComponent(tz)}`,
-      `${BACKEND}/analytics?timezone=${encodeURIComponent(tz)}&days=30`,
+    expect(server.calls.map((c) => c.url)).toEqual([
+      `${PRACTICE}/summary?timezone=${encodeURIComponent(tz)}`,
+      `${PRACTICE}/analytics?timezone=${encodeURIComponent(tz)}&days=30`,
     ])
   })
 
   it("leaves calibration out when the backend does not report it", async () => {
-    reply({ body: summary }, { body: { timezone: tz, days: 30 } })
+    server.replies.push({ body: summary }, { body: { timezone: tz, days: 30 } })
+    expect(JSON.parse(await tools.get_progress({}))).not.toHaveProperty("calibration_30_days")
+  })
 
-    expect(JSON.parse(await tutorTools.get_progress({}))).not.toHaveProperty("calibration_30_days")
+  it("reports an unreachable backend", async () => {
+    server.replies.push(new TypeError("Failed to fetch"))
+    expect(await tools.get_progress({})).toBe("Error: the practice service is not reachable.")
   })
 })
 
@@ -517,13 +488,11 @@ describe("agent tool configs (apps/desktop/agent)", () => {
   // The arguments each tool in tools.ts reads, and which of them it requires.
   const expected: Record<string, { properties: Record<string, string>; required: string[] }> = {
     get_next_question: { properties: { domain: "string" }, required: [] },
-    set_confidence: { properties: { attempt_id: "string", level: "integer" }, required: ["attempt_id", "level"] },
-    get_hint: { properties: { attempt_id: "string" }, required: ["attempt_id"] },
-    check_answer: { properties: { attempt_id: "string", answer: "string" }, required: ["attempt_id", "answer"] },
-    record_review: {
-      properties: { attempt_id: "string", question_id: "integer", answer: "string", judged_correct: "boolean" },
-      required: ["attempt_id", "question_id", "answer"],
-    },
+    propose_answer: { properties: { transcript: "string" }, required: ["transcript"] },
+    set_confidence: { properties: { level: "integer" }, required: ["level"] },
+    get_hint: { properties: {}, required: [] },
+    check_answer: { properties: {}, required: [] },
+    give_up: { properties: {}, required: [] },
     search_library: { properties: { query: "string", domain: "string" }, required: ["query"] },
     get_progress: { properties: {}, required: [] },
   }
@@ -535,46 +504,16 @@ describe("agent tool configs (apps/desktop/agent)", () => {
       expect(config, t.config).toBeDefined()
       return config
     })
-    expect(configs.map((c) => c.name).sort()).toEqual(Object.keys(tutorTools).sort())
+    expect(configs.map((c) => c.name).sort()).toEqual(Object.keys(tools).sort())
     for (const c of configs) {
       expect(c).toMatchObject({ type: "client", expects_response: true })
       const types = Object.fromEntries(Object.entries(c.parameters.properties).map(([k, v]) => [k, v.type]))
       expect({ properties: types, required: c.parameters.required }).toEqual(expected[c.name])
     }
   })
-})
 
-describe("error strings", () => {
-  it("reports an unreachable backend", async () => {
-    reply(new TypeError("Failed to fetch"))
-    expect(await tutorTools.get_progress({})).toBe("Error: the practice service is not reachable.")
-  })
-
-  it("reports an unreachable library", async () => {
-    reply(new TypeError("Failed to fetch"))
-    expect(await tutorTools.search_library({ query: "x" })).toBe("Error: the library search is not reachable.")
-  })
-
-  it("reports a missing attempt", async () => {
-    reply({ status: 404, body: { detail: "Attempt not found" } })
-    expect(await tutorTools.check_answer({ attempt_id: "gone", answer: "A" })).toBe(
-      "Error: the practice service could not find that.",
-    )
-  })
-
-  it("rejects bad arguments without calling any service", async () => {
-    expect(await tutorTools.check_answer({ attempt_id: "  ", answer: "A" })).toBe(
-      "Error: attempt_id must be the attempt_id returned by get_next_question.",
-    )
-    expect(await tutorTools.check_answer({ attempt_id: "att-1" })).toBe("Error: answer is required.")
-    expect(await tutorTools.get_hint({})).toBe(
-      "Error: attempt_id must be the attempt_id returned by get_next_question.",
-    )
-    expect(await tutorTools.record_review({ attempt_id: "att-1", question_id: "abc", answer: "B" })).toBe(
-      "Error: question_id must be the number returned by get_next_question.",
-    )
-    expect(await tutorTools.search_library({})).toBe("Error: query is required.")
-    expect(calls).toHaveLength(0)
-    expect(events).toEqual([])
+  it("has no record_review tool: the server schedules the review when the question closes", () => {
+    expect(Object.keys(tools)).not.toContain("record_review")
+    expect(Object.keys(files).some((f) => f.endsWith("/record_review.json"))).toBe(false)
   })
 })

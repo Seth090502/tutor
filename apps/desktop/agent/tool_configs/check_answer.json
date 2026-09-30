@@ -1,26 +1,14 @@
 {
     "name": "check_answer",
-    "description": "Grade the learner's committed answer and close the attempt. Call it before saying anything about whether the answer is right. Returns correct (true, false, or null when it cannot be auto-checked), correct_answer, explanation and, when recorded, misconception.",
+    "description": "Check the learner's confirmed answer once their confidence is recorded. Call it before saying anything about whether the answer is right. Returns the verdict (correct, incorrect, unverifiable or invalid_item) and a diagnostic when there is one. correct_answer, explanation and misconception appear only when the server has released them: after a correct answer, or for the learner to judge an unverifiable one. After an incorrect answer the question stays open: the learner may try again, ask for a hint or give up.",
     "type": "client",
     "expects_response": true,
     "response_timeout_secs": 30,
     "parameters": {
         "type": "object",
         "description": "Arguments for check_answer",
-        "properties": {
-            "attempt_id": {
-                "type": "string",
-                "description": "The attempt_id returned by get_next_question for the current question."
-            },
-            "answer": {
-                "type": "string",
-                "description": "The learner's answer as given: an option letter, letters such as A,C for multi-select, true or false, or their words."
-            }
-        },
-        "required": [
-            "attempt_id",
-            "answer"
-        ]
+        "properties": {},
+        "required": []
     },
     "dynamic_variables": {
         "dynamic_variable_placeholders": {}
