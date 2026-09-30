@@ -1,0 +1,213 @@
+name,version,license,direct_or_transitive
+aiohappyeyeballs,2.7.1,PSF-2.0,transitive_or_dev
+aiohttp,3.14.3,Apache-2.0 AND MIT,direct (core)
+aiosignal,1.4.0,Apache 2.0,transitive_or_dev
+aiosqlite,0.22.1,MIT License,direct (core)
+annotated-doc,0.0.5,MIT,transitive_or_dev
+annotated-types,0.8.0,MIT,transitive_or_dev
+anthropic,1.9.0,MIT,direct (core)
+anyio,4.15.1,MIT,transitive_or_dev
+APScheduler,3.11.3,MIT,transitive_or_dev
+arxiv,4.0.1,MIT,direct (core)
+attrs,26.1.0,MIT,transitive_or_dev
+bandit,1.9.4,Apache-2.0,direct (extra:dev)
+banks,2.5.1,MIT,transitive_or_dev
+bcrypt,5.0.0,Apache-2.0,direct (core)
+bidict,0.24.1,MPL-2.0,transitive_or_dev
+boto3,1.43.105,Apache-2.0,transitive_or_dev
+botocore,1.43.105,Apache-2.0,transitive_or_dev
+certifi,2026.7.22,MPL-2.0,transitive_or_dev
+cffi,2.1.1,MIT-0,transitive_or_dev
+cfgv,3.5.0,MIT,transitive_or_dev
+charset-normalizer,3.5.2,MIT,transitive_or_dev
+click,8.5.0,BSD-3-Clause,transitive_or_dev
+cloudpickle,3.1.2,BSD-3-Clause,transitive_or_dev
+colorama,0.4.6,BSD License,transitive_or_dev
+croniter,6.2.4,MIT,direct (core)
+cryptography,50.0.2,Apache-2.0 OR BSD-3-Clause,transitive_or_dev
+dashscope,1.27.7,Apache 2.0,direct (core)
+dataclasses-json,0.6.7,MIT,transitive_or_dev
+ddgs,9.16.0,MIT,direct (core)
+deeptutor,1.6.12,Apache-2.0,direct (extra:server)
+defusedxml,0.7.1,PSFL,direct (core)
+Deprecated,3.0.0,MIT,transitive_or_dev
+dingtalk-stream,0.24.3,MIT,direct (extra:partners)
+dirtyjson,1.0.8,MIT License,transitive_or_dev
+distlib,0.4.3,PSF-2.0,transitive_or_dev
+distro,1.9.0,"Apache License, Version 2.0",transitive_or_dev
+docstring_parser,0.18.0,MIT,transitive_or_dev
+dparse,0.6.4,MIT license,transitive_or_dev
+ecdsa,0.19.2,MIT,transitive_or_dev
+et_xmlfile,2.0.0,MIT,transitive_or_dev
+faiss-cpu,1.15.1,MIT,direct (core)
+fastapi,0.142.2,MIT,direct (core)
+fastuuid,0.14.0,BSD License,transitive_or_dev
+filelock,4.0.7,MIT,transitive_or_dev
+filetype,1.2.0,MIT,transitive_or_dev
+frozenlist,1.8.0,Apache-2.0,transitive_or_dev
+fsrs,6.3.2,MIT License,direct (core)
+fsspec,2026.9.0,BSD-3-Clause,transitive_or_dev
+fugashi,1.5.2,MIT AND BSD-3-Clause,direct (extra:languages)
+greenlet,3.5.6,MIT AND PSF-2.0,transitive_or_dev
+griffe,2.3.0,ISC,transitive_or_dev
+griffecli,2.3.0,ISC,transitive_or_dev
+griffelib,2.3.0,ISC,transitive_or_dev
+grimp,3.17,BSD 2-Clause License,transitive_or_dev
+h11,0.16.0,MIT,transitive_or_dev
+h2,4.4.1,MIT,transitive_or_dev
+hf-xet,1.6.0,Apache-2.0,transitive_or_dev
+hpack,4.2.0,MIT,transitive_or_dev
+httpcore,1.0.9,BSD-3-Clause,transitive_or_dev
+httpcore2,2.13.1,BSD-3-Clause,transitive_or_dev
+httptools,0.8.0,MIT,transitive_or_dev
+httpx,0.28.1,BSD-3-Clause,direct (core)
+httpx-sse,0.4.3,MIT,transitive_or_dev
+httpx2,2.13.1,BSD-3-Clause,transitive_or_dev
+huggingface_hub,1.33.0,Apache-2.0,transitive_or_dev
+hyperframe,6.1.0,MIT License,transitive_or_dev
+identify,2.6.20,MIT,transitive_or_dev
+idna,3.20,BSD-3-Clause,transitive_or_dev
+import-linter,2.15,BSD 2-Clause License,direct (extra:dev)
+importlib_metadata,8.9.0,Apache-2.0,transitive_or_dev
+iniconfig,2.3.0,MIT,transitive_or_dev
+ir_measures,0.4.3,Apache Software License,transitive_or_dev
+jieba,0.42.1,MIT,direct (extra:languages)
+Jinja2,3.1.6,BSD License,direct (core)
+jiter,0.17.0,MIT,transitive_or_dev
+jmespath,1.1.0,MIT,transitive_or_dev
+joblib,1.6.0,BSD-3-Clause,transitive_or_dev
+json_repair,0.63.5,MIT,direct (core)
+jsonschema,4.26.0,MIT,direct (core)
+jsonschema-specifications,2025.9.1,MIT,transitive_or_dev
+lark-oapi,1.7.3,MIT,direct (extra:partners)
+litellm,1.103.1,MIT,transitive_or_dev
+llama-index,0.14.25,MIT,direct (core)
+llama-index-core,0.14.25,MIT,transitive_or_dev
+llama-index-embeddings-openai,0.6.0,MIT,transitive_or_dev
+llama-index-instrumentation,0.6.0,MIT,transitive_or_dev
+llama-index-llms-openai,0.7.10,MIT,transitive_or_dev
+llama-index-vector-stores-faiss,0.7.0,MIT,direct (core)
+llama-index-workflows,2.25.0,MIT,transitive_or_dev
+loguru,0.7.3,MIT License,direct (core)
+lxml,6.1.3,BSD-3-Clause,transitive_or_dev
+markdown-it-py,4.2.0,MIT License,transitive_or_dev
+MarkupSafe,3.0.3,BSD-3-Clause,transitive_or_dev
+marshmallow,3.26.2,MIT License,transitive_or_dev
+mcp,1.30.0,MIT,direct (core)
+mdurl,0.1.2,MIT License,transitive_or_dev
+msgpack,1.2.3,Apache-2.0,direct (extra:partners)
+multidict,6.9.1,Apache License 2.0,transitive_or_dev
+mypy_extensions,1.1.0,MIT,transitive_or_dev
+nest-asyncio,1.6.0,BSD,direct (core)
+networkx,3.7,BSD-3-Clause,transitive_or_dev
+nltk,3.10.3,"Apache License, Version 2.0",transitive_or_dev
+nodeenv,1.11.0,BSD,transitive_or_dev
+numpy,2.5.3,BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0,direct (core)
+oauth-cli-kit,0.1.6,MIT,direct (core)
+openai,2.54.0,Apache-2.0,direct (core)
+openai-agents,0.20.0,MIT,transitive_or_dev
+openpyxl,3.1.5,MIT,direct (core)
+opentelemetry-api,1.45.0,Apache-2.0,transitive_or_dev
+packaging,21.3,BSD-2-Clause or Apache-2.0,transitive_or_dev
+pageindex,0.2.20,MIT,direct (core)
+pdfminer.six,20260107,MIT,transitive_or_dev
+pdfplumber,0.11.10,MIT License,direct (core)
+perplexityai,0.43.6,Apache-2.0,direct (core)
+pillow,12.3.0,MIT-CMU,direct (core)
+pip,26.2.1,MIT,transitive_or_dev
+platformdirs,4.12.2,MIT,transitive_or_dev
+pluggy,1.6.0,MIT,transitive_or_dev
+pocketbase,0.17.3,MIT,direct (core)
+pre_commit,4.6.2,MIT,direct (extra:dev)
+primp,2.0.1,MIT License,transitive_or_dev
+prompt_toolkit,3.0.53,BSD License,direct (core)
+propcache,0.5.4,Apache-2.0,transitive_or_dev
+psutil,7.2.2,BSD-3-Clause,direct (core)
+pyasn1,0.6.4,BSD-2-Clause,transitive_or_dev
+pycparser,3.0,BSD-3-Clause,transitive_or_dev
+pycryptodome,3.23.0,"BSD, Public Domain",transitive_or_dev
+pydantic,2.13.5,MIT,direct (core)
+pydantic-settings,2.15.0,MIT,direct (core)
+pydantic_core,2.46.5,MIT,transitive_or_dev
+Pygments,2.21.0,BSD-2-Clause,transitive_or_dev
+PyJWT,2.15.1,MIT,direct (extra:partners)
+pymupdf,1.28.2,Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License,direct (core)
+pyparsing,3.3.3,MIT,transitive_or_dev
+pypdf,6.19.0,BSD-3-Clause,direct (core)
+PyPDF2,3.0.1,BSD License,transitive_or_dev
+pypdfium2,5.13.0,"BSD-3-Clause, Apache-2.0, dependency licenses",transitive_or_dev
+pyte,0.8.2,GNU Lesser General Public License v3 (LGPLv3),direct (core)
+pytest,8.4.2,MIT,direct (extra:dev)
+pytest-asyncio,1.4.0,Apache-2.0,direct (extra:dev)
+python-dateutil,2.9.0.post0,Dual License,transitive_or_dev
+python-discovery,1.6.1,MIT License,transitive_or_dev
+python-docx,1.2.0,MIT,direct (core)
+python-dotenv,1.2.3,BSD-3-Clause,transitive_or_dev
+python-engineio,4.14.0,MIT,transitive_or_dev
+python-jose,3.5.0,MIT,direct (core)
+python-multipart,0.0.32,Apache-2.0,direct (core)
+python-pptx,1.0.2,MIT,direct (core)
+python-socketio,5.17.0,MIT,direct (extra:partners)
+python-socks,2.8.2,Apache-2.0,direct (extra:partners)
+python-telegram-bot,22.8,LGPL-3.0-only,direct (extra:partners)
+pytrec_eval-terrier,0.5.10,MIT License,transitive_or_dev
+pywin32,312,PSF,transitive_or_dev
+PyYAML,6.0.3,MIT,direct (core)
+qq-botpy,1.2.1,Tencent,direct (extra:partners)
+qrcode,8.2,BSD,direct (core)
+redis,6.4.0,MIT,direct (core)
+referencing,0.37.0,MIT,transitive_or_dev
+regex,2026.9.29,Apache-2.0 AND CNRI-Python,transitive_or_dev
+reportlab,5.0.1,"BSD license (see license.txt for details), Copyright (c) 2000-2025, ReportLab Inc.",direct (core)
+requests,2.34.2,Apache-2.0,direct (core)
+requests-toolbelt,1.0.0,Apache 2.0,transitive_or_dev
+rich,15.0.0,MIT,direct (core)
+rpds-py,2026.6.3,MIT,transitive_or_dev
+rsa,4.9.1,Apache-2.0,transitive_or_dev
+ruamel.yaml,0.19.1,MIT,transitive_or_dev
+ruff,0.16.0,MIT,transitive_or_dev
+s3transfer,0.19.2,Apache License 2.0,transitive_or_dev
+safety,2.3.5,MIT license,direct (extra:dev)
+scipy,1.18.1,BSD License,transitive_or_dev
+setuptools,84.0.0,MIT,transitive_or_dev
+shellingham,1.5.4,ISC License,transitive_or_dev
+simple-websocket,1.1.0,MIT License,transitive_or_dev
+six,1.17.0,MIT,transitive_or_dev
+slack_sdk,3.44.1,MIT,direct (extra:partners)
+slackify_markdown,0.2.4,MIT License,direct (extra:partners)
+sniffio,1.3.1,MIT OR Apache-2.0,transitive_or_dev
+socksio,1.0.0,MIT License,direct (extra:partners)
+sortedcontainers,2.4.0,Apache 2.0,transitive_or_dev
+SQLAlchemy,2.1.1,MIT,transitive_or_dev
+sse-starlette,3.5.0,BSD-3-Clause,transitive_or_dev
+starlette,1.7.0,BSD-3-Clause,transitive_or_dev
+stevedore,5.9.1,Apache-2.0,transitive_or_dev
+tenacity,9.1.4,Apache 2.0,direct (core)
+tiktoken,0.14.0,SEE-LICENSE-TEXT: MIT License,direct (core)
+tinytag,2.3.2,MIT License,transitive_or_dev
+tokenizers,0.23.2,Apache Software License,transitive_or_dev
+tqdm,4.70.1,MPL-2.0 AND MIT,transitive_or_dev
+truststore,0.10.4,MIT,transitive_or_dev
+typer,0.27.2,MIT,direct (core)
+typing-inspect,0.9.0,MIT,transitive_or_dev
+typing-inspection,0.4.4,MIT,transitive_or_dev
+typing_extensions,4.16.0,PSF-2.0,transitive_or_dev
+tzdata,2026.4,Apache-2.0,transitive_or_dev
+tzlocal,5.4.4,MIT,transitive_or_dev
+unidic-lite,1.0.8,MIT License,direct (extra:languages)
+urllib3,2.8.0,MIT,transitive_or_dev
+uvicorn,0.54.0,BSD-3-Clause,direct (core)
+virtualenv,21.13.0,MIT,transitive_or_dev
+watchfiles,1.3.0,MIT,transitive_or_dev
+wcwidth,0.9.1,MIT License,transitive_or_dev
+websocket-client,1.9.2,Apache-2.0,direct (extra:partners)
+websockets,15.0.1,BSD-3-Clause,direct (core)
+wecom-aibot-sdk,1.0.8,MIT,direct (extra:partners)
+win32_setctime,1.2.0,MIT license,transitive_or_dev
+wrapt,2.5.0,BSD-2-Clause,transitive_or_dev
+wsproto,1.3.2,MIT,transitive_or_dev
+xlsxwriter,3.2.9,BSD-2-Clause,transitive_or_dev
+yarl,1.25.1,Apache-2.0,transitive_or_dev
+youtube-transcript-api,1.2.4,MIT,direct (core)
+zipp,4.1.0,MIT,transitive_or_dev
+zulip,0.9.1,Apache Software License,direct (extra:partners)
