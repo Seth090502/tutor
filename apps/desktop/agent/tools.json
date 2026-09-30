@@ -6,6 +6,10 @@
         },
         {
             "type": "client",
+            "config": "tool_configs/propose_answer.json"
+        },
+        {
+            "type": "client",
             "config": "tool_configs/set_confidence.json"
         },
         {
@@ -18,7 +22,7 @@
         },
         {
             "type": "client",
-            "config": "tool_configs/record_review.json"
+            "config": "tool_configs/give_up.json"
         },
         {
             "type": "client",

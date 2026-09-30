@@ -570,9 +570,9 @@ def test_accepted_atoms_become_practice_cards_sourced_to_the_chunk(reading):
     assert tags[entry_ids[1]] == {"chunk:k3", "provisional"}
     assert proof["section_id"] == "k3"
 
-    # The new cards are in the practice bank.
+    # The definition is in the practice queue; the provisional proof is not (C11 amendment, C12).
     queue = PracticeStore(reading.store.db_path).queue("UTC", now=definition["created_at"] + 1)
-    assert set(entry_ids) <= set(queue)
+    assert entry_ids[0] in queue and entry_ids[1] not in queue
 
     # Accepting again is idempotent.
     again = reading.post(session_id, "atoms/accept", {"ids": ["a2", "a1"]})

@@ -14,6 +14,11 @@ from deeptutor.core.capability_protocol import CapabilityManifest, TurnCapabilit
 from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.runtime.stream_bus import StreamBus
 
+# Starlette's TestClient sends ``Host: testserver``. The backend's request guard
+# (deeptutor/api/request_guard.py) reads this once, when deeptutor.api.main is
+# first imported, which happens after this conftest is loaded.
+os.environ["DEEPTUTOR_ALLOWED_HOSTS"] = "testserver"
+
 # ---------------------------------------------------------------------------
 # Multi-user legacy migration guard
 # ---------------------------------------------------------------------------

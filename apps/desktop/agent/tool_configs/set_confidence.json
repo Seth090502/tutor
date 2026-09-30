@@ -1,6 +1,6 @@
 {
     "name": "set_confidence",
-    "description": "Record how sure the learner is of their committed answer, before check_answer. 1 guess, 2 unsure, 3 fairly sure, 4 certain. Only allowed before the check.",
+    "description": "Record how sure the learner is of their confirmed answer: 1 guess, 2 unsure, 3 fairly sure, 4 certain. Only after the learner has confirmed an answer on screen, and before check_answer.",
     "type": "client",
     "expects_response": true,
     "response_timeout_secs": 30,
@@ -8,17 +8,12 @@
         "type": "object",
         "description": "Arguments for set_confidence",
         "properties": {
-            "attempt_id": {
-                "type": "string",
-                "description": "The attempt_id returned by get_next_question for the current question."
-            },
             "level": {
                 "type": "integer",
                 "description": "The learner's confidence: 1 guess, 2 unsure, 3 fairly sure, 4 certain."
             }
         },
         "required": [
-            "attempt_id",
             "level"
         ]
     },

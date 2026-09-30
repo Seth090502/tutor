@@ -1,4 +1,8 @@
-"""Practice attempts (contract C7): server-enforced hints, confidence and the rating policy."""
+"""Practice attempts (contract C7): server-enforced hints, confidence and the rating policy.
+
+Review policy 2 (C12): any hint before the check is an assisted, failed retrieval (Again); Hard is
+never produced. The rows below changed from the policy-1 table (rung 1 Good, rungs 2-3 Hard).
+"""
 
 import asyncio
 import re
@@ -95,9 +99,9 @@ def attempt_row(repo, attempt_id):
         (False, 1, False, "again"),
         (False, 3, False, "again"),
         (True, 0, False, "good"),
-        (True, 1, False, "good"),
-        (True, 2, False, "hard"),
-        (True, 3, False, "hard"),
+        (True, 1, False, "again"),
+        (True, 2, False, "again"),
+        (True, 3, False, "again"),
         (True, 4, False, "again"),
         (True, 5, True, "again"),
         (True, 0, True, "again"),
@@ -167,10 +171,10 @@ def test_rungs_without_prewritten_text_return_null(bank):
 
 @pytest.mark.parametrize(
     ("hints", "answer", "rating"),
-    [(0, "B", "good"), (1, "B", "good"), (2, "B", "hard"), (3, "B", "hard"), (4, "B", "again")]
+    [(0, "B", "good"), (1, "B", "again"), (2, "B", "again"), (3, "B", "again"), (4, "B", "again")]
     + [(0, "A", "again"), (2, "A", "again")],
 )
-def test_check_rates_by_the_highest_rung_used(bank, hints, answer, rating):
+def test_check_gives_good_only_without_hints(bank, hints, answer, rating):
     store, _, client = bank
     entry = seed(store)
     attempt = start(client, entry["id"])
@@ -187,10 +191,8 @@ def test_confidence_never_changes_the_rating(bank):
     for level in (1, 2, 3, 4):
         attempt = start(client, entry["id"])
         client.post(f"/practice/attempts/{attempt}/confidence", json={"level": level})
-        hint(client, attempt)
-        hint(client, attempt)
         ratings.add(check(client, attempt).json()["rating"])
-    assert ratings == {"hard"}
+    assert ratings == {"good"}
 
 
 def test_confidence_hint_and_check_are_refused_after_the_check(bank):
@@ -246,12 +248,13 @@ def test_review_via_attempt_uses_the_server_rating_and_existing_fsrs_path(bank):
     response = review(client, entry["id"], attempt_id=attempt)
     assert response.status_code == 200, response.text
     outcome = response.json()
-    assert (outcome["rating"], outcome["correct"], outcome["self_report"]) == ("hard", True, False)
+    assert (outcome["rating"], outcome["correct"], outcome["self_report"]) == ("again", True, False)
+    assert outcome["provenance"] == "legacy_attempt"
     assert outcome["attempt_id"] == attempt
     assert repo.state(entry["id"])["review_count"] == 1
     with repo.connect() as conn:
         event = conn.execute("SELECT rating, answer FROM practice_review_events").fetchone()
-    assert tuple(event) == ("hard", "B")
+    assert tuple(event) == ("again", "B")
     assert attempt_row(repo, attempt)["reviewed"] == 1
 
 
@@ -438,3 +441,41 @@ def test_all_workspace_analytics_sums_calibration_and_assistance(bank, monkeypat
     assert combined["calibration"][1] == {"level": 2, "attempts": 2, "correct": 2}
     assert combined["assistance"] == {"attempts": 2, "hinted": 2, "revealed": 0}
     assert combined["totals"]["questions"] == 2
+
+
+def test_legacy_reviews_are_labelled_and_never_verified(bank):
+    store, repo, client = bank
+    entry = seed(store)
+    rated = review(client, entry["id"], rating="easy").json()  # the web UI's client-rated review
+    assert rated["provenance"] == "legacy_client_rating"
+    essay = seed(store, question_id="q2", question_type="short_answer", options={}, hints=[])
+    attempt = start(client, essay["id"])
+    check(client, attempt, "Something")
+    judged = review(
+        client,
+        essay["id"],
+        attempt_id=attempt,
+        judged_correct=True,
+        answer="Something",
+        request_id="review_request_0002",
+    ).json()
+    assert judged["provenance"] == "legacy_self_report"
+    with repo.connect() as conn:
+        labels = {
+            row[0]
+            for row in conn.execute(
+                "SELECT json_extract(outcome_json, '$.provenance') FROM practice_review_events"
+            )
+        }
+    assert labels == {"legacy_client_rating", "legacy_self_report"}
+
+
+def test_stateless_check_writes_nothing(bank):
+    store, repo, client = bank
+    entry = seed(store)
+    assert client.post(f"/practice/questions/{entry['id']}/check", json={"answer": "B"}).json() == {
+        "correct": True
+    }
+    with repo.connect() as conn:
+        for table in ("practice_review_events", "practice_attempts", "learning_events"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0

@@ -1,6 +1,7 @@
 //! The HTTP service (contracts C1 and C9). It binds 127.0.0.1 unless `--bind` names another
 //! address, which needs `RAG_ENGINE_TOKEN`. With a token, every route except `GET /health`
-//! requires `Authorization: Bearer <token>`.
+//! requires `Authorization: Bearer <token>`. Requests a foreign web page could have sent are
+//! refused by their `Host` and `Origin` (contract C3).
 
 use crate::engine::{self, Engine, Roots, SURVEY_FILE};
 use crate::error::Result;
@@ -17,7 +18,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path as UrlPath, Query, Request, State};
-use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -26,7 +27,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -34,9 +35,27 @@ use tower_http::cors::CorsLayer;
 
 pub const DEFAULT_PORT: u16 = 8811;
 
-/// The browser origins the desktop app uses (docs/tutor/CONTRACTS.md). No others are allowed.
-pub const ALLOWED_ORIGINS: [&str; 4] =
-    ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"];
+/// The browser origins the desktop app uses (docs/tutor/CONTRACTS.md, C3): the built app's, and the
+/// Vite dev server's in debug builds only. No others are allowed.
+pub const ALLOWED_ORIGINS: &[&str] = allowed_origins(cfg!(debug_assertions));
+
+/// The app origins to trust: `RAG_APP_ORIGINS` (comma-separated) when set, else [`ALLOWED_ORIGINS`].
+/// The desktop shell sets it to its own origins, so a debug shell can run a release rag-engine.
+fn app_origins() -> Vec<String> {
+    std::env::var("RAG_APP_ORIGINS")
+        .ok()
+        .map(|v| v.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect::<Vec<_>>())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect())
+}
+
+const fn allowed_origins(debug: bool) -> &'static [&'static str] {
+    if debug {
+        &["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
+    } else {
+        &["http://tauri.localhost", "tauri://localhost"]
+    }
+}
 
 pub struct AppState {
     pub engine: Arc<Engine>,
@@ -78,9 +97,10 @@ fn parse_body<T: DeserializeOwned + Default>(body: &Bytes) -> ApiResult<T> {
     serde_json::from_slice(body).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid JSON body: {e}")))
 }
 
-pub fn router(state: Arc<AppState>) -> Router {
+pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
+    let origins = app_origins();
     let cors = CorsLayer::new()
-        .allow_origin(ALLOWED_ORIGINS.map(HeaderValue::from_static))
+        .allow_origin(origins.iter().filter_map(|origin| HeaderValue::from_str(origin).ok()).collect::<Vec<_>>())
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
     Router::new()
@@ -100,8 +120,67 @@ pub fn router(state: Arc<AppState>) -> Router {
         // CORS is outside the token check, so browser preflights (which carry no token) succeed
         // and 401 responses still carry CORS headers.
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
+        // Between the two: CORS still answers preflights, and a foreign page is refused before
+        // the token check or any route sees its request.
+        .layer(middleware::from_fn_with_state(Arc::new(RequestGuard { hosts, origins }), guard_request))
         .layer(cors)
         .with_state(state)
+}
+
+/// Refuses what a web page other than the app could have sent (contract C3): a `Host` that is not
+/// an address of this service (DNS rebinding), and a state-changing request whose `Origin` is not
+/// an app origin, or that has none and is marked `Sec-Fetch-Site: cross-site`. GET is not
+/// origin-checked: the app loads page images with `<img>`, which sends no `Origin`.
+struct RequestGuard {
+    /// `Host` values to accept ([`allowed_hosts`]); `None` accepts any.
+    hosts: Option<Vec<String>>,
+    /// App origins ([`app_origins`]).
+    origins: Vec<String>,
+}
+
+impl RequestGuard {
+    fn refusal(&self, method: &Method, headers: &HeaderMap) -> Option<&'static str> {
+        if let Some(hosts) = &self.hosts {
+            let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default().trim();
+            if !hosts.iter().any(|allowed| allowed.eq_ignore_ascii_case(host)) {
+                return Some("the Host header is not an address of this service");
+            }
+        }
+        if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+            return None;
+        }
+        match headers.get(header::ORIGIN) {
+            Some(origin) if self.origins.iter().any(|o| origin.as_bytes() == o.as_bytes()) => None,
+            Some(_) => Some("the Origin is not one of the app's origins"),
+            None if headers.get("sec-fetch-site").is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site")) => {
+                Some("a cross-site request without an app Origin")
+            }
+            None => None,
+        }
+    }
+}
+
+async fn guard_request(State(guard): State<Arc<RequestGuard>>, request: Request, next: Next) -> Response {
+    match guard.refusal(request.method(), request.headers()) {
+        Some(reason) => ApiError::new(StatusCode::FORBIDDEN, format!("request refused: {reason}")).into_response(),
+        None => next.run(request).await,
+    }
+}
+
+/// `Host` values the service answers to: `127.0.0.1`, `localhost` and `[::1]` on its port, plus
+/// its `--bind` address. `None` when it listens on every address (`0.0.0.0`, `::`): clients then
+/// name the machine however they reach it, and the token such a bind requires ([`check_bind`])
+/// already refuses a foreign page.
+fn allowed_hosts(bind: IpAddr, port: u16) -> Option<Vec<String>> {
+    if bind.is_unspecified() {
+        return None;
+    }
+    let mut hosts: Vec<String> = ["127.0.0.1", "localhost", "[::1]"].iter().map(|name| format!("{name}:{port}")).collect();
+    let bound = SocketAddr::new(bind, port).to_string();
+    if !hosts.contains(&bound) {
+        hosts.push(bound);
+    }
+    Some(hosts)
 }
 
 /// With a token configured, refuse every request but `GET /health` that does not carry it.
@@ -151,8 +230,9 @@ pub async fn serve(state: Arc<AppState>, bind: IpAddr, port: u16) -> Result<()> 
             "RAG_ENGINE_TOKEN is not set: requests are not authenticated"
         }
     );
-    eprintln!("rag-engine: listening on http://{}", listener.local_addr()?);
-    axum::serve(listener, router(state))
+    let local = listener.local_addr()?;
+    eprintln!("rag-engine: listening on http://{local}");
+    axum::serve(listener, router(state, allowed_hosts(bind, local.port())))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
             eprintln!("rag-engine: shutting down");
@@ -259,6 +339,10 @@ fn started(result: std::result::Result<String, String>) -> ApiResult<Response> {
 
 async fn start_survey(State(state): State<Arc<AppState>>, body: Bytes) -> ApiResult<Response> {
     let req: SurveyRequest = parse_body(&body)?;
+    // A survey reads every file under its root, so only a folder of the library may be named.
+    if let Some(root) = &req.root {
+        ingest::targets(&state.roots, Some(root)).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.0))?;
+    }
     let root = req.root.unwrap_or_else(|| state.roots.corpus.clone());
     if !root.is_dir() {
         return Err(ApiError::new(StatusCode::BAD_REQUEST, format!("root {} is not a directory", root.display())));
@@ -421,4 +505,75 @@ pub fn fail_interrupted_jobs(engine: &Engine) -> Result<()> {
         eprintln!("rag-engine: {n} job(s) from a previous run were interrupted");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+        pairs.iter().map(|&(name, value)| (header::HeaderName::from_static(name), HeaderValue::from_static(value))).collect()
+    }
+
+    #[test]
+    fn release_builds_trust_only_the_built_app() {
+        assert_eq!(allowed_origins(false), ["http://tauri.localhost", "tauri://localhost"]);
+        assert_eq!(
+            allowed_origins(true),
+            ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
+        );
+        assert_eq!(ALLOWED_ORIGINS, allowed_origins(cfg!(debug_assertions)));
+    }
+
+    #[test]
+    fn hosts_are_the_loopback_names_on_the_port_plus_the_bind_address() {
+        let loopback = ["127.0.0.1:8811", "localhost:8811", "[::1]:8811"].map(String::from).to_vec();
+        assert_eq!(allowed_hosts("127.0.0.1".parse().unwrap(), 8811), Some(loopback.clone()));
+        assert_eq!(allowed_hosts("::1".parse().unwrap(), 8811), Some(loopback.clone()));
+        let lan = allowed_hosts("192.168.1.20".parse().unwrap(), 8811).unwrap();
+        assert_eq!(lan, [loopback.clone(), vec!["192.168.1.20:8811".into()]].concat());
+        assert_eq!(allowed_hosts("fe80::1".parse().unwrap(), 9000).unwrap().last().unwrap(), "[fe80::1]:9000");
+        assert_eq!(allowed_hosts("0.0.0.0".parse().unwrap(), 8811), None);
+        assert_eq!(allowed_hosts("::".parse().unwrap(), 8811), None);
+    }
+
+    #[test]
+    fn guard_refuses_foreign_hosts_and_foreign_state_changes() {
+        let origins: Vec<String> = ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect();
+        let guard = RequestGuard { hosts: allowed_hosts("127.0.0.1".parse().unwrap(), 8811), origins: origins.clone() };
+        let app = "tauri://localhost";
+        let refused = |method: Method, extra: &[(&'static str, &'static str)]| {
+            let mut all = headers(&[("host", "127.0.0.1:8811")]);
+            all.extend(headers(extra));
+            guard.refusal(&method, &all).is_some()
+        };
+        // Host: another name (DNS rebinding) or port is refused; case does not matter.
+        for host in ["evil.example:8811", "127.0.0.1:8812", "127.0.0.1", "0.0.0.0:8811"] {
+            assert!(refused(Method::GET, &[("host", host)]), "{host}");
+        }
+        assert!(!refused(Method::GET, &[("host", "LOCALHOST:8811")]));
+        assert!(guard.refusal(&Method::GET, &HeaderMap::new()).is_some(), "no Host");
+        // A state-changing request from a foreign page, with or without its Origin.
+        assert!(refused(Method::POST, &[("origin", "http://evil.example")]));
+        assert!(refused(Method::POST, &[("origin", "null")]));
+        assert!(refused(Method::POST, &[("sec-fetch-site", "cross-site")]));
+        // The app (cross-site to 127.0.0.1, with its Origin), native clients, and reads pass.
+        assert!(!refused(Method::POST, &[("origin", app), ("sec-fetch-site", "cross-site")]));
+        assert!(!refused(Method::POST, &[]));
+        assert!(!refused(Method::GET, &[("origin", "http://evil.example"), ("sec-fetch-site", "cross-site")]));
+        // Listening on every address: any Host, same Origin rules.
+        let open = RequestGuard { hosts: None, origins };
+        assert!(open.refusal(&Method::GET, &headers(&[("host", "library-pc:8811")])).is_none());
+        assert!(open.refusal(&Method::POST, &headers(&[("origin", "http://evil.example")])).is_some());
+    }
+
+    #[test]
+    fn the_shell_can_name_the_app_origins() {
+        // One test owns the variable, so no other test sees it set.
+        unsafe { std::env::set_var("RAG_APP_ORIGINS", " http://localhost:1420 ,tauri://localhost,") };
+        let named = app_origins();
+        unsafe { std::env::remove_var("RAG_APP_ORIGINS") };
+        assert_eq!(named, ["http://localhost:1420", "tauri://localhost"]);
+        assert_eq!(app_origins(), ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect::<Vec<_>>());
+    }
 }

@@ -6,7 +6,7 @@ The ElevenLabs agent behind the Tutor screen, kept as code in the layout of the
 | File | What |
 |---|---|
 | `agent_configs/tutor.json` | The agent: system prompt (the teaching method in `docs/tutor/PEDAGOGY.md`), LLM, voice, first message. |
-| `tool_configs/*.json` | The seven client tools. The app implements them in `src/features/voice/tools.ts`; names and parameters must match (`npm test` checks). |
+| `tool_configs/*.json` | The eight client tools. The app implements them in `src/features/voice/tools.ts`; names and parameters must match (`npm test` checks). |
 | `agents.json`, `tools.json` | The CLI's registries. The CLI writes the ElevenLabs ids into them on the first push. |
 
 ## Push the agent
@@ -17,7 +17,7 @@ You need an ElevenLabs API key. Run everything in this folder:
 cd apps\desktop\agent
 $env:ELEVENLABS_API_KEY = "xi-..."    # or ELEVENLABS_API_KEY=xi-... in a .env file here (gitignored)
 
-# 1. Create the seven tools; their ids land in tools.json.
+# 1. Create the eight tools; their ids land in tools.json.
 npx @elevenlabs/cli tools push
 
 # 2. Point the agent at those tools (fills tool_ids in agent_configs/tutor.json).
@@ -39,24 +39,32 @@ present, they update in place.
 
 ## Tools
 
-All seven are client tools (`expects_response: true`). They run in the app and call the local
-services, so the tutor only works while the desktop app is open. Practice runs as attempts
-(contract C7 in `docs/tutor/CONTRACTS.md`): the backend holds the answer key and the hint ladder,
-and the tutor sees the answer only in `check_answer`'s result, after the attempt is closed.
+All eight are client tools (`expects_response: true`). They run in the app and call the local
+services, so the tutor only works while the desktop app is open. Practice runs as a study session
+(contract C12 in `docs/tutor/CONTRACTS.md`). The Tutor screen keeps one practice session
+(`src/features/voice/practice.ts`; its id is stored in `localStorage` under `tutor.study.voice` and
+resumed after a restart), and the tools and the screen's typed controls send commands to the same
+server-side attempt through `POST /api/study/commands`. The tools send `X-Tutor-Source: voice_tool`,
+so they can propose an answer but never commit one; only the learner commits, on screen. Results are
+built from the accepted public state only: the answer, explanation and misconception reach the tutor
+only once the server has released them.
 
-| Tool | Calls | Returns |
+| Tool | Command | Returns |
 |---|---|---|
-| `get_next_question({domain?})` | `GET /api/question-notebook/practice/queue`, then `POST .../questions/{id}/attempts` | `attempt_id, question_id, question, question_type, options, rungs_available`. Never the answer key or hints. |
-| `set_confidence({attempt_id, level})` | `POST .../attempts/{id}/confidence` | `recorded, level` (1 guess to 4 certain) |
-| `get_hint({attempt_id})` | `POST .../attempts/{id}/hint` | `rung, text, is_answer`; when `text` is null, an `instruction` to write a nudge (or, at rung 4, a parallel worked example) without the answer |
-| `check_answer({attempt_id, answer})` | `POST .../attempts/{id}/check` | `correct, correct_answer, explanation, misconception?` |
-| `record_review({attempt_id, question_id, answer, judged_correct?})` | `GET .../questions/{id}`, then `POST .../questions/{id}/review` (one retry on 409) | `rating` (computed by the server from the attempt) and `next_due` |
-| `search_library({query, domain?})` | rag-engine `POST /search` (k 5) | `hits: [{title, domain, source_type, pages, excerpt}]` |
-| `get_progress()` | `GET .../practice/summary`, then `GET .../practice/analytics?days=30` | due, overdue, mistakes, reviewed today, next due, and `calibration_30_days` when the backend reports it |
+| `get_next_question({domain?})` | starts the session if there is none, `GET /api/study/queue?tag=<domain>`, then `open_item` | `attempt_id, question_id, question, question_type, options, rungs_available`, or a sentence when nothing is due or a live question must be finished first. Never the answer key or hints. |
+| `propose_answer({transcript})` | `propose_response` | a sentence: the learner must confirm or correct it on screen. Never commits. |
+| `set_confidence({level})` | `record_confidence` | `recorded, level` (1 guess to 4 certain); refused until the learner has confirmed an answer |
+| `get_hint()` | `request_assistance {kind: hint}` | `rung, text`; when `text` is null, an `instruction` to write a nudge (or, at rung 4, a parallel worked example) without the answer |
+| `check_answer()` | `check` | `verdict, diagnostic?`; `correct_answer, explanation, misconception?` only when released; `closed, review, next_due` once closed; an `instruction` after an incorrect, unverifiable or invalid item; `offer` after two missed tries |
+| `give_up()` | `give_up` | the same shape, closed as `revealed`, with the released answer |
+| `search_library({query, domain?})` | DeepTutor `POST /api/library/search` (k 5, with the live `attempt_id`, so the server withholds answer passages) | `hits: [{title, domain, source_type, pages, excerpt}]` |
+| `get_progress()` | `GET /api/question-notebook/practice/summary`, then `GET .../practice/analytics?days=30` | due, overdue, mistakes, reviewed today, next due, and `calibration_30_days` when the backend reports it |
 
-`judged_correct` is sent only when `check_answer` returned `correct: null`. The app never sends a
-rating. Each tool also publishes a `TutorEvent` (contract C8, `onTutorEvent` in `tools.ts`) so the
-Tutor screen can show the question card, confidence, hint rung and, after the check, the answer.
+There is no `record_review`: the server schedules the review (FSRS, `review-policy/2`) when the
+question closes, and `review` says the rating and why in words. What the learner does on screen
+(answer, confirm, confidence, check, hint, retry, give up, self-assessment, next question) goes to
+the server first; once accepted, the screen tells the tutor in a user message that starts with
+`On screen:` and carries the same public data a tool would return (contract C8).
 
 A failing tool returns a short sentence starting with `Error:`, which the prompt tells the tutor to
 say and move past.

@@ -1,35 +1,38 @@
-// Practice: a typed drill over the learner's language cards, production first. It drives the C7 attempt
-// routes directly. Attempt first, confidence before the check, the hint ladder, a check that names an
-// accent slip, then the server-rated review. The state machine is drill.ts; this file draws it.
-import { useCallback, useEffect, useReducer, useRef, useState } from "react"
+// Practice: a typed drill over the learner's language cards, production first, run as a C12 study session.
+// The server owns each attempt: open, the learner's answer sealed, then confidence, then the check, then a
+// repair or a self-assessment, then closure with the rating and where it came from. This file draws the
+// session's accepted snapshot and sends the learner's moves (practice.ts); it never shows answer text that
+// did not arrive in `attempt.released`.
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowRight, BookOpenCheck, Lightbulb, Loader2, RefreshCw, ServerOff } from "lucide-react"
 
 import { Eyebrow, KbdHint, Kbd, KeycapGroup, Panel } from "@/components/kit"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import type { TargetLanguage } from "@/lib/language"
 import { languageMeta } from "@/lib/language"
-import { checkAnswer, errorText, isOffline, loadQueue, openCard, requestHint, sendConfidence, starterDeckCommand, submitReview, type QueueItem } from "./api"
+import { StudyError, type ConfidenceLevel, type Snapshot, type StudyAttempt, type StudyQueueItem, type StudySession } from "@/lib/study"
+import { errorText, starterDeckCommand } from "./api"
 import {
   assistanceNote,
-  assisted,
-  canCheck,
   canHint,
-  canReview,
+  cardMeta,
   diffChars,
-  drillReducer,
   feedbackLine,
+  formatDue,
   hintBlocker,
+  hintsGiven,
+  latestCheck,
   MAX_RUNG,
-  needsJudgement,
-  newDrill,
+  nextEntry,
+  outcomeOf,
+  ratingLine,
   targetSentence,
-  type Confidence,
-  type DrillState,
+  verdictWord,
   type CardKind,
 } from "./drill"
 import type { AudioEnv } from "./hooks"
 import { CopyCommand, FIELD, Notice, PlayButton, StateBlock, Verdict } from "./parts"
+import { cardActions, openNext, openPractice, type CardActions } from "./practice"
 import { useSay } from "./speech"
 
 const CONFIDENCE = [
@@ -46,8 +49,6 @@ const KIND_COPY: Record<CardKind, { label: string; ask: (lang: string) => string
   unknown: { label: "Card", ask: () => "Answer" },
 }
 
-const RATING_WORD: Record<string, string> = { good: "Good", hard: "Hard", again: "Again" }
-
 type Load =
   | { status: "loading" }
   | { status: "offline" }
@@ -57,109 +58,120 @@ type Load =
 
 type Tally = { reviewed: number; assisted: number }
 
+const failure = (e: unknown): Load => (e instanceof StudyError && e.code === "network" ? { status: "offline" } : { status: "error", message: errorText(e) })
+
 export function PracticeTab({ language, audio }: { language: TargetLanguage; audio: AudioEnv }) {
   const meta = languageMeta(language)
   const [load, setLoad] = useState<Load>({ status: "loading" })
-  const [queue, setQueue] = useState<QueueItem[]>([])
-  const [index, setIndex] = useState(0)
-  const [drill, dispatchRaw] = useReducer(
-    (s: DrillState | null, a: Parameters<typeof drillReducer>[1] | { type: "open"; drill: DrillState | null }) =>
-      a.type === "open" ? a.drill : s && drillReducer(s, a),
-    null,
-  )
+  const [queue, setQueue] = useState<StudyQueueItem[]>([])
+  const [snap, setSnap] = useState<Snapshot | null>(null)
+  const [done, setDone] = useState<number[]>([])
+  const [finished, setFinished] = useState(false)
   const [tally, setTally] = useState<Tally>({ reviewed: 0, assisted: 0 })
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const { say, stop, status: sayStatus, error: sayError } = useSay(language)
-  const attempted = useRef(new Set<string>())
+  const session = useRef<StudySession | null>(null)
+  const unsubscribe = useRef<(() => void) | null>(null)
+  const counted = useRef(new Set<string>())
+  const busy = useRef(false)
   const generation = useRef(0)
 
-  const open = useCallback(async (items: QueueItem[], at: number) => {
-    const mine = generation.current
-    try {
-      const card = await openCard(items[at])
-      if (mine === generation.current) dispatchRaw({ type: "open", drill: newDrill(card) })
-    } catch (e) {
-      if (mine !== generation.current) return
-      setLoad(isOffline(e) ? { status: "offline" } : { status: "error", message: errorText(e) })
-    }
+  /** Counts a closed attempt once: it is done for this visit, and it is reviewed if the server recorded a rating. */
+  const account = useCallback((s: Snapshot) => {
+    const a = s.attempt
+    if (a?.status !== "closed" || counted.current.has(a.attempt_id)) return
+    counted.current.add(a.attempt_id)
+    setDone((d) => (d.includes(a.entry_id) ? d : [...d, a.entry_id]))
+    const d = a.closure?.scheduler_disposition
+    if (d?.rating != null) setTally((t) => ({ reviewed: t.reviewed + 1, assisted: t.assisted + (d.provenance === "assisted" ? 1 : 0) }))
   }, [])
 
   const start = useCallback(async () => {
     const mine = ++generation.current
+    unsubscribe.current?.()
+    unsubscribe.current = null
+    session.current = null
+    counted.current = new Set()
     setLoad({ status: "loading" })
-    dispatchRaw({ type: "open", drill: null })
+    setSnap(null)
+    setDone([])
+    setFinished(false)
+    setTally({ reviewed: 0, assisted: 0 })
+    setError(null)
     stop()
     try {
-      const items = await loadQueue(language)
+      const opened = await openPractice(language)
       if (mine !== generation.current) return
-      setQueue(items)
-      setIndex(0)
-      setTally({ reviewed: 0, assisted: 0 })
-      if (items.length === 0) return setLoad({ status: "empty" })
+      setQueue(opened.queue)
+      const s = opened.session
+      if (!s) return setLoad({ status: "empty" })
+      session.current = s
+      unsubscribe.current = s.subscribe((next) => {
+        setSnap(next)
+        account(next)
+      })
+      account(s.state)
+      const live = s.state.attempt !== null && s.state.attempt.status !== "closed"
+      if (live) setSnap(s.state)
       setLoad({ status: "ready" })
-      await open(items, 0)
+      if (live) return
+      const opening = openNext(s, opened.queue, [])
+      if (opening) await opening
+      else if (opened.queue.length === 0) setLoad({ status: "empty" })
+      else setFinished(true)
     } catch (e) {
-      if (mine === generation.current) setLoad(isOffline(e) ? { status: "offline" } : { status: "error", message: errorText(e) })
+      if (mine === generation.current) setLoad(failure(e))
     }
-  }, [language, open, stop])
+  }, [language, account, stop])
 
   useEffect(() => {
     void start()
     return () => {
       generation.current++
+      unsubscribe.current?.()
+      unsubscribe.current = null
     }
   }, [start])
 
-  const dispatch = dispatchRaw
-
-  const onHint = async () => {
-    if (!drill || !canHint(drill)) return
-    dispatch({ type: "hint:start" })
-    try {
-      dispatch({ type: "hint:done", hint: await requestHint(drill.card.attemptId) })
-    } catch (e) {
-      dispatch({ type: "failed", message: errorText(e) })
-    }
+  const attempt = snap?.attempt ?? null
+  const kindOf = (a: StudyAttempt): CardKind => {
+    const item = queue.find((q) => q.entry_id === a.entry_id)
+    return item ? cardMeta(item).kind : "unknown"
   }
 
-  const onCheck = async () => {
-    if (!drill || !canCheck(drill) || drill.confidence === null) return
-    dispatch({ type: "check:start" })
-    try {
-      await sendConfidence(drill.card.attemptId, drill.confidence)
-      const result = await checkAnswer(drill.card.attemptId, drill.draft.trim())
-      dispatch({ type: "check:done", result })
-      if (!audio.blocker) void say(targetSentence(drill.card, result))
-    } catch (e) {
-      dispatch({ type: "failed", message: errorText(e) })
-    }
-  }
+  // The reference is spoken once when the server releases it.
+  const releasedId = attempt?.released ? attempt.attempt_id : null
+  useEffect(() => {
+    if (!attempt?.released || audio.blocker) return
+    void say(targetSentence(kindOf(attempt), attempt.item.prompt, attempt.released.correct_answer))
+  }, [releasedId])
 
-  const runReview = useCallback(async (s: DrillState) => {
-    dispatch({ type: "review:start" })
+  /** Runs one of the learner's moves: one at a time, with a readable error when the server refuses it. */
+  const run = useCallback(async (move: () => Promise<unknown> | null) => {
+    if (busy.current) return
+    busy.current = true
+    setPending(true)
+    setError(null)
     try {
-      const result = await submitReview(s.card, s.draft.trim(), s.judged)
-      dispatch({ type: "review:done", result })
-      setTally((t) => ({ reviewed: t.reviewed + 1, assisted: t.assisted + (assisted(s) ? 1 : 0) }))
+      await move()
     } catch (e) {
-      dispatch({ type: "failed", message: errorText(e) })
+      setError(errorText(e))
+    } finally {
+      busy.current = false
+      setPending(false)
     }
   }, [])
 
-  // The review is sent once per attempt as soon as the check (or the learner's verdict) allows it.
-  // A failed review is retried with the button, not by this effect.
-  useEffect(() => {
-    if (!drill || !canReview(drill) || attempted.current.has(drill.card.attemptId)) return
-    attempted.current.add(drill.card.attemptId)
-    void runReview(drill)
-  }, [drill, runReview])
-
-  const next = async () => {
-    stop()
-    const at = index + 1
-    if (at >= queue.length) return dispatchRaw({ type: "open", drill: null })
-    setIndex(at)
-    await open(queue, at)
-  }
+  const onNext = () =>
+    void run(async () => {
+      stop()
+      const s = session.current
+      if (!s) return
+      const opening = openNext(s, queue, done)
+      if (opening) await opening
+      else setFinished(true)
+    })
 
   if (load.status === "loading") {
     return (
@@ -184,7 +196,7 @@ export function PracticeTab({ language, audio }: { language: TargetLanguage; aud
   }
   if (load.status === "empty") return <NoCards language={language} onRetry={() => void start()} />
 
-  if (!drill) {
+  if (finished) {
     return (
       <StateBlock
         icon={BookOpenCheck}
@@ -192,52 +204,44 @@ export function PracticeTab({ language, audio }: { language: TargetLanguage; aud
         actions={<RetryButton onClick={() => void start()} label="Check again" />}
       >
         You reviewed {tally.reviewed} {tally.reviewed === 1 ? "card" : "cards"}
-        {tally.assisted ? `, ${tally.assisted} with hints` : ", none with hints"}. New cards come due on the schedule, so there is nothing to
-        gain from drilling these again today.
+        {tally.assisted ? `, ${tally.assisted} with help before answering` : ", none with help before answering"}. New cards come due on the
+        schedule, so there is nothing to gain from drilling these again today.
       </StateBlock>
     )
   }
 
-  return (
-    <div className="@container">
-      <div className="grid items-start gap-5 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
-        <CardPane
-          key={drill.card.attemptId}
-          drill={drill}
-          language={language}
-          position={`Card ${index + 1} of ${queue.length}`}
-          tally={tally}
-          dispatch={dispatch}
-          onHint={onHint}
-          onCheck={onCheck}
-          onRetryReview={() => void runReview(drill)}
-          onNext={() => void next()}
-          isLast={index + 1 >= queue.length}
-          audio={audio}
-          say={say}
-          stop={stop}
-          sayStatus={sayStatus}
-          sayError={sayError}
-        />
-        <aside className="flex flex-col gap-5">
-          <Panel eyebrow="Before you check" title="How sure are you?" className="lg-enter p-5" style={{ "--i": 1 } as React.CSSProperties}>
-            <KeycapGroup
-              aria-label="Confidence, 1 guess to 4 certain"
-              choices={CONFIDENCE.map((c) => ({ id: c.id, legend: c.id, label: c.label }))}
-              value={drill.confidence ? String(drill.confidence) : null}
-              onChange={(id) => dispatch({ type: "confidence", level: Number(id) as Confidence })}
-              onSubmit={() => void onCheck()}
-              active={drill.phase === "attempt"}
-              disabled={drill.pending !== null && drill.phase === "attempt"}
-            />
-            <KbdHint className="mt-4 text-[14px]">
-              Press <Kbd>1</Kbd> to <Kbd>4</Kbd>, then <Kbd>Enter</Kbd> to check.
-            </KbdHint>
-          </Panel>
-          <Ladder drill={drill} />
-        </aside>
+  if (!attempt) {
+    return (
+      <div role="status" className="text-ink-2 flex items-center justify-center gap-3 py-24 text-sm">
+        <Loader2 aria-hidden className="size-4 animate-spin" /> Opening your next card
       </div>
-    </div>
+    )
+  }
+
+  const remaining = queue.filter((q) => !done.includes(q.entry_id))
+  const live = attempt.status !== "closed"
+  const position = `Card ${live ? done.length + 1 : done.length} of ${done.length + remaining.length + (live && !remaining.some((q) => q.entry_id === attempt.entry_id) ? 1 : 0)}`
+
+  return (
+    <CardView
+      key={attempt.attempt_id}
+      attempt={attempt}
+      kind={kindOf(attempt)}
+      language={language}
+      position={position}
+      tally={tally}
+      pending={pending}
+      error={error}
+      actions={cardActions(session.current!)}
+      run={(move) => void run(move)}
+      onNext={onNext}
+      isLast={!nextEntry(queue, done, attempt)}
+      audio={audio}
+      say={say}
+      stop={stop}
+      sayStatus={sayStatus}
+      sayError={sayError}
+    />
   )
 }
 
@@ -266,33 +270,17 @@ function NoCards({ language, onRetry }: { language: TargetLanguage; onRetry: () 
   )
 }
 
-function Ladder({ drill }: { drill: DrillState }) {
-  const cap = Math.min(MAX_RUNG, drill.card.rungsAvailable)
-  return (
-    <Panel eyebrow="Hint ladder" className="lg-enter p-5" style={{ "--i": 2 } as React.CSSProperties}>
-      <div className="flex gap-1.5" aria-hidden>
-        {Array.from({ length: MAX_RUNG }, (_, i) => (
-          <span key={i} className="lg-rung" data-used={i < drill.hints.length ? "" : undefined} style={i >= cap ? { opacity: 0.35 } : undefined} />
-        ))}
-      </div>
-      <p className="text-ink-2 mt-3 text-sm leading-relaxed">
-        {drill.card.rungsAvailable === 0
-          ? "This card has no written hints."
-          : `${drill.hints.length} of ${cap} used. Each hint needs a fresh attempt first, and any hint lowers the rating.`}
-      </p>
-    </Panel>
-  )
-}
-
-type PaneProps = {
-  drill: DrillState
+export type CardViewProps = {
+  attempt: StudyAttempt
+  kind: CardKind
   language: TargetLanguage
   position: string
   tally: Tally
-  dispatch: (a: Parameters<typeof drillReducer>[1]) => void
-  onHint: () => void
-  onCheck: () => void
-  onRetryReview: () => void
+  pending: boolean
+  error: string | null
+  actions: CardActions
+  /** Runs a move (one of `actions`) with the pending state and error handling; the tab supplies it. */
+  run: (move: () => Promise<unknown> | null) => void
   onNext: () => void
   isLast: boolean
   audio: AudioEnv
@@ -302,79 +290,162 @@ type PaneProps = {
   sayError: string | null
 }
 
-function CardPane({ drill, language, position, tally, dispatch, onHint, onCheck, onRetryReview, onNext, isLast, audio, say, stop, sayStatus, sayError }: PaneProps) {
+/** One card, drawn from the attempt the server last accepted. */
+export function CardView(props: CardViewProps) {
+  return (
+    <div className="@container">
+      <div className="grid items-start gap-5 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
+        <CardPane {...props} />
+        <aside className="flex flex-col gap-5">
+          <ConfidencePanel attempt={props.attempt} pending={props.pending} actions={props.actions} run={props.run} />
+          <Ladder attempt={props.attempt} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+/** Confidence comes after the answer is sealed: before that there is nothing to press. */
+function ConfidencePanel({ attempt, pending, actions, run }: Pick<CardViewProps, "attempt" | "pending" | "actions" | "run">) {
+  const c = attempt.confidence
+  return (
+    <Panel eyebrow="After you answer" title="How sure are you?" className="lg-enter p-5" style={{ "--i": 1 } as React.CSSProperties}>
+      {attempt.status === "open" ? (
+        <p className="text-ink-2 text-sm leading-relaxed">You say how sure you are once your answer is submitted, so it cannot change the answer.</p>
+      ) : attempt.status === "committed" ? (
+        <>
+          <KeycapGroup
+            aria-label="Confidence, 1 guess to 4 certain"
+            choices={CONFIDENCE.map((x) => ({ id: x.id, legend: x.id, label: x.label }))}
+            value={null}
+            sendOnPress
+            onSubmit={(id) => run(() => actions.confidence(Number(id) as ConfidenceLevel))}
+            disabled={pending}
+          />
+          <KbdHint className="mt-4 text-[14px]">
+            Press <Kbd>1</Kbd> to <Kbd>4</Kbd>.
+          </KbdHint>
+          <Button variant="ghost" size="sm" className="mt-3" disabled={pending} onClick={() => run(() => actions.skipConfidence())}>
+            Skip
+          </Button>
+        </>
+      ) : (
+        <p className="text-sm">
+          {c?.level ? `${CONFIDENCE[c.level - 1].label} (${c.level} of 4)` : "Skipped"}
+        </p>
+      )}
+    </Panel>
+  )
+}
+
+function Ladder({ attempt }: { attempt: StudyAttempt }) {
+  const cap = Math.min(MAX_RUNG, attempt.item.rungs_available)
+  const used = hintsGiven(attempt).length
+  return (
+    <Panel eyebrow="Hint ladder" className="lg-enter p-5" style={{ "--i": 2 } as React.CSSProperties}>
+      <div className="flex gap-1.5" aria-hidden>
+        {Array.from({ length: MAX_RUNG }, (_, i) => (
+          <span key={i} className="lg-rung" data-used={i < used ? "" : undefined} style={i >= cap ? { opacity: 0.35 } : undefined} />
+        ))}
+      </div>
+      <p className="text-ink-2 mt-3 text-sm leading-relaxed">
+        {attempt.item.rungs_available === 0
+          ? "This card has no written hints."
+          : `${used} of ${cap} used. Hints open if your answer is missed. Your first answer is already sealed, so they do not change its rating.`}
+      </p>
+    </Panel>
+  )
+}
+
+function CardPane({ attempt, kind, language, position, tally, pending, error, actions, run, onNext, isLast, audio, say, stop, sayStatus, sayError }: CardViewProps) {
   const meta = languageMeta(language)
-  const { card } = drill
-  const kind = KIND_COPY[card.kind]
-  const targetPrompt = card.kind !== "production"
-  const listening = card.kind === "listening"
-  const checked = drill.phase !== "attempt"
+  const copy = KIND_COPY[kind]
+  const targetPrompt = kind !== "production"
+  const status = attempt.status
+  const [draft, setDraft] = useState("")
+  const [repair, setRepair] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const repairRef = useRef<HTMLInputElement>(null)
+  const checkRef = useRef<HTMLButtonElement>(null)
   const nextRef = useRef<HTMLButtonElement>(null)
-  const blocker = hintBlocker(drill)
-  const check = drill.check
+  const repairs = attempt.repairs.length
 
   useEffect(() => {
-    if (drill.phase === "attempt") inputRef.current?.focus()
-  }, [drill.phase])
+    if (status === "open") inputRef.current?.focus()
+    if (status === "ready") checkRef.current?.focus()
+    if (status === "closed") nextRef.current?.focus()
+  }, [status])
   useEffect(() => {
-    if (drill.phase === "done") nextRef.current?.focus()
-  }, [drill.phase])
+    if (status === "remediating") repairRef.current?.focus()
+    setRepair("")
+  }, [status, repairs])
 
-  const heard = check ? targetSentence(card, check) : card.prompt
+  const hidePrompt = kind === "listening" && (status === "open" || status === "committed" || status === "ready")
+  const first = attempt.first_response
+  const hints = hintsGiven(attempt)
+  const blocker = hintBlocker(attempt)
 
   return (
     <Panel
-      eyebrow={`${position} · ${kind.label}`}
-      title={kind.ask(meta.english)}
+      eyebrow={`${position} · ${copy.label}`}
+      title={copy.ask(meta.english)}
       className="lg-enter p-6"
       actions={<span className="text-ink-3 font-mono text-[11px] tracking-[0.08em]">{tally.reviewed} reviewed</span>}
     >
-      {listening && !checked ? (
+      {hidePrompt ? (
         <div className="flex items-center gap-3 py-2">
-          <PlayButton label="Play the sentence" status={sayStatus} onPlay={() => void say(card.prompt)} onStop={stop} disabledReason={audio.blocker} variant="secondary" size="default" />
+          <PlayButton label="Play the sentence" status={sayStatus} onPlay={() => void say(attempt.item.prompt)} onStop={stop} disabledReason={audio.blocker} variant="secondary" size="default" />
           <span className="text-ink-2 text-sm">{audio.blocker ?? "The text stays hidden until you check."}</span>
         </div>
       ) : (
         <p lang={targetPrompt ? language : "en"} className="font-serif text-[26px] leading-snug tracking-[-0.01em] text-balance">
-          {card.prompt}
+          {attempt.item.prompt}
         </p>
       )}
 
-      <div className="mt-5">
-        <label htmlFor="lg-answer" className="mb-1.5 block">
-          <Eyebrow>Your attempt</Eyebrow>
-        </label>
-        <input
-          id="lg-answer"
-          ref={inputRef}
-          type="text"
-          lang={targetPrompt ? "en" : language}
-          autoComplete="off"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className={FIELD}
-          placeholder={targetPrompt ? "Type the meaning in English" : `Type it in ${meta.english}`}
-          value={drill.draft}
-          readOnly={checked}
-          aria-describedby="lg-answer-help"
-          onChange={(e) => dispatch({ type: "draft", text: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.nativeEvent.isComposing) return
-            e.preventDefault()
-            if (canCheck(drill)) onCheck()
-            else if (!checked) document.querySelector<HTMLElement>('[data-slot="kit-keycap"]')?.focus()
-          }}
-        />
-        <p id="lg-answer-help" className="text-ink-3 mt-1.5 text-[13px]">
-          Attempt first: hints open once you have typed something.
-        </p>
-      </div>
+      {status === "open" ? (
+        <div className="mt-5">
+          <label htmlFor="lg-answer" className="mb-1.5 block">
+            <Eyebrow>Your answer</Eyebrow>
+          </label>
+          <input
+            id="lg-answer"
+            ref={inputRef}
+            type="text"
+            lang={targetPrompt ? "en" : language}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className={FIELD}
+            placeholder={targetPrompt ? "Type the meaning in English" : `Type it in ${meta.english}`}
+            value={draft}
+            aria-describedby="lg-answer-help"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return
+              e.preventDefault()
+              if (!pending) run(() => actions.answer(draft))
+            }}
+          />
+          <p id="lg-answer-help" className="text-ink-3 mt-1.5 text-[13px]">
+            Your first answer is sealed when you submit it. Then you say how sure you were, then it is checked.
+          </p>
+        </div>
+      ) : first ? (
+        <dl className="mt-5">
+          <dt>
+            <Eyebrow>Your answer</Eyebrow>
+          </dt>
+          <dd lang={targetPrompt ? "en" : language} className="mt-1.5 font-serif text-[20px] leading-snug">
+            {first.input_mode === "dont_know" ? <span className="text-ink-2">You said you did not know.</span> : first.response}
+          </dd>
+        </dl>
+      ) : null}
 
-      {drill.hints.length > 0 ? (
+      {hints.length > 0 ? (
         <ol className="mt-4 flex flex-col gap-2" aria-label="Hints used">
-          {drill.hints.map((h) => (
+          {hints.map((h) => (
             <li key={h.rung} className="border-hairline bg-secondary/60 flex gap-3 rounded-lg border px-3.5 py-2.5 text-[15px] leading-relaxed">
               <span className="text-ink-3 mt-0.5 shrink-0 font-mono text-[11px] tracking-[0.14em] uppercase">Hint {h.rung}</span>
               <span lang={language}>{h.text ?? "No written text for this rung. Try once more from what you know."}</span>
@@ -383,44 +454,97 @@ function CardPane({ drill, language, position, tally, dispatch, onHint, onCheck,
         </ol>
       ) : null}
 
-      {drill.error ? (
+      {error ? (
         <Notice tone="warn" className="mt-4">
-          {drill.error}
+          {error}
         </Notice>
       ) : null}
 
-      {!checked ? (
-        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button variant="outline" onClick={onHint} disabled={!canHint(drill)} title={blocker ?? undefined}>
-            {drill.pending === "hint" ? <Loader2 aria-hidden className="animate-spin" /> : <Lightbulb aria-hidden />}
-            Hint
+      {status === "open" ? (
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Button onClick={() => run(() => actions.answer(draft))} disabled={pending || draft.trim() === ""}>
+            {pending ? <Loader2 aria-hidden className="animate-spin" /> : null}
+            Submit answer
           </Button>
-          <Button onClick={onCheck} disabled={!canCheck(drill)}>
-            {drill.pending === "check" ? <Loader2 aria-hidden className="animate-spin" /> : null}
-            Check
+          <Button variant="outline" onClick={() => run(() => actions.dontKnow())} disabled={pending}>
+            I don't know
           </Button>
-          <span className="text-ink-3 text-[13px]" aria-live="polite">
-            {drill.confidence === null && drill.draft.trim() ? "Choose how sure you are to check." : blocker ?? ""}
-          </span>
         </div>
-      ) : check ? (
-        <Feedback
-          drill={drill}
-          language={language}
-          heard={heard}
-          audio={audio}
-          say={say}
-          stop={stop}
-          sayStatus={sayStatus}
-          sayError={sayError}
-          onRetryReview={onRetryReview}
-          onJudge={(correct) => dispatch({ type: "judge", correct })}
-        />
       ) : null}
 
-      {drill.phase === "done" ? (
+      {status === "committed" ? <p className="text-ink-2 mt-5 text-sm">Answer sealed. Say how sure you are to go on.</p> : null}
+
+      {status === "ready" ? (
         <div className="mt-5">
-          <Button ref={nextRef} onClick={onNext}>
+          <Button ref={checkRef} onClick={() => run(() => actions.check())} disabled={pending}>
+            {pending ? <Loader2 aria-hidden className="animate-spin" /> : null}
+            Check
+          </Button>
+        </div>
+      ) : null}
+
+      {status === "remediating" || status === "awaiting_self_assessment" || status === "closed" ? (
+        <Feedback attempt={attempt} kind={kind} language={language} audio={audio} say={say} stop={stop} sayStatus={sayStatus} sayError={sayError} />
+      ) : null}
+
+      {status === "remediating" ? (
+        <div className="mt-5">
+          <label htmlFor="lg-repair" className="mb-1.5 block">
+            <Eyebrow>Try again</Eyebrow>
+          </label>
+          <input
+            id="lg-repair"
+            ref={repairRef}
+            type="text"
+            lang={targetPrompt ? "en" : language}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className={FIELD}
+            placeholder="Correct your answer"
+            value={repair}
+            onChange={(e) => setRepair(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return
+              e.preventDefault()
+              if (!pending) run(() => actions.repair(repair))
+            }}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button onClick={() => run(() => actions.repair(repair))} disabled={pending || repair.trim() === ""}>
+              {pending ? <Loader2 aria-hidden className="animate-spin" /> : null}
+              Submit repair
+            </Button>
+            <Button variant="outline" onClick={() => run(() => actions.hint())} disabled={pending || !canHint(attempt)} title={blocker ?? undefined}>
+              <Lightbulb aria-hidden />
+              Hint
+            </Button>
+            <Button variant="outline" onClick={() => run(() => actions.giveUp())} disabled={pending}>
+              Give up
+            </Button>
+            <span className="text-ink-3 text-[13px]" aria-live="polite">
+              {blocker ?? ""}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {status === "awaiting_self_assessment" ? (
+        <div className="border-hairline-strong mt-5 flex flex-wrap items-center gap-3 rounded-xl border p-4">
+          <span className="text-[15px]">Compare yours with the reference. Did you have it?</span>
+          <Button variant="outline" disabled={pending} onClick={() => run(() => actions.selfAssess("correct"))}>
+            I got it
+          </Button>
+          <Button variant="outline" disabled={pending} onClick={() => run(() => actions.selfAssess("incorrect"))}>
+            I missed it
+          </Button>
+        </div>
+      ) : null}
+
+      {status === "closed" ? (
+        <div className="mt-5">
+          <Button ref={nextRef} onClick={onNext} disabled={pending}>
             {isLast ? "Finish" : "Next card"}
             <ArrowRight aria-hidden />
           </Button>
@@ -431,123 +555,110 @@ function CardPane({ drill, language, position, tally, dispatch, onHint, onCheck,
 }
 
 function Feedback({
-  drill,
+  attempt,
+  kind,
   language,
-  heard,
   audio,
   say,
   stop,
   sayStatus,
   sayError,
-  onRetryReview,
-  onJudge,
-}: {
-  drill: DrillState
-  language: TargetLanguage
-  heard: string
-  audio: AudioEnv
-  say: (text: string) => Promise<void>
-  stop: () => void
-  sayStatus: "idle" | "loading" | "playing" | "error"
-  sayError: string | null
-  onRetryReview: () => void
-  onJudge: (correct: boolean) => void
-}) {
-  const check = drill.check!
-  const word = check.correct === true ? "Correct" : check.correct === false ? (check.diagnostic === "accent" ? "Accent slip" : "Not quite") : "Compare"
-  const production = drill.card.kind === "production"
-  const confidentWrong = check.correct === false && (drill.confidence ?? 0) >= 3
-  const accent = check.correct === false && check.diagnostic === "accent" && production
+}: Pick<CardViewProps, "attempt" | "kind" | "language" | "audio" | "say" | "stop" | "sayStatus" | "sayError">) {
+  const check = latestCheck(attempt)
+  const released = attempt.released
+  const closed = attempt.status === "closed"
+  const production = kind === "production"
+  const chip = closed
+    ? outcomeOf(attempt)
+    : { word: check ? verdictWord(check) : "", ok: check ? (check.verdict === "correct" ? true : check.verdict === "incorrect" ? false : null) : null }
+  const slip = attempt.checks[0]?.diagnostic === "accent" && attempt.first_response !== null
+  const heard = released ? targetSentence(kind, attempt.item.prompt, released.correct_answer) : ""
+  const confidentWrong = attempt.checks[0]?.verdict === "incorrect" && (attempt.confidence?.level ?? 0) >= 3
+  const rating = closed ? ratingLine(attempt) : null
+  const due = formatDue(attempt.closure?.scheduler_disposition.applied?.due_at)
 
   return (
     <div className="lg-enter mt-6 flex flex-col gap-5" aria-live="polite">
       <div className="flex flex-wrap items-center gap-3">
-        <Verdict ok={check.correct} word={word} />
-        <span className="text-ink-2 text-[15px]">{feedbackLine(check)}</span>
+        <Verdict ok={chip.ok} word={chip.word} />
+        {!closed && check ? <span className="text-ink-2 text-[15px]">{feedbackLine(check)}</span> : null}
       </div>
 
-      <dl className="grid gap-x-6 gap-y-4 @xl:grid-cols-2">
-        <div>
-          <dt>
-            <Eyebrow>You wrote</Eyebrow>
-          </dt>
-          <dd lang={production ? language : "en"} className="mt-1.5 font-serif text-[20px] leading-snug">
-            {accent ? diffChars(drill.draft.trim(), check.correctAnswer).map((seg, i) => (seg.differs ? <span key={i} className="lg-diff">{seg.text}</span> : <span key={i}>{seg.text}</span>)) : drill.draft.trim()}
-          </dd>
-        </div>
-        <div>
-          <dt>
-            <Eyebrow>Reference</Eyebrow>
-          </dt>
-          <dd lang={production ? language : "en"} className="mt-1.5 font-serif text-[20px] leading-snug">
-            {check.correctAnswer}
-          </dd>
-        </div>
-      </dl>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <PlayButton label={audio.blocker ? "Hear it" : "Hear it again"} status={sayStatus} onPlay={() => void say(heard)} onStop={stop} disabledReason={audio.blocker} />
-        <span lang={language} className="text-ink-2 min-w-0 text-sm">{audio.blocker ? audio.blocker : sayError ?? heard}</span>
-      </div>
-
-      {check.explanation ? (
-        <p className="lg-reading text-[16px] leading-relaxed">{check.explanation}</p>
+      {attempt.repairs.length > 0 ? (
+        <ol className="flex flex-col gap-1.5" aria-label="Your repairs">
+          {attempt.repairs.map((r) => (
+            <li key={r.response_id} lang={production ? language : "en"} className="font-serif text-[18px] leading-snug">
+              {r.response}
+            </li>
+          ))}
+        </ol>
       ) : null}
-      {check.misconception ? (
+
+      {released ? (
+        <dl className="grid gap-x-6 gap-y-4 @xl:grid-cols-2">
+          {slip && production && attempt.first_response ? (
+            <div>
+              <dt>
+                <Eyebrow>Accents in your first answer</Eyebrow>
+              </dt>
+              <dd lang={language} className="mt-1.5 font-serif text-[20px] leading-snug">
+                {diffChars(attempt.first_response.response, released.correct_answer).map((seg, i) =>
+                  seg.differs ? (
+                    <span key={i} className="lg-diff">
+                      {seg.text}
+                    </span>
+                  ) : (
+                    <span key={i}>{seg.text}</span>
+                  ),
+                )}
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>
+              <Eyebrow>Reference</Eyebrow>
+            </dt>
+            <dd lang={production ? language : "en"} className="mt-1.5 font-serif text-[20px] leading-snug">
+              {released.correct_answer}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {released ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <PlayButton label={audio.blocker ? "Hear it" : "Hear it again"} status={sayStatus} onPlay={() => void say(heard)} onStop={stop} disabledReason={audio.blocker} />
+          <span lang={language} className="text-ink-2 min-w-0 text-sm">{audio.blocker ? audio.blocker : sayError ?? heard}</span>
+        </div>
+      ) : null}
+
+      {released?.explanation ? <p className="lg-reading text-[16px] leading-relaxed">{released.explanation}</p> : null}
+      {released?.misconception ? (
         <p className="border-hairline-strong rounded-lg border-l-2 py-1 pl-4 font-serif text-[16px] leading-relaxed">
           <span className="text-ink-3 mr-2 font-mono text-[11px] tracking-[0.14em] uppercase">Watch for</span>
-          {check.misconception}
+          {released.misconception}
         </p>
       ) : null}
+
       {confidentWrong ? (
-        <Notice>You were {drill.confidence === 4 ? "certain" : "fairly sure"} and it was wrong. Read the reference once more before moving on: this card comes back soon.</Notice>
+        <Notice>You were {attempt.confidence?.level === 4 ? "certain" : "fairly sure"} and it was wrong. Confident misses are worth slowing down for: this card comes back soon.</Notice>
       ) : null}
 
-      {needsJudgement(drill) ? (
-        <div className="border-hairline-strong flex flex-wrap items-center gap-3 rounded-xl border p-4">
-          <span className="text-[15px]">Compare yours with the reference. Did you have it?</span>
-          <Button variant="outline" onClick={() => onJudge(true)}>
-            I had it
-          </Button>
-          <Button variant="outline" onClick={() => onJudge(false)}>
-            I missed it
-          </Button>
+      {attempt.offer && !closed ? <Notice>Two repairs have missed. Give up to see the answer and its explanation.</Notice> : null}
+
+      {rating ? (
+        <div className="border-hairline flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4 text-sm">
+          {rating.rating ? (
+            <span>
+              <Eyebrow className="mr-2">Rated</Eyebrow>
+              <strong className="font-medium">{rating.rating}</strong>
+            </span>
+          ) : null}
+          <span className="text-ink-2">{rating.why}</span>
+          {rating.rating ? <span className="text-ink-2">{due ? `Next review ${due}.` : "No next review date."}</span> : null}
+          <span className="text-ink-3">{assistanceNote(hintsGiven(attempt).length)}</span>
         </div>
       ) : null}
-
-      <Outcome drill={drill} onRetryReview={onRetryReview} />
     </div>
   )
-}
-
-function Outcome({ drill, onRetryReview }: { drill: DrillState; onRetryReview: () => void }) {
-  if (drill.phase === "done" && drill.review) {
-    return (
-      <div className="border-hairline flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4 text-sm">
-        <span>
-          <Eyebrow className="mr-2">Rated</Eyebrow>
-          <strong className="font-medium">{RATING_WORD[drill.review.rating] ?? drill.review.rating}</strong>
-        </span>
-        <span className="text-ink-2">{drill.review.nextDue ? `Next review ${drill.review.nextDue}.` : "No next review date."}</span>
-        <span className="text-ink-3">{assistanceNote(drill.hints.length)}</span>
-      </div>
-    )
-  }
-  if (drill.pending === "review") {
-    return (
-      <p className="text-ink-2 flex items-center gap-2 text-sm">
-        <Loader2 aria-hidden className={cn("size-4 animate-spin")} /> Scheduling the next review
-      </p>
-    )
-  }
-  if (canReview(drill) && drill.error) {
-    return (
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={onRetryReview}>
-          <RefreshCw aria-hidden /> Retry the review
-        </Button>
-      </div>
-    )
-  }
-  return null
 }

@@ -1,6 +1,6 @@
 {
     "name": "get_next_question",
-    "description": "Get the next practice question due for review and open an attempt on it. Returns attempt_id, question_id, question, question_type, options (option letter to text) and rungs_available (how many written hints exist), or a sentence when nothing is due. It never contains the answer or the hints.",
+    "description": "Open the next practice question due for review. Returns attempt_id, question_id, question, question_type, options (option letter to text) and rungs_available (how many written hints exist), or a sentence when nothing is due or when the current question must be finished first. It never contains the answer or the hints.",
     "type": "client",
     "expects_response": true,
     "response_timeout_secs": 30,

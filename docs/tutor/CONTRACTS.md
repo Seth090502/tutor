@@ -11,8 +11,8 @@ Times are epoch seconds (float), like DeepTutor.
 | Desktop dev server (Vite) | `http://127.0.0.1:1420` |
 
 Browser origins the app uses (must be allowed by both services' CORS and DeepTutor's WebSocket
-origin guard): `http://localhost:1420`, `http://127.0.0.1:1420`, `http://tauri.localhost`,
-`tauri://localhost`.
+origin guard): `http://tauri.localhost`, `tauri://localhost`, and in debug builds only the dev
+server's `http://localhost:1420`, `http://127.0.0.1:1420` (C3).
 
 ## C1. rag-engine service
 
@@ -44,7 +44,8 @@ origin guard): `http://localhost:1420`, `http://127.0.0.1:1420`, `http://tauri.l
 `active_job` is null or a job object (below).
 
 `POST /survey {"root": "<optional dir>"}` and `POST /ingest {"root": "<optional>", "rebuild": false}`
-return `202 {"job_id": "…"}`, or `409 {"error": "…"}` while another job runs.
+return `202 {"job_id": "…"}`, or `409 {"error": "…"}` while another job runs. A `root` outside the
+corpus and notes folders answers `400 {"error": "…"}`.
 
 `GET /jobs/{job_id}` returns:
 ```json
@@ -110,6 +111,17 @@ JS. Typed wrappers live in `apps/desktop/src/lib/backend.ts`.
 The shell starts both services as child processes in a Windows Job Object (killed with the app),
 passes the allowed browser origins to DeepTutor via `CORS_ORIGINS`, and passes stored secrets to the
 services as environment variables at launch.
+
+**Host and Origin rule (both services).** A release build trusts only `http://tauri.localhost` and
+`tauri://localhost`; a debug build also trusts the dev server's `http://localhost:1420` and
+`http://127.0.0.1:1420` (the shell's `APP_ORIGINS`, rag-engine's `ALLOWED_ORIGINS`); DeepTutor adds
+its web frontend's defaults (`app_origins` in `deeptutor/services/config/origins.py`). Each service
+answers 403 when the `Host` header is not `127.0.0.1`, `localhost` or `[::1]` on the port it listens
+on (DeepTutor also accepts values listed in `DEEPTUTOR_ALLOWED_HOSTS`; rag-engine in token mode also
+accepts its `--bind` address, and checks no Host when bound to `0.0.0.0` or `::`). A request other
+than GET, HEAD or OPTIONS answers 403 when it carries an `Origin` that is not a trusted origin, or
+no `Origin` and `Sec-Fetch-Site: cross-site`. Requests without `Origin` (native clients, the
+shell's health checks) pass.
 
 ## C4. Desktop module ownership
 
@@ -202,7 +214,7 @@ type NBackSummary = { id: string; started_at: number; mode: string; blocks: numb
 ## C7. Practice attempts, hint ladder and rating policy (DeepTutor backend)
 
 Spec: `docs/tutor/PEDAGOGY.md`. The routes live under `/api/question-notebook/practice`. The existing routes
-keep working unchanged.
+keep working. New clients use C12; reviews recorded here are labelled `legacy_*` (C12).
 
 - **Questions:** questions gain `hints: list[str]`, ordered rungs 1-4 (nudge, hint, key step, worked
   example). They are imported from a `hints` column, `|`-separated, and returned on the entry.
@@ -225,40 +237,53 @@ keep working unchanged.
   - `judged_correct` is required only when the check returned `correct: null`; it is recorded as
     self-reported.
   - Without `attempt_id`, the existing behaviour applies.
-- **Rating policy (server):**
-  - not correct: `again`;
-  - revealed or highest rung 4 or more: `again`;
-  - highest rung 2-3: `hard`;
-  - otherwise `good`.
+- **Rating policy (server, `review-policy/2`, 2026-09-30):**
+  - correct with no hint and not revealed: `good`;
+  - anything else (wrong, any hint, revealed): `again`.
+  - `hard` is no longer produced (evidence ledger EV-002, EV-014); policy 1 gave `good` after rung 1 and
+    `hard` after rungs 2-3.
   - Confidence never changes the rating.
-- **`GET /analytics`** adds (see also C8 for how the voice screen shows attempts):
+- **`GET /analytics`** adds (C7 attempts only; C12 attempts are reported from Phase 2):
   - `calibration: [{"level": 1-4, "attempts": int, "correct": int}]`;
   - `assistance: {"attempts": int, "hinted": int, "revealed": int}`.
 
-## C8. Voice tutor events (desktop)
+## C8. Voice tutor and the Tutor screen (desktop)
 
-`apps/desktop/src/features/voice/tools.ts` owns the client tools and publishes what they did, so the Tutor
-screen can show the current question without the answer key leaking to the model.
+Supersedes the C8 event list of 2026-09-30 (`TutorEvent`, `"My answer: B"` messages), which is removed.
 
-```ts
-export type TutorEvent =
-  | { type: "question"; attempt_id: string; question_id: number; question: string;
-      question_type: string; options: Record<string, string> }
-  | { type: "confidence"; attempt_id: string; level: 1 | 2 | 3 | 4 }
-  | { type: "hint"; attempt_id: string; rung: number; text: string | null; is_answer: boolean }
-  | { type: "checked"; attempt_id: string; correct: boolean | null; correct_answer: string;
-      explanation: string; misconception: string | null }
-  | { type: "reviewed"; attempt_id: string; rating: string; next_due: string | null }
-export function onTutorEvent(listener: (e: TutorEvent) => void): () => void
-```
+The Tutor screen keeps one C12 study session in practice mode (`apps/desktop/src/features/voice/practice.ts`).
+Its id is stored in localStorage under `tutor.study.voice`. On mount the screen resumes it
+(`GET /api/study/sessions/{id}`) and forgets the id when the session is closed or unknown. A new session starts
+when practice first starts: the first `get_next_question`, "Practise without a call", or Next question.
 
-- **Showing the attempt:** the screen renders the question card, the A-D keycaps, the confidence keys 1-4
-  and the hint rung from these events.
-- **Answers and confidence from the screen:** they are sent to the agent as user messages
-  (`"My answer: B"`, `"Confidence: 3"`), so the agent still calls the tools. The screen never calls the
-  practice API directly.
-- **After the check:** the card flips to show the explanation and misconception only after a `checked`
-  event.
+- **One attempt, one writer.** The voice tools (`X-Tutor-Source: voice_tool`) and the typed controls (`ui`) send
+  commands to that session through one `StudySession`, one at a time. The screen renders only the accepted public
+  state from `StudySession.subscribe`; nothing is optimistic. A session started by a tool is recorded as
+  `voice_tool`.
+- **Voice tools** (`tools.ts`, `createTutorTools`):
+  - `get_next_question {domain?}`: queue by tag, then `open_item`; refuses while an attempt is live, and says
+    nothing is due when the domain has nothing due.
+  - `propose_answer {transcript}`: `propose_response` only; it never commits.
+  - `set_confidence {level}`: only in `committed`.
+  - `get_hint {}`, `check_answer {}`, `give_up {}`.
+  - `search_library {query, domain?}`: sends `attempt_id` while an attempt is live.
+  - `get_progress {}`: still reads the C7 summary and analytics (C12 attempts join it in Phase 2).
+  - There is no `record_review`: the server schedules FSRS at closure. Results carry `correct_answer`,
+    `explanation` and `misconception` only from `attempt.released`.
+- **Typed controls** (`ui`):
+  - A-D or a text field commit a typed answer; "I don't know" commits `dont_know`.
+  - A pending proposal shows "Tutor heard: ..." with Confirm and an editable field. Confirm sends a spoken
+    commit (or a spoken repair while remediating) with `transcript_confirmation {raw_transcript, confirmed_text}`.
+  - In `committed`: confidence 1-4, or Skip with a reason.
+  - In `ready`: Check. In `remediating`: hint, typed repair, Give up.
+  - In `awaiting_self_assessment`: I got it / I missed it. When closed: Next question.
+  - A hint before answering is allowed, and the panel says the item will not count as unaided.
+- **Screen to agent:** once the server accepts a typed action and a call is live, the screen sends the agent a
+  user message starting with `On screen:`. It carries the same public data the matching tool would return.
+- **Showing answers:** answer, explanation and misconception appear only from `attempt.released`. The closed view
+  shows the rating with its provenance in words (for example "Again, because a hint was used").
+- **Session lifetime:** practice sessions stay active across restarts; nothing closes them yet (assessment
+  sessions will close explicitly).
 
 ## C9. rag-engine: remote host, library browsing, scale
 
@@ -270,7 +295,7 @@ corpus that will grow by orders of magnitude.
   - With `RAG_ENGINE_TOKEN` set, every route except `GET /health` requires
     `Authorization: Bearer <token>`, or it returns 401 `{"error": "…"}`.
   - A non-loopback `--bind` without a token refuses to start.
-  - CORS keeps the four app origins and allows the `Authorization` header.
+  - CORS keeps the app origins (C3) and allows the `Authorization` header.
 - **`GET /documents?domain=&source_type=&q=&sort=title|added|pages&limit=50&offset=0`** returns
   `{"total": int, "documents": [Doc]}`.
   - `Doc = {doc_id, path, title, domain, source_type, pages, chunks, bytes, added_at, ocr_pending}`.
@@ -394,3 +419,197 @@ so the agent never sees withheld chunks.
   FSRS reviews and mastery exclude them. They can still be practised, with a note that they are unscored.
 - **rag-engine page images** report `X-Quote-Matches: <int>`. After a schema change, rag-engine starts a
   re-index from SQLite on its own at startup (no re-extraction).
+
+## C12. Study sessions, attempts and review evidence (DeepTutor backend)
+
+Supersedes the C7 flow for new clients; C7 routes keep working and are labelled legacy. Spec:
+`PEDAGOGY.md`. Code: `deeptutor/services/practice/loop.py`, routes `deeptutor/api/routers/learning.py`,
+mounted at **`/api/study`** (upstream retired `/api/learning` and guards it).
+
+**One writer.** The practice store writes sessions, attempts, events and FSRS state in the notebook
+database. A command's events, its attempt update and, at closure, the FSRS review of the first outcome
+commit in one SQLite transaction, so a crash can neither lose nor duplicate a review. Python was chosen
+over Rust for this piece because the FSRS writer, the answer keys and the language checkers already live
+in that process; any other placement would need two writers or an outbox. Rust projections (skills,
+queue, probes) will read `learning_events` (planned C13).
+
+**Envelope.** `POST /api/study/commands` with header `X-Tutor-Source: ui | voice_tool`, set by the calling
+code path and never by a model; a missing or other value is 422.
+
+```
+Command: {schema_version: 1, command_id: UUID, session_id?, attempt_id?, expected_version: int | null,
+          kind, payload}
+Result:  {schema_version: 1, command_id, aggregate_version, last_event_seq,
+          public_state: {session, attempt | null}, events: [Event]}
+Error:   {"error": {code, message, retryable, current_version?}}
+         conflict 409, invalid_transition 409, invalid_input 422, not_found 404, unauthorized 403,
+         budget_exceeded 402, unavailable 503, unverified 424
+Event:   {event_id, seq, kind, attempt_id, recorded_at, source, payload}   (public-safe)
+```
+
+- The aggregate is the session. `expected_version` is the version last seen (`start_session` sends null);
+  a stale version is `conflict` with `current_version` and changes nothing.
+- The server sets `recorded_at` (epoch seconds) and `source`.
+- The same `command_id` with the same content returns the stored result; with other content it is
+  `invalid_input`. Network retries reuse the id; they are never recorded as answers.
+- Events are append-only (database triggers refuse UPDATE and DELETE), with a per-session `seq` and a
+  global `event_seq`.
+- `GET /api/study/sessions/{id}?after_seq=N` returns `{session, attempts, events after N, last_event_seq}`.
+  `GET /api/study/sessions/active` returns the newest active session or null (resume after a restart).
+- `GET /api/study/queue?limit&tag` returns due items with public fields only (`entry_id, prompt,
+  question_type, options, lang, tags, due_at`). Quarantined and `provisional` items are excluded, and the
+  C7 queue excludes them too. `tag` matches a category name case-insensitively (`lang:es`, `Math`).
+
+**Kinds and statuses.** Statuses: `open`, `committed`, `ready`, `remediating`, `awaiting_self_assessment`,
+`submitted` (assessment only), `closed`.
+
+| Kind | Allowed from | Effect |
+|---|---|---|
+| `start_session {mode, curriculum_version?}` | no session | new active session; mode is practice, assessment or instruction |
+| `open_item {entry_id}` | no other open item (submitted assessment items do not block) | attempt `open`; assessment items must be auto-checkable |
+| `request_assistance {kind: "hint"}` | `open` (an assisted start) or `remediating`; never in assessment | next ladder rung 1-4 with its text, or null text; no rung 5 |
+| `request_assistance {kind: gloss, source_open or other, content_ref?}` | `open`, `remediating` | recorded assistance, no text |
+| `propose_response {input_mode: spoken or dont_know, raw_transcript}` | `open`, `remediating` | a pending proposal for the learner to confirm |
+| `commit_response {response, input_mode, transcript_confirmation?}` | `open`; source `ui` only | first response sealed; spoken needs `{raw_transcript, confirmed_text}` |
+| `record_confidence {level: 1-4 or null, skipped_reason?}` | `committed` | `ready`; a skip needs a reason |
+| `check {}` | `ready` | see verdicts below |
+| `self_assess {judged: correct or incorrect}` | `awaiting_self_assessment`; source `ui` only | closed `self_assessed` |
+| `submit_repair {response, input_mode: typed or spoken}` | `remediating`; source `ui` only | appended check; a correct repair closes; two misses add `offer: worked_example_then_fresh_problem` |
+| `give_up {}` | `open`, `remediating`; not in assessment | closed `revealed`; before any answer it records `dont_know` |
+| `abandon {}` | any live status except `submitted` | closed `abandoned` and nothing released; after hints with no answer it records an assisted `dont_know` |
+| `invalidate_item {reason}` | any | item quarantined; a live attempt closes `invalidated` without a review |
+| `close_session {}` | an active session | submitted items close and release; the rest close `abandoned` |
+
+Items carry `skill_ids` (from `skill:<id>` category tags) and `family_id` (from a `family:<id>` tag) in
+`attempt.item` and in the `item_opened` event, so projections (C13) need only events.
+
+Check verdicts:
+- `correct`: in practice, the attempt closes `correct`.
+- `incorrect`: in practice, `remediating`. A dont_know response is `incorrect` with checker `dont_know`.
+- `unverifiable`: there is no checker, so the reference answer is released and the learner self-assesses.
+- `invalid_item`: the key cannot be read, so the item is quarantined and the attempt closes `invalidated`.
+- In assessment every checked item waits as `submitted`. Its verdict is hidden in state and events until
+  `close_session` publishes `checks_released`.
+- An item edited after it was opened makes `check` a conflict.
+
+**Public versus private.** Attempt state carries the prompt, options, type, the learner's responses,
+confidence, public checks, the assistance given so far, the pending proposal, the closure and `offer`.
+`released: {correct_answer, accepted_answers, explanation, misconception}` appears only after a closure that
+releases it (`correct`, `revealed`, `self_assessed`) or for self-assessment. Keys, unrequested hints,
+explanations and misconceptions never appear in events, open attempts or the queue. The teaching model
+receives exactly what the UI receives.
+
+**Review evidence (policy `review-policy/2`).** Computed from the first outcome and applied once at
+closure through `PracticeStore.apply_review` with request id `ev:<attempt_id>`:
+
+| First outcome | Assistance before commit | FSRS rating | Provenance |
+|---|---|---|---|
+| correct | none | Good | `verified` |
+| correct | any | Again | `assisted` |
+| incorrect or dont_know | none or any | Again | `verified` or `assisted` |
+| unverifiable, then self-assessed | none | the learner's judgement (Good or Again) | `self_report` |
+| anything, in instruction mode | - | none | - |
+| invalidated, or abandoned before a check | - | none | - |
+
+Hard is never produced. Repairs, reveals and retries never add a review. Every review event records
+`provenance` inside `outcome_json` (read it with `COALESCE(json_extract(outcome_json, '$.provenance'),
+'legacy')`). C7 reviews are `legacy_attempt`, `legacy_self_report` or `legacy_client_rating`, and rows from
+before this change read as `legacy`. Only `verified` reviews may enter verified outcome reports.
+
+**Measurement eligibility** (closed attempts only). An attempt is eligible only for a checked, unassisted
+first response, in practice or assessment, on an item not exposed (hint or answer seen) in the previous 24
+hours. Reasons: `assisted`, `unverified`, `no_checked_response`, `instruction_mode`, `invalid_item`,
+`exposed_within_24h`. A relearning attempt still gets its FSRS review; it is not independent evidence.
+
+**Legacy entry paths** (kept for the upstream web UI and other DeepTutor surfaces, never verified):
+- C7 reviews are labelled `legacy_*` (tested in `tests/api/test_practice_attempts.py`).
+- `POST /practice/questions/{id}/check` grades without an attempt and writes nothing. Answers probed there
+  are not tracked as exposure; the desktop app does not call it.
+- Chat, Book focus-check, immersive reading and Mastery Path capture wrong answers as bank mistakes (the
+  `practice_capture_*` triggers set a due date) with no review and no study event.
+- Imports into "mistakes" set a due date the same way.
+
+**Migration and rollback.** Additive only: new tables (`learning_sessions`, `learning_attempts`,
+`learning_events`, `learning_commands`, `practice_item_status`); no existing table, column or row changes.
+An older build runs against a migrated database unchanged: it ignores the new tables, its reviews read as
+`legacy`, and it does not honour quarantine or the provisional exclusion. Backup before first run: the
+notebook database is one SQLite file; copy it with the SQLite backup API (the workspace data-migration
+code already does, `services/workspace/data_migration.py`) while the backend is stopped.
+
+## C13. Learner projections, study plan and probes (Rust `learning-core`, desktop shell, backend feed)
+
+Status: specified 2026-09-30 for Phase 2. Every number below is a **local policy default**, versioned and
+provisional (evidence ledger EV-023); none of them establishes improved learning.
+
+**Pieces and owners.**
+- `crates/learning-core` (Rust library, pure: no I/O, no clock; every time is an argument): skill
+  projection (`skills`), study plan (`plan`), probe rules (`probes`).
+- Backend read adapter (Python, read-only; C12 stays the only writer):
+  - `GET /api/study/feed?after_event_seq=N&limit=500` returns
+    `{schema_version: 1, store_id, events: [{event_seq, session_id, seq, attempt_id, kind, recorded_at,
+    source, payload}], next_after}` in `event_seq` order. `store_id` is a UUID kept in a `learning_meta`
+    table, so projections from different workspaces never mix.
+  - `GET /api/study/candidates` returns, for every visible item that is not quarantined or provisional,
+    `{entry_id, track, question_type, lang, skill_ids, family_id, tags, due_at, retrievability, stability,
+    difficulty, review_count, last_review_at, fsrs_state, estimated_seconds}`. Retrievability comes from
+    py-fsrs (one implementation of the forgetting curve).
+- Projection host (desktop shell, `src-tauri/src/learning.rs`): `<app data>/learning.sqlite` holds
+  `projection_progress(store_id, policy_version, last_event_seq)` and `skill_observations`. It catches up
+  from the feed on demand, and it is rebuilt from scratch when the policy version changes or on request.
+  Tauri commands: `learning_skills()`, `learning_plan(request)`.
+
+**Observations.** One per skill id of an `attempt_closed` event whose `measurement_eligibility.eligible`
+is true: `y = 1` when the first outcome is `correct`, else 0, at the event's `recorded_at`; skills and
+family come from the attempt's `item_opened` event (family defaults to the item). Ineligible attempts
+(assisted, unverified, exposed, instruction, invalid, abandoned) are counted in `excluded` by reason and
+never update the posterior.
+
+**Skill state (`skill-policy/1`).**
+- Prior `alpha0 = beta0 = 1`; `half_life_days = 30` (pilot; the report also shows 14 and 60).
+- Before each observation at time `t`: `w = exp(-ln 2 * (t - t_prev) / 86400 / half_life_days)`;
+  `alpha = alpha0 + w * (alpha - alpha0) + y * c`; `beta = beta0 + w * (beta - beta0) + (1 - y) * c`.
+- Dependence cap: per (skill, family, local date in the learner's timezone) the first observation has
+  `c = 1`; later ones have `c = 0`, are kept, and are flagged `dependent`.
+- `effective_weight = (alpha - alpha0) + (beta - beta0)`; `p_mastery = P(p >= 0.70) = 1 - I_0.70(alpha, beta)`.
+- `SkillState {skill_id, policy_version, alpha, beta, effective_weight, eligible_observations,
+  dependent_observations, distinct_families, families_available, distinct_dates, last_exposure_at,
+  delayed_evidence: [{attempt_id, at, gap_days, y}], p_mastery, status, limitations}`.
+- Status (advisory, reversible, never a lesson gate):
+  - `insufficient`: fewer than 15 eligible observations or fewer than 3 distinct dates.
+  - `provisionally_mastered`: `p_mastery >= 0.80`, at least 15 eligible observations on at least 3
+    dates, at least 3 distinct families when the skill's items span 3 or more families (otherwise the
+    limitation "fewer than 3 families authored" is shown), and at least one correct eligible observation
+    7 or more days after the previous exposure to the skill.
+  - `needs_review`: was provisionally mastered and later fails the probability or delayed criterion.
+  - `developing`: otherwise.
+- With a uniform prior, four successes already give `P(p >= 0.70) = 1 - 0.7^5 = 0.832`; the 15-observation
+  floor exists because of that. Stronger mastery language needs calibration against held-out work.
+
+**Study plan (`plan-policy/1`).**
+- `PlanRequest {now, timezone, available_minutes, active_tracks, review_budget_minutes = 45,
+  new_item_budget, study_soft_stop_minutes = 90, procedure_share_min = 0.3, fatigue: none|tired|rested,
+  excluded_experiment_units}`.
+- One global budget across every subject and language: each language card kind (recognition, production,
+  listening) is a separate item charged against it. Active language tracks share the budget; five tracks
+  never multiply it.
+- Ranking: due items by lowest retrievability, with each active track's share proportional to its due
+  load and a floor so no track starves; procedures and writing keep at least `procedure_share_min` of the
+  minutes when such candidates exist; new items only after due work, up to `new_item_budget`.
+- Estimated seconds default by kind (atom 20, language card 15, procedure 180, writing 900) until measured
+  medians replace them.
+- `PlanItem {entry_id, track, reason, estimated_seconds, priority_components {retrievability,
+  overdue_days, track_share}, due_at}` and `PlanSummary {minutes_by_track, deferred_by_track, total_minutes,
+  budget_minutes, notes}`. `fatigue: tired` suggests a smaller budget; the learner can undo it.
+
+**Probes (Phase 2b).** `ProbePlan {id, skill_id, heldout_entry_id, arm: day7_only|day30_only|day7_and_day30,
+anchor_event_id, anchor_kind, target_delay_days, due_at, feedback_release_policy, intervening_exposures,
+contamination_flags, status}`. The backend stores probe plans (it gates the queue and retrieval);
+`learning-core` computes due dates and contamination from the feed. Reserved items stay out of the queue
+and out of generation and retrieval contexts until the probe; arms are reported separately; a simulated
+clock verifies scheduling only, never retention.
+
+**Acceptance tests.** Exact Beta values for hand-computed sequences; the four-success counterexample;
+decay halving at one half-life; identical state whatever the batch split of the feed; the dependence cap
+on a DST boundary in `America/New_York`; ineligible attempts excluded by reason; a plan over 500 due
+Spanish cards plus 5 maths procedures that still includes the procedures; five language tracks with large
+backlogs staying within one budget; deterministic ordering.

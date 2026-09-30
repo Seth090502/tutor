@@ -1968,13 +1968,21 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
     api_key = payload.api_key
     api_format = (payload.api_format or "").strip().lower()
     if payload.profile_id and (api_key == CATALOG_SECRET_MASK or not api_format):
-        service = get_model_catalog_service().load().get("services", {}).get(payload.service, {})
+        catalog = get_model_catalog_service().load()
+        service = catalog.get("services", {}).get(payload.service, {})
         profile = next(
             (item for item in service.get("profiles", []) if item.get("id") == payload.profile_id),
             None,
         )
         if api_key == CATALOG_SECRET_MASK:
-            api_key = profile.get("api_key") if profile else None
+            # Same rule as saving: a stored key is only sent to the server it was
+            # entered for (CatalogSecretEndpointError answers 400 otherwise).
+            fields = {"id": payload.profile_id, "base_url": base_url, "api_key": api_key}
+            proposed = {"services": {payload.service: {"profiles": [fields]}}}
+            restored = restore_catalog_secrets(proposed, catalog)
+            api_key = (
+                restored["services"][payload.service]["profiles"][0]["api_key"] if profile else None
+            )
         if not api_format and profile:
             api_format = str(profile.get("api_format") or "")
 

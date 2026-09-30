@@ -166,8 +166,34 @@ class AttemptNotFound(LookupError):
     pass
 
 
+def _attempt_row(conn: sqlite3.Connection, attempt_id: str) -> tuple | None:
+    """``(live, correct_answer, options_json)`` for a C12 study attempt or a C7 practice attempt.
+
+    A study attempt stays guarded until the server releases its answer (C12); a C7 attempt until
+    it is checked.
+    """
+    try:
+        row = conn.execute(
+            """SELECT a.status != 'closed' AND a.released_at IS NULL, n.correct_answer,
+                n.options_json
+            FROM learning_attempts a JOIN notebook_entries n ON n.id=a.entry_id
+            WHERE a.attempt_id=?""",
+            (attempt_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:  # a database from before study sessions
+        row = None
+    if row is not None:
+        return row
+    return conn.execute(
+        """SELECT a.closed_at IS NULL, n.correct_answer, n.options_json
+        FROM practice_attempts a JOIN notebook_entries n ON n.id=a.entry_id
+        WHERE a.attempt_id=?""",
+        (attempt_id,),
+    ).fetchone()
+
+
 def attempt_guard(db_path: Any, attempt_id: str | None) -> LeakGuard:
-    """The guard for ``attempt_id``: active while the attempt is open, inactive otherwise.
+    """The guard for ``attempt_id``: active while the attempt's answer is withheld, else inactive.
 
     Raises :class:`AttemptNotFound` for an id the practice store does not know.
     """
@@ -178,20 +204,15 @@ def attempt_guard(db_path: Any, attempt_id: str | None) -> LeakGuard:
     except sqlite3.Error as exc:
         raise AttemptNotFound(attempt_id) from exc
     try:
-        row = conn.execute(
-            """SELECT a.closed_at, n.correct_answer, n.options_json
-            FROM practice_attempts a JOIN notebook_entries n ON n.id=a.entry_id
-            WHERE a.attempt_id=?""",
-            (attempt_id,),
-        ).fetchone()
+        row = _attempt_row(conn, attempt_id)
     except sqlite3.OperationalError as exc:  # no practice tables yet: nothing was opened
         raise AttemptNotFound(attempt_id) from exc
     finally:
         conn.close()
     if row is None:
         raise AttemptNotFound(attempt_id)
-    closed_at, correct_answer, options_json = row
-    if closed_at is not None:
+    live, correct_answer, options_json = row
+    if not live:
         return LeakGuard()
     try:
         options = json.loads(options_json or "{}")

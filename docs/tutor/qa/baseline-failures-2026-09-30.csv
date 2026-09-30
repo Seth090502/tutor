@@ -1,0 +1,88 @@
+suite,test_id,error_type,first_error_line,test_file_changed_since_upstream
+pytest-backend,tests/api/test_subagents_router.py::test_connect_list_and_disconnect_roundtrip,AssertionError,AssertionError: assert '\\tmp' == '/tmp',no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation0],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation1],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation2],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation3],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation4],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_replays_events_and_materializes_messages[consultation5],AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_persists_private_provider_response_state,KeyError,KeyError: 'provider_response_state',no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_persists_llm_selection_in_turn_snapshot,KeyError,KeyError: 'metadata',no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_session_persona_persists_falls_back_and_clears,IndexError,IndexError: list index out of range,no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_allows_model_switching_within_same_session,IndexError,IndexError: list index out of range,no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_bootstraps_question_followup_context_once,AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_persists_deep_research_session_preference,AssertionError,"AssertionError: assert ['session', 'error', 'done'] == ['session', 'content', 'done']",no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_turn_runtime_injects_memory_and_refreshes_after_completion,KeyError,KeyError: 'memory_context',no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_prior_image_attachments_are_reattached_on_the_next_turn,IndexError,IndexError: list index out of range,no
+pytest-backend,tests/api/test_unified_ws_turn_runtime.py::test_reattaching_the_same_image_does_not_duplicate_it,IndexError,IndexError: list index out of range,no
+pytest-backend,tests/app/test_multiworker_turn_application.py::test_remote_worker_subscribes_and_cancels_owner_turn,AssertionError,assert False is True,no
+pytest-backend,tests/app/test_multiworker_turn_application.py::test_remote_worker_reply_reaches_owner_waiter,TimeoutError,asyncio.exceptions.CancelledError,no
+pytest-backend,tests/app/test_waiting_turn_recovery.py::test_live_owner_still_receives_replies,TimeoutError,asyncio.exceptions.CancelledError,no
+pytest-backend,tests/capabilities/test_setup_capability.py::test_concurrent_preference_writes_do_not_lose_updates,AssertionError,"AssertionError: assert {'probe_0', '...probe_3', ...} <= {'probe_0', '...probe_7', ...}",no
+pytest-backend,tests/core/test_builtin_tools.py::test_exec_tool_runs_python_source_by_default,AssertionError,AssertionError: assert False,no
+pytest-backend,tests/core/test_builtin_tools.py::test_exec_tool_runs_python_via_sandbox,AssertionError,AssertionError: assert False,no
+pytest-backend,tests/core/test_builtin_tools.py::test_exec_tool_compiles_cpp,AssertionError,AssertionError: assert False,no
+pytest-backend,tests/runtime/test_macos_command_launcher.py::test_macos_command_launcher_forwards_home_and_arguments,OSError,OSError: [WinError 193] %1 is not a valid Win32 application,no
+pytest-backend,tests/scripts/test_pre_commit_hook.py::test_hook_stops_when_repo_hygiene_fails,FileNotFoundError,FileNotFoundError: [WinError 2] The system cannot find the file specified,no
+pytest-backend,tests/services/cli_apps/test_installer.py::test_a_python_app_gets_its_own_venv_and_the_pinned_requirement,AssertionError,AssertionError: install finished but 'cli-anything-demo' is not in the app's bin directory — the package may publish a different command name,no
+pytest-backend,tests/services/cli_apps/test_installer.py::test_a_failed_update_puts_the_working_install_back,AssertionError,assert False,no
+pytest-backend,tests/services/cli_apps/test_installer.py::test_a_successful_install_records_what_it_can_be_checked_against,KeyError,KeyError: 'demo',no
+pytest-backend,tests/services/cli_apps/test_installer.py::test_a_floating_third_party_install_records_no_pin,KeyError,KeyError: 'demo',no
+pytest-backend,tests/services/cli_apps/test_provider.py::test_the_apps_own_bin_comes_first_and_the_host_path_is_not_discarded,AssertionError,AssertionError: the host's real interpreter location,no
+pytest-backend,tests/services/cli_apps/test_state_and_paths.py::test_the_tree_is_created_owner_only,AssertionError,AssertionError: assert '777' == '700',no
+pytest-backend,tests/services/mcp/test_oauth.py::test_the_store_file_is_owner_only,AssertionError,AssertionError: assert 438 == (256 | 128),no
+pytest-backend,tests/services/memory/test_snapshot_adapters.py::test_partner_sessions_become_tagged_entities,AssertionError,assert 0 == 1,no
+pytest-backend,tests/services/memory/test_snapshot_adapters.py::test_archived_sessions_included_and_flagged,AssertionError,AssertionError: assert 1 == 2,no
+pytest-backend,tests/services/memory/test_snapshot_adapters.py::test_missing_config_uses_dir_id_as_name,AssertionError,assert 0 == 1,no
+pytest-backend,tests/services/memory/test_snapshot_adapters.py::test_fingerprint_changes_when_conversation_grows,IndexError,IndexError: list index out of range,no
+pytest-backend,tests/services/parsing/test_cache.py::test_load_ir_absolutizes_relative_img_paths,AssertionError,AssertionError: assert 'C:\\abs\\already.png' == '/abs/already.png',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[; rm -rf /],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[$(whoami)],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[`id`],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[a b c],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[--flag=value with spaces],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched['quoted'],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,"tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[""double""]",AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[back\\slash],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[new\nline],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[$HOME],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[&& touch /tmp/pwned],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_local_backend_passes_a_hostile_argument_through_untouched[|tee /tmp/pwned],AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[; rm -rf /],AssertionError,AssertionError: assert '' == '; rm -rf /',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[$(whoami)],AssertionError,AssertionError: assert '' == '$(whoami)',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[`id`],AssertionError,AssertionError: assert '' == '`id`',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[a b c],AssertionError,AssertionError: assert '' == 'a b c',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[--flag=value with spaces],AssertionError,AssertionError: assert '' == '--flag=value with spaces',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent['quoted'],AssertionError,"assert '' == ""'quoted'""",no
+pytest-backend,"tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[""double""]",AssertionError,"assert '' == '""double""'",no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[back\\slash],AssertionError,AssertionError: assert '' == 'back\\slash',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[new\nline],AssertionError,AssertionError: assert '' == 'new\nline',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[$HOME],AssertionError,AssertionError: assert '' == '$HOME',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[&& touch /tmp/pwned],AssertionError,AssertionError: assert '' == '&& touch /tmp/pwned',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_shell_fallback_is_quoted_well_enough_to_be_equivalent[|tee /tmp/pwned],AssertionError,AssertionError: assert '' == '|tee /tmp/pwned',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_runner_prefers_argv_over_the_shell_string,AssertionError,AssertionError: assert 'FileNotFound...ile specified' == '',no
+pytest-backend,tests/services/sandbox/test_argv_exec.py::test_the_runner_does_not_expand_a_hostile_argv_element,AssertionError,AssertionError: assert '' == '$HOME; rm -rf /',no
+pytest-backend,tests/services/sandbox/test_sandbox.py::test_bwrap_mounts_only_the_active_virtualenv_read_only,AssertionError,AssertionError: assert 'C:\\Users\\s.../bin:/usr/bin' == 'C:\\Users\\s.../bin:/usr/bin',no
+pytest-backend,tests/services/sandbox/test_sandbox.py::test_bwrap_mounts_only_the_uv_python_runtime_roots,AssertionError,AssertionError: assert ('C:\\Users\\sethy\\AppData\\Local\\Temp\\pytest-of-sethy\\pytest-123\\test_bwrap_mounts_only_the_uv_0\\uv\\cpython-3....\AppData\\Local\\Temp\\pytest-of-sethy\\pytest-123\\test_bwrap_mounts_only_the_uv_0\\uv\\cpython-3.12.13-linux-x86_64') in [],no
+pytest-backend,tests/services/sandbox/test_sandbox.py::test_runner_server_rejects_workdir_outside_allowed_roots,AssertionError,assert 1 == 0,no
+pytest-backend,tests/services/session/test_capability_routing.py::test_quiz_requests_stay_in_chat_by_default,KeyError,KeyError: 'active_capability',no
+pytest-backend,tests/services/session/test_capability_routing.py::test_enabled_explicit_quiz_routes_for_one_turn,KeyError,KeyError: 'active_capability',no
+pytest-backend,tests/services/session/test_capability_routing.py::test_auto_route_false_overrides_global_setting,KeyError,KeyError: 'active_capability',no
+pytest-backend,tests/services/session/test_capability_routing.py::test_per_turn_flag_opts_in_when_global_default_is_off,KeyError,KeyError: 'active_capability',no
+pytest-backend,tests/services/session/test_capability_routing.py::test_a_one_turn_quiz_leaves_the_conversation_in_chat,KeyError,KeyError: 'active_capability',no
+pytest-backend,tests/services/session/test_regenerate.py::TestRegenerateLastTurn::test_end_to_end_skips_memory_refresh_and_no_duplicate_user,AssertionError,"AssertionError: assert ['user'] == ['user', 'assistant']",no
+pytest-backend,tests/services/session/test_sqlite_store.py::test_sqlite_store_migrates_legacy_chat_history_db,AssertionError,AssertionError: assert not True,yes
+pytest-backend,tests/services/session/test_turn_repository.py::test_only_one_process_can_begin_an_active_turn_per_session,AssertionError,"AssertionError: ['error:OperationalError', 'error:ActiveTurnConflict', 'error:OperationalError', 'error:OperationalError', 'error:ActiveTurnConflict', 'error:OperationalError', ...]",no
+pytest-backend,tests/services/session/test_turn_runtime_subscribe.py::test_reconnect_after_turn_completion_still_carries_message_ids,AssertionError,"AssertionError: assert ['user'] == ['user', 'assistant']",no
+pytest-backend,tests/services/skill/test_skill_hub.py::test_command_provider_failure_cleans_up,FileNotFoundError,FileNotFoundError: [WinError 2] The system cannot find the file specified,no
+pytest-backend,tests/services/test_task_models.py::test_every_task_model_call_site_names_a_kind,UnicodeDecodeError,UnicodeDecodeError: 'charmap' codec can't decode byte 0x81 in position 1639: character maps to <undefined>,no
+pytest-backend-remainder,tests/services/workspace/test_content_workspace.py::test_execution_results_expose_only_workspace_relative_paths,AssertionError,"assert 'outputs/chat/turn/code_runs/python_1/main.py' in 'File ""outputs\\chat\\turn\\code_runs\\python_1\\main.py""'",no
+pytest-backend-remainder,tests/services/workspace/test_data_migration.py::test_initialized_empty_feature_can_receive_migration,PermissionError,PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\sethy\\AppData\\Local\\Temp\\pytest-of-sethy\\pytest-140\\test_initialized_empty_feature0\\user\\workspaces\\ws_f3dd1f9dff884947bf91abe9eb935d9d\\.deeptutor\\data\\user\\workspa,no
+pytest-backend-remainder,tests/tools/builtin/test_read_skill_tool.py::test_missing_file_names_the_existing_skill,AssertionError,"assert 'SKILL.md, references/outline.md' in ""(file not found: 'references/qbank.md' does not exist in skill 'ncea-tutor', which holds: references\\outline.md, SKILL.md)""",no
+pytest-backend-remainder,tests/tools/test_code_execution_guidance.py::test_chat_prompts_delegate_tool_syntax_to_tool_guidance,UnicodeDecodeError,UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d in position 3: character maps to <undefined>,no
+pytest-backend-remainder,tests/tools/test_code_execution_guidance.py::test_solve_prompts_delegate_tool_routing_to_shared_guidance,UnicodeDecodeError,UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f in position 18: character maps to <undefined>,no
+pytest-backend-remainder,tests/tools/test_pptx_workspace_flow.py::test_pptx_dependency_is_packaged_for_pip_source_and_docker_runner,UnicodeDecodeError,UnicodeDecodeError: 'charmap' codec can't decode byte 0x81 in position 14372: character maps to <undefined>,no
+pytest-backend-remainder,tests/video_learning/test_invidious_account.py::test_authorization_uses_minimal_scopes_and_one_time_state,AssertionError,AssertionError: assert 438 == 384,no
+pytest-backend-complete,tests/services/workspace/test_data_migration.py::test_task_board_export_and_migration_preserve_archived_cards,PermissionError,PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\sethy\\AppData\\Local\\Temp\\pytest-of-sethy\\pytest-149\\test_task_board_export_and_mig0\\user\\workspace\\task-board\\cards.sqlite',no
+ruff-check,crates/rag-engine/tests/fixtures/make_fixtures.py:17,I001,Import block is un-sorted or un-formatted,
+ruff-format,content/convert_tutor_content.py,format,File would be reformatted,

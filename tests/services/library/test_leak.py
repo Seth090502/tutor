@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 import pytest
 
@@ -13,6 +14,7 @@ from deeptutor.services.library.leak import (
     attempt_guard,
     is_solution_heading,
 )
+from deeptutor.services.practice.loop import LearningLoop
 from deeptutor.services.practice.storage import PracticeStore
 from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
@@ -221,3 +223,57 @@ def test_unknown_attempt_is_an_error(practice) -> None:
 
     with pytest.raises(AttemptNotFound):
         attempt_guard(db_path, "no-such-attempt")
+
+
+# ---------------------------------------------------------------------------
+# Study attempts (C12)
+# ---------------------------------------------------------------------------
+
+
+def _study(db_path, entry_id, *kinds):
+    loop = LearningLoop(PracticeStore(db_path))
+    state = {"session_id": None, "attempt_id": None, "version": None}
+
+    def send(kind, payload=None, attempt=True):
+        result = loop.execute(
+            {
+                "schema_version": 1,
+                "command_id": str(uuid.uuid4()),
+                "session_id": state["session_id"],
+                "attempt_id": state["attempt_id"] if attempt else None,
+                "expected_version": state["version"],
+                "kind": kind,
+                "payload": payload or {},
+            },
+            "ui",
+        )
+        state["version"] = result["aggregate_version"]
+        state["session_id"] = result["public_state"]["session"]["session_id"]
+        if result["public_state"]["attempt"]:
+            state["attempt_id"] = result["public_state"]["attempt"]["attempt_id"]
+
+    send("start_session", {"mode": "practice"}, attempt=False)
+    send("open_item", {"entry_id": entry_id}, attempt=False)
+    for kind, payload in kinds:
+        send(kind, payload)
+    return state["attempt_id"]
+
+
+def test_study_attempt_is_guarded_until_its_answer_is_released(practice) -> None:
+    db_path, _, entry_id = practice
+    wrong = [
+        ("commit_response", {"response": "A", "input_mode": "typed"}),
+        ("record_confidence", {"level": 2}),
+        ("check", {}),
+    ]
+    remediating = _study(db_path, entry_id, *wrong)
+    assert attempt_guard(db_path, remediating).leaks(chunk("the mitochondrion"))
+
+    revealed = _study(db_path, entry_id, ("give_up", {}))
+    assert not attempt_guard(db_path, revealed).active
+
+
+def test_abandoned_study_attempt_guards_nothing(practice) -> None:
+    db_path, _, entry_id = practice
+    abandoned = _study(db_path, entry_id, ("abandon", {}))
+    assert not attempt_guard(db_path, abandoned).active

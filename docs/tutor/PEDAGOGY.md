@@ -42,11 +42,14 @@ its own effect on its one learner (Measurement below).
 | Procedures, derivations, proofs, multi-step problems | Worked example, then completion (faded steps), then full problems with fresh variants of the same family | By mastery per skill; variants of one seed are **not** independent FSRS evidence |
 | Writing (English) | Draft, then feedback on 2-3 global priorities, then revision. The tutor never writes the learner's prose; model text only after a revision | Deliberate practice sessions, not FSRS; a monthly timed AI-off writing sample |
 
-**FSRS learns only from unassisted retrieval.** Rating per attempt, computed by the server:
+**FSRS learns only from unassisted retrieval.** Rating per attempt, computed by the server from the first
+outcome (review policy 2, contract C12; a local default, not a validated rule):
 
-- correct, no hint or rung 1 only: **Good**;
-- correct after rung 2-3: **Hard**;
-- rung 4-5 or wrong: **Again** (relearning).
+- correct with no assistance before answering: **Good**;
+- anything else (wrong, don't know, any hint, the answer revealed): **Again** (relearning).
+- **Hard is not used.** Anki defines it as a correct recall made with effort, not a recall made with help
+  (evidence ledger EV-002); no study supports the earlier "hint rung 2-3 = Hard" mapping (EV-014).
+- Repairs after feedback are learning, not reviews: they never add a second FSRS review.
 
 ## Stage policy per topic (resolves "novice first" vs "problem first")
 

@@ -1,0 +1,23 @@
+{
+    "name": "propose_answer",
+    "description": "Show the learner's spoken answer on screen for them to confirm or correct. Pass their exact words. It never commits or checks the answer: it counts only once the learner confirms it on screen, which an On screen: message tells you.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for propose_answer",
+        "properties": {
+            "transcript": {
+                "type": "string",
+                "description": "The learner's answer exactly as they said it, without paraphrase."
+            }
+        },
+        "required": [
+            "transcript"
+        ]
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}

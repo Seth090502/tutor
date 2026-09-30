@@ -1,0 +1,16 @@
+{
+    "name": "give_up",
+    "description": "Give up on the current question when the learner wants to stop. Closes it and returns correct_answer, explanation and, when recorded, misconception, with how the question was scheduled.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 30,
+    "parameters": {
+        "type": "object",
+        "description": "Arguments for give_up",
+        "properties": {},
+        "required": []
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}

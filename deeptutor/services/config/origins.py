@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -55,19 +56,29 @@ def normalize_origins(value: Any) -> list[str]:
     return origins
 
 
+WEB_FRONTEND_ENV = "DEEPTUTOR_WEB_FRONTEND"
+
+
 def app_origins(system_settings: dict[str, Any]) -> list[str]:
     """Origins the app's own UI is served from, plus configured ``cors_origin(s)``.
 
-    The single allowlist for both CORS and the WebSocket Origin check.
+    The single allowlist for CORS, the WebSocket Origin check and the request guard. The
+    upstream web frontend's origins (``frontend_port`` and 3000) are included unless
+    ``DEEPTUTOR_WEB_FRONTEND=0``, which the desktop shell sets so that only its own origins
+    (passed in ``CORS_ORIGINS``) are trusted.
     """
     port = system_settings["frontend_port"]
-    return normalize_origins(
+    web = os.environ.get(WEB_FRONTEND_ENV, "").strip() != "0"
+    defaults = (
         [
             f"http://localhost:{port}",
             f"http://127.0.0.1:{port}",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            system_settings["cors_origin"],
-            system_settings["cors_origins"],
         ]
+        if web
+        else []
+    )
+    return normalize_origins(
+        [*defaults, system_settings["cors_origin"], system_settings["cors_origins"]]
     )

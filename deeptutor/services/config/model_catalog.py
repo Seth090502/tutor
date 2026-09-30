@@ -9,6 +9,7 @@ import re
 import tempfile
 import threading
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from deeptutor.services.path_service import get_path_service
@@ -99,31 +100,91 @@ def redact_catalog_secrets(catalog: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-def _restore_secret_value(proposed: Any, current: Any) -> Any:
+class CatalogSecretEndpointError(ValueError):
+    """A masked credential was proposed for a server other than the one it was saved for."""
+
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _endpoint(base_url: Any) -> tuple[Any, ...] | None:
+    """Scheme, host and port of a base URL; the whole value when it names no host."""
+    text = str(base_url or "").strip()
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None
+    if not parts.hostname:
+        return ("", text)
+    scheme = parts.scheme.lower()
+    return (scheme, parts.hostname, _DEFAULT_PORTS.get(scheme) if port is None else port)
+
+
+def _same_endpoint(first: Any, second: Any) -> bool:
+    """Whether two base URLs reach the same server (scheme, host and port)."""
+    endpoint = _endpoint(first)
+    return endpoint is not None and endpoint == _endpoint(second)
+
+
+def _holds_secret(value: Any) -> bool:
+    """Whether *value* holds a credential; a ``"${NAME}"`` reference is not one."""
+    if isinstance(value, str):
+        return bool(value) and _ENV_REFERENCE.fullmatch(value) is None
+    if isinstance(value, dict):
+        return any(_holds_secret(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_holds_secret(item) for item in value)
+    return False
+
+
+def _restore_secret_value(proposed: Any, current: Any, restored: list[Any]) -> Any:
     if proposed == CATALOG_SECRET_MASK:
+        restored.append(current)
         return deepcopy(current)
     if isinstance(proposed, dict) and isinstance(current, dict):
         return {
-            key: _restore_secret_value(value, current.get(key)) for key, value in proposed.items()
+            key: _restore_secret_value(value, current.get(key), restored)
+            for key, value in proposed.items()
         }
     if isinstance(proposed, list) and isinstance(current, list):
         return [
-            _restore_secret_value(value, current[index] if index < len(current) else None)
+            _restore_secret_value(value, current[index] if index < len(current) else None, restored)
             for index, value in enumerate(proposed)
         ]
     return proposed
 
 
-def _restore_profile_secrets(proposed: dict[str, Any], current: dict[str, Any]) -> None:
+def _restore_profile_secrets(proposed: dict[str, Any], current: dict[str, Any], owner: str) -> None:
+    """Restore masked secrets, but only for the server they were entered for.
+
+    A saved key goes back into the profile only while its base URL keeps the
+    stored scheme, host and port; otherwise changing the URL would send the key
+    to whatever server the caller named.
+    """
+    restored: list[Any] = []
     for key, value in list(proposed.items()):
         if key == "extra_headers" or _is_secret_field(key):
-            proposed[key] = _restore_secret_value(value, current.get(key))
+            proposed[key] = _restore_secret_value(value, current.get(key), restored)
+    if any(_holds_secret(value) for value in restored) and not _same_endpoint(
+        proposed.get("base_url"), current.get("base_url")
+    ):
+        raise CatalogSecretEndpointError(
+            f"The base URL of {owner} now points to a different server than the one its saved "
+            "key was entered for. Enter the key (and any credential headers) again to use the "
+            "new address."
+        )
 
 
 def restore_catalog_secrets(
     proposed_catalog: dict[str, Any], current_catalog: dict[str, Any]
 ) -> dict[str, Any]:
-    """Replace secret placeholders with stored values from the same profile."""
+    """Replace secret placeholders with stored values from the same profile.
+
+    Raises ``CatalogSecretEndpointError`` when a placeholder would restore a
+    stored secret into a profile or connection whose base URL now names a
+    different server.
+    """
 
     restored = deepcopy(proposed_catalog)
     current_connections = {
@@ -136,7 +197,9 @@ def restore_catalog_secrets(
             continue
         current_connection = current_connections.get(connection.get("id"))
         if current_connection is not None:
-            _restore_profile_secrets(connection, current_connection)
+            _restore_profile_secrets(
+                connection, current_connection, f"connection {_display_name(connection)}"
+            )
     current_services = current_catalog.get("services", {})
     for service_name, proposed_service in restored.get("services", {}).items():
         if not isinstance(proposed_service, dict):
@@ -152,8 +215,14 @@ def restore_catalog_secrets(
                 continue
             current_profile = current_profiles.get(profile.get("id"))
             if current_profile is not None:
-                _restore_profile_secrets(profile, current_profile)
+                _restore_profile_secrets(
+                    profile, current_profile, f"{service_name} profile {_display_name(profile)}"
+                )
     return restored
+
+
+def _display_name(entry: dict[str, Any]) -> str:
+    return repr(str(entry.get("name") or entry.get("id") or ""))
 
 
 def _service_shell() -> dict[str, Any]:
@@ -671,6 +740,7 @@ def get_model_catalog_service() -> ModelCatalogService:
 __all__ = [
     "CATALOG_PATH",
     "CATALOG_SECRET_MASK",
+    "CatalogSecretEndpointError",
     "CONNECTABLE_SERVICES",
     "LLM_SHAPED_SERVICES",
     "MODEL_CAPABILITY_KEYS",

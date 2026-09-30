@@ -625,6 +625,8 @@ def _learning_surface_for_path(
         ("/api/chat", "chat"),
         ("/api/question", "chat"),
         ("/api/question-notebook", "chat"),
+        # Study sessions (C12) are the practice flow's successor.
+        ("/api/study", "chat"),
         ("/api/sessions", "chat"),
         # Task cards are private to the learner's current content workspace.
         ("/api/task-board", "chat"),
