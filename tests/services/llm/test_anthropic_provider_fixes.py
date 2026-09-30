@@ -293,3 +293,28 @@ def test_assistant_blocks_omit_unsigned_history_blocks() -> None:
     )
 
     assert all(block.get("type") != "thinking" for block in blocks)
+
+
+def test_every_system_message_reaches_the_system_prompt_in_order() -> None:
+    # A conversation summary or context checkpoint arrives as a second system
+    # message; it must not replace the main system prompt.
+    kwargs = _provider()._build_kwargs(
+        messages=[
+            {"role": "system", "content": "MAIN PROMPT"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+            {"role": "system", "content": "SUMMARY OF EARLIER TURNS"},
+            {"role": "user", "content": "next question"},
+        ],
+        tools=None,
+        model="claude-opus-5-5",
+        max_tokens=1024,
+        temperature=0.7,
+        reasoning_effort=None,
+        tool_choice=None,
+    )
+    system = kwargs["system"]
+    text = system if isinstance(system, str) else "\n".join(block["text"] for block in system)
+    assert "MAIN PROMPT" in text
+    assert "SUMMARY OF EARLIER TURNS" in text
+    assert text.index("MAIN PROMPT") < text.index("SUMMARY OF EARLIER TURNS")

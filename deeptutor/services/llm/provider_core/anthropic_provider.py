@@ -147,7 +147,7 @@ class AnthropicProvider(LLMProvider):
         messages: list[dict[str, Any]],
     ) -> tuple[str | list[dict[str, Any]], list[dict[str, Any]]]:
         """Return ``(system, anthropic_messages)``."""
-        system: str | list[dict[str, Any]] = ""
+        system_parts: list[str | list[dict[str, Any]]] = []
         raw: list[dict[str, Any]] = []
 
         for msg in messages:
@@ -155,7 +155,9 @@ class AnthropicProvider(LLMProvider):
             content = msg.get("content")
 
             if role == "system":
-                system = content if isinstance(content, (str, list)) else str(content or "")
+                system_parts.append(
+                    content if isinstance(content, (str, list)) else str(content or "")
+                )
                 continue
 
             if role == "tool":
@@ -186,7 +188,25 @@ class AnthropicProvider(LLMProvider):
                 )
                 continue
 
-        return system, self._merge_consecutive(raw)
+        return self._join_system(system_parts), self._merge_consecutive(raw)
+
+    @staticmethod
+    def _join_system(
+        parts: list[str | list[dict[str, Any]]],
+    ) -> str | list[dict[str, Any]]:
+        """Every system message, in order: a later summary or checkpoint message
+        must not replace the main system prompt."""
+        parts = [part for part in parts if part]
+        if not parts:
+            return ""
+        if len(parts) == 1:
+            return parts[0]
+        if all(isinstance(part, str) for part in parts):
+            return "\n\n".join(parts)  # type: ignore[arg-type]
+        blocks: list[dict[str, Any]] = []
+        for part in parts:
+            blocks.extend([{"type": "text", "text": part}] if isinstance(part, str) else part)
+        return blocks
 
     @staticmethod
     def _tool_result_block(msg: dict[str, Any]) -> dict[str, Any]:
