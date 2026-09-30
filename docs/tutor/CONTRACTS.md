@@ -202,7 +202,7 @@ type NBackSummary = { id: string; started_at: number; mode: string; blocks: numb
 ## C7. Practice attempts, hint ladder and rating policy (DeepTutor backend)
 
 Spec: `docs/tutor/PEDAGOGY.md`. The routes live under `/api/question-notebook/practice`. The existing routes
-keep working unchanged.
+keep working. New clients use C12; reviews recorded here are labelled `legacy_*` (C12).
 
 - **Questions:** questions gain `hints: list[str]`, ordered rungs 1-4 (nudge, hint, key step, worked
   example). They are imported from a `hints` column, `|`-separated, and returned on the entry.
@@ -225,11 +225,11 @@ keep working unchanged.
   - `judged_correct` is required only when the check returned `correct: null`; it is recorded as
     self-reported.
   - Without `attempt_id`, the existing behaviour applies.
-- **Rating policy (server):**
-  - not correct: `again`;
-  - revealed or highest rung 4 or more: `again`;
-  - highest rung 2-3: `hard`;
-  - otherwise `good`.
+- **Rating policy (server, `review-policy/2`, 2026-09-30):**
+  - correct with no hint and not revealed: `good`;
+  - anything else (wrong, any hint, revealed): `again`.
+  - `hard` is no longer produced (evidence ledger EV-002, EV-014); policy 1 gave `good` after rung 1 and
+    `hard` after rungs 2-3.
   - Confidence never changes the rating.
 - **`GET /analytics`** adds (see also C8 for how the voice screen shows attempts):
   - `calibration: [{"level": 1-4, "attempts": int, "correct": int}]`;
@@ -394,3 +394,108 @@ so the agent never sees withheld chunks.
   FSRS reviews and mastery exclude them. They can still be practised, with a note that they are unscored.
 - **rag-engine page images** report `X-Quote-Matches: <int>`. After a schema change, rag-engine starts a
   re-index from SQLite on its own at startup (no re-extraction).
+
+## C12. Study sessions, attempts and review evidence (DeepTutor backend)
+
+Supersedes the C7 flow for new clients; C7 routes keep working and are labelled legacy. Spec:
+`PEDAGOGY.md`. Code: `deeptutor/services/practice/loop.py`, routes `deeptutor/api/routers/learning.py`,
+mounted at **`/api/study`** (upstream retired `/api/learning` and guards it).
+
+**One writer.** The practice store writes sessions, attempts, events and FSRS state in the notebook
+database. A command's events, its attempt update and, at closure, the FSRS review of the first outcome
+commit in one SQLite transaction, so a crash can neither lose nor duplicate a review. Python was chosen
+over Rust for this piece because the FSRS writer, the answer keys and the language checkers already live
+in that process; any other placement would need two writers or an outbox. Rust projections (skills,
+queue, probes) will read `learning_events` (planned C13).
+
+**Envelope.** `POST /api/study/commands` with header `X-Tutor-Source: ui | voice_tool`, set by the calling
+code path and never by a model; a missing or other value is 422.
+
+```
+Command: {schema_version: 1, command_id: UUID, session_id?, attempt_id?, expected_version: int | null,
+          kind, payload}
+Result:  {schema_version: 1, command_id, aggregate_version, last_event_seq,
+          public_state: {session, attempt | null}, events: [Event]}
+Error:   {"error": {code, message, retryable, current_version?}}
+         conflict 409, invalid_transition 409, invalid_input 422, not_found 404, unauthorized 403,
+         budget_exceeded 402, unavailable 503, unverified 424
+Event:   {event_id, seq, kind, attempt_id, recorded_at, source, payload}   (public-safe)
+```
+
+- The aggregate is the session. `expected_version` is the version last seen (`start_session` sends null);
+  a stale version is `conflict` with `current_version` and changes nothing.
+- The server sets `recorded_at` (epoch seconds) and `source`.
+- The same `command_id` with the same content returns the stored result; with other content it is
+  `invalid_input`. Network retries reuse the id; they are never recorded as answers.
+- Events are append-only (database triggers refuse UPDATE and DELETE), with a per-session `seq` and a
+  global `event_seq`.
+- `GET /api/study/sessions/{id}?after_seq=N` returns `{session, attempts, events after N, last_event_seq}`.
+  `GET /api/study/sessions/active` returns the newest active session or null (resume after a restart).
+- `GET /api/study/queue?limit&tag` returns due items with public fields only (`entry_id, prompt,
+  question_type, options, lang, tags, due_at`). Quarantined and `provisional` items are excluded, and the
+  C7 queue excludes them too. `tag` matches a category name case-insensitively (`lang:es`, `Math`).
+
+**Kinds and statuses.** Statuses: `open`, `committed`, `ready`, `remediating`, `awaiting_self_assessment`,
+`submitted` (assessment only), `closed`.
+
+| Kind | Allowed from | Effect |
+|---|---|---|
+| `start_session {mode, curriculum_version?}` | no session | new active session; mode is practice, assessment or instruction |
+| `open_item {entry_id}` | no other open item (submitted assessment items do not block) | attempt `open`; assessment items must be auto-checkable |
+| `request_assistance {kind: "hint"}` | `open` (an assisted start) or `remediating`; never in assessment | next ladder rung 1-4 with its text, or null text; no rung 5 |
+| `request_assistance {kind: gloss, source_open or other, content_ref?}` | `open`, `remediating` | recorded assistance, no text |
+| `propose_response {input_mode: spoken or dont_know, raw_transcript}` | `open`, `remediating` | a pending proposal for the learner to confirm |
+| `commit_response {response, input_mode, transcript_confirmation?}` | `open`; source `ui` only | first response sealed; spoken needs `{raw_transcript, confirmed_text}` |
+| `record_confidence {level: 1-4 or null, skipped_reason?}` | `committed` | `ready`; a skip needs a reason |
+| `check {}` | `ready` | see verdicts below |
+| `self_assess {judged: correct or incorrect}` | `awaiting_self_assessment`; source `ui` only | closed `self_assessed` |
+| `submit_repair {response, input_mode: typed or spoken}` | `remediating`; source `ui` only | appended check; a correct repair closes; two misses add `offer: worked_example_then_fresh_problem` |
+| `give_up {}` | `open`, `remediating`; not in assessment | closed `revealed`; before any answer it records `dont_know` |
+| `abandon {}` | any live status except `submitted` | closed `abandoned` and nothing released; after hints with no answer it records an assisted `dont_know` |
+| `invalidate_item {reason}` | any | item quarantined; a live attempt closes `invalidated` without a review |
+| `close_session {}` | an active session | submitted items close and release; the rest close `abandoned` |
+
+Check verdicts:
+- `correct`: in practice, the attempt closes `correct`.
+- `incorrect`: in practice, `remediating`. A dont_know response is `incorrect` with checker `dont_know`.
+- `unverifiable`: there is no checker, so the reference answer is released and the learner self-assesses.
+- `invalid_item`: the key cannot be read, so the item is quarantined and the attempt closes `invalidated`.
+- In assessment every checked item waits as `submitted`. Its verdict is hidden in state and events until
+  `close_session` publishes `checks_released`.
+- An item edited after it was opened makes `check` a conflict.
+
+**Public versus private.** Attempt state carries the prompt, options, type, the learner's responses,
+confidence, public checks, the assistance given so far, the pending proposal, the closure and `offer`.
+`released: {correct_answer, accepted_answers, explanation, misconception}` appears only after a closure that
+releases it (`correct`, `revealed`, `self_assessed`) or for self-assessment. Keys, unrequested hints,
+explanations and misconceptions never appear in events, open attempts or the queue. The teaching model
+receives exactly what the UI receives.
+
+**Review evidence (policy `review-policy/2`).** Computed from the first outcome and applied once at
+closure through `PracticeStore.apply_review` with request id `ev:<attempt_id>`:
+
+| First outcome | Assistance before commit | FSRS rating | Provenance |
+|---|---|---|---|
+| correct | none | Good | `verified` |
+| correct | any | Again | `assisted` |
+| incorrect or dont_know | none or any | Again | `verified` or `assisted` |
+| unverifiable, then self-assessed | none | the learner's judgement (Good or Again) | `self_report` |
+| anything, in instruction mode | - | none | - |
+| invalidated, or abandoned before a check | - | none | - |
+
+Hard is never produced. Repairs, reveals and retries never add a review. Every review event records
+`provenance` inside `outcome_json` (read it with `COALESCE(json_extract(outcome_json, '$.provenance'),
+'legacy')`). C7 reviews are `legacy_attempt`, `legacy_self_report` or `legacy_client_rating`, and rows from
+before this change read as `legacy`. Only `verified` reviews may enter verified outcome reports.
+
+**Measurement eligibility** (closed attempts only). An attempt is eligible only for a checked, unassisted
+first response, in practice or assessment, on an item not exposed (hint or answer seen) in the previous 24
+hours. Reasons: `assisted`, `unverified`, `no_checked_response`, `instruction_mode`, `invalid_item`,
+`exposed_within_24h`. A relearning attempt still gets its FSRS review; it is not independent evidence.
+
+**Migration and rollback.** Additive only: new tables (`learning_sessions`, `learning_attempts`,
+`learning_events`, `learning_commands`, `practice_item_status`); no existing table, column or row changes.
+An older build runs against a migrated database unchanged: it ignores the new tables, its reviews read as
+`legacy`, and it does not honour quarantine or the provisional exclusion. Backup before first run: the
+notebook database is one SQLite file; copy it with the SQLite backup API (the workspace data-migration
+code already does, `services/workspace/data_migration.py`) while the backend is stopped.

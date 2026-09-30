@@ -43,6 +43,21 @@ _LANG_SQL = """(SELECT substr(c.name, 6) FROM notebook_entry_categories ec
     JOIN notebook_categories c ON c.id=ec.category_id
     WHERE ec.entry_id=n.id AND c.name LIKE 'lang:_%' ORDER BY c.name LIMIT 1) AS lang"""
 
+# Items the queue never offers: quarantined ones (C12) and provisional reading cards (C11).
+QUEUE_EXCLUSIONS_SQL = """NOT EXISTS(SELECT 1 FROM practice_item_status q
+        WHERE q.entry_id=n.id AND q.status='quarantined')
+    AND NOT EXISTS(SELECT 1 FROM notebook_entry_categories pc
+        JOIN notebook_categories pn ON pn.id=pc.category_id
+        WHERE pc.entry_id=n.id AND pn.name='provisional')"""
+
+
+def legacy_provenance(attempt_id: str | None, self_report: bool) -> str:
+    """How a C7 review's rating was obtained; none of these enter the verified partition."""
+    if self_report:
+        return "legacy_self_report"
+    return "legacy_client_rating" if attempt_id is None else "legacy_attempt"
+
+
 # The attempt with the question fields its steps need, if the question is visible.
 _ATTEMPT_SQL = f"""SELECT a.*, n.question_type, n.options_json, n.correct_answer, n.explanation,
         n.misconception, n.hints_json, n.accepted_answers_json, {_LANG_SQL}
@@ -96,6 +111,12 @@ def initialize_practice(conn: sqlite3.Connection) -> None:
             reviewed INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_practice_attempts_closed ON practice_attempts(closed_at);
+        CREATE TABLE IF NOT EXISTS practice_item_status (
+            entry_id INTEGER PRIMARY KEY REFERENCES notebook_entries(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            updated_at REAL NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS practice_imports (
             token TEXT PRIMARY KEY,
             filename TEXT NOT NULL,
@@ -140,6 +161,9 @@ def initialize_practice(conn: sqlite3.Connection) -> None:
     for name, kind in _FSRS_COLUMNS:
         if name not in columns:
             conn.execute(f"ALTER TABLE practice_review_state ADD COLUMN {name} {kind}")
+    from .loop import initialize_loop
+
+    initialize_loop(conn)
     if not existing:
         # Additive migration: original IDs, answers, timestamps and categories stay intact.
         conn.execute("""
@@ -191,7 +215,8 @@ class PracticeStore:
                     COALESCE(SUM({_DUE_AT_SQL} <= ?), 0) AS overdue,
                     MIN({_DUE_AT_SQL}) AS next_due_at
                 FROM notebook_entries n LEFT JOIN sessions s ON s.id = n.session_id
-                LEFT JOIN practice_review_state r ON r.entry_id = n.id WHERE {scope}
+                LEFT JOIN practice_review_state r ON r.entry_id = n.id
+                WHERE {scope} AND {QUEUE_EXCLUSIONS_SQL}
             """,  # nosec B608 - fixed scope SQL; values bound
                 [now, start, *params],
             ).fetchone()  # nosec B608 - bound scope values
@@ -239,7 +264,7 @@ class PracticeStore:
                 f"""
                 SELECT n.id FROM notebook_entries n LEFT JOIN sessions s ON s.id=n.session_id
                 LEFT JOIN practice_review_state r ON r.entry_id=n.id
-                WHERE {_DUE_AT_SQL} <= ? AND {scope}
+                WHERE {_DUE_AT_SQL} <= ? AND {scope} AND {QUEUE_EXCLUSIONS_SQL}
                 ORDER BY {_DUE_AT_SQL}, n.id LIMIT ?
             """,  # nosec B608 - fixed scope SQL; values bound
                 [now, *params, limit],
@@ -358,71 +383,113 @@ class PracticeStore:
                 conn.execute(
                     "UPDATE practice_attempts SET reviewed=1 WHERE attempt_id=?", (attempt_id,)
                 )
-            if state.get("fsrs_state") is None:
-                # Scheduled before FSRS (or never reviewed): rebuild the memory
-                # state from the retained history; none means a new card.
-                history = conn.execute(
-                    """SELECT reviewed_at, rating FROM practice_review_events
-                    WHERE entry_id=? ORDER BY reviewed_at, rowid""",
-                    (entry_id,),
-                ).fetchall()
-                state.update(replay((event["reviewed_at"], event["rating"]) for event in history))
-            next_state = schedule(state, rating, now)
-            mistake = bool(state.get("is_mistake")) or rating == "again"
-            conn.execute(
-                """
-                INSERT INTO practice_review_state(entry_id, is_mistake, first_wrong_at, due_at,
-                    interval_days, streak, lapses, review_count, last_review_at, version,
-                    fsrs_stability, fsrs_difficulty, fsrs_state, fsrs_step)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(entry_id) DO UPDATE SET is_mistake=excluded.is_mistake, due_at=excluded.due_at,
-                    first_wrong_at=CASE WHEN practice_review_state.is_mistake=0 AND excluded.is_mistake=1
-                        THEN excluded.first_wrong_at ELSE practice_review_state.first_wrong_at END,
-                    interval_days=excluded.interval_days, streak=excluded.streak,
-                    lapses=excluded.lapses, review_count=excluded.review_count,
-                    last_review_at=excluded.last_review_at, version=excluded.version,
-                    fsrs_stability=excluded.fsrs_stability, fsrs_difficulty=excluded.fsrs_difficulty,
-                    fsrs_state=excluded.fsrs_state, fsrs_step=excluded.fsrs_step
-            """,
-                (
-                    entry_id,
-                    int(mistake),
-                    now,
-                    *(
-                        next_state[key]
-                        for key in (
-                            "due_at",
-                            "interval_days",
-                            "streak",
-                            "lapses",
-                            "review_count",
-                            "last_review_at",
-                            "version",
-                            "fsrs_stability",
-                            "fsrs_difficulty",
-                            "fsrs_state",
-                            "fsrs_step",
-                        )
-                    ),
+            return self.apply_review(
+                conn,
+                entry_id,
+                request_id,
+                rating,
+                answer,
+                now,
+                state=state,
+                correct=correct,
+                self_report=self_report,
+                extra={}
+                if attempt_id is None
+                else {"attempt_id": attempt_id, "judged_correct": judged_correct},
+                provenance=legacy_provenance(attempt_id, self_report),
+            )
+
+    @staticmethod
+    def apply_review(
+        conn: sqlite3.Connection,
+        entry_id: int,
+        request_id: str,
+        rating: Rating,
+        answer: str,
+        now: float,
+        *,
+        state: dict | None = None,
+        correct: bool | None,
+        self_report: bool,
+        extra: dict,
+        provenance: str,
+    ) -> dict:
+        """Schedule one FSRS review in the caller's transaction and record it.
+
+        This is the only writer of FSRS memory state. ``provenance`` labels how the rating was
+        obtained: only "verified" reviews (contract C12) enter the verified partition.
+        """
+        if state is None:
+            row = conn.execute(
+                "SELECT * FROM practice_review_state WHERE entry_id=?", (entry_id,)
+            ).fetchone()
+            state = dict(row) if row else {"version": 0}
+        if state.get("fsrs_state") is None:
+            # Scheduled before FSRS (or never reviewed): rebuild the memory
+            # state from the retained history; none means a new card.
+            history = conn.execute(
+                """SELECT reviewed_at, rating FROM practice_review_events
+                WHERE entry_id=? ORDER BY reviewed_at, rowid""",
+                (entry_id,),
+            ).fetchall()
+            state.update(replay((event["reviewed_at"], event["rating"]) for event in history))
+        next_state = schedule(state, rating, now)
+        mistake = bool(state.get("is_mistake")) or rating == "again"
+        conn.execute(
+            """
+            INSERT INTO practice_review_state(entry_id, is_mistake, first_wrong_at, due_at,
+                interval_days, streak, lapses, review_count, last_review_at, version,
+                fsrs_stability, fsrs_difficulty, fsrs_state, fsrs_step)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(entry_id) DO UPDATE SET is_mistake=excluded.is_mistake, due_at=excluded.due_at,
+                first_wrong_at=CASE WHEN practice_review_state.is_mistake=0 AND excluded.is_mistake=1
+                    THEN excluded.first_wrong_at ELSE practice_review_state.first_wrong_at END,
+                interval_days=excluded.interval_days, streak=excluded.streak,
+                lapses=excluded.lapses, review_count=excluded.review_count,
+                last_review_at=excluded.last_review_at, version=excluded.version,
+                fsrs_stability=excluded.fsrs_stability, fsrs_difficulty=excluded.fsrs_difficulty,
+                fsrs_state=excluded.fsrs_state, fsrs_step=excluded.fsrs_step
+        """,
+            (
+                entry_id,
+                int(mistake),
+                now,
+                *(
+                    next_state[key]
+                    for key in (
+                        "due_at",
+                        "interval_days",
+                        "streak",
+                        "lapses",
+                        "review_count",
+                        "last_review_at",
+                        "version",
+                        "fsrs_stability",
+                        "fsrs_difficulty",
+                        "fsrs_state",
+                        "fsrs_step",
+                    )
                 ),
-            )
-            if rating == "again":
-                conn.execute("UPDATE notebook_entries SET resolved=0 WHERE id=?", (entry_id,))
-            outcome = {
-                **next_state,
-                "entry_id": entry_id,
-                "is_mistake": mistake,
-                "correct": correct,
-                "rating": rating,
-                "self_report": self_report,
-                "mastered": rating in {"good", "easy"},
-            }
-            if attempt_id is not None:
-                outcome.update(attempt_id=attempt_id, judged_correct=judged_correct)
-            conn.execute(
-                "INSERT INTO practice_review_events VALUES(?, ?, ?, ?, ?, ?)",
-                (request_id, entry_id, rating, answer, now, json.dumps(outcome)),
-            )
+            ),
+        )
+        if rating == "again":
+            conn.execute("UPDATE notebook_entries SET resolved=0 WHERE id=?", (entry_id,))
+        outcome = {
+            **next_state,
+            "entry_id": entry_id,
+            "is_mistake": mistake,
+            "correct": correct,
+            "rating": rating,
+            "self_report": self_report,
+            "mastered": rating in {"good", "easy"},
+        }
+        outcome.update(extra, provenance=provenance)
+        conn.execute(
+            # Provenance lives in outcome_json, so the table keeps its original columns and an
+            # older build can still write to it; rows without it read as "legacy" (C12).
+            "INSERT INTO practice_review_events VALUES(?, ?, ?, ?, ?, ?)",
+            (request_id, entry_id, rating, answer, now, json.dumps(outcome)),
+        )
         return outcome
 
     def open_attempt(self, entry_id: int) -> dict:
