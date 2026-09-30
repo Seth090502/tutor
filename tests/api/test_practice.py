@@ -9,13 +9,14 @@ import sqlite3
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from fsrs import State
 from openpyxl import Workbook
 import pytest
 
 from deeptutor.api.routers import practice, question_notebook
 from deeptutor.core.assessment import ASSESSMENT_SOURCES
 from deeptutor.services.practice.importing import normalize_question, preview
-from deeptutor.services.practice.scheduler import DAY, day_bounds, schedule
+from deeptutor.services.practice.scheduler import DAY, FSRS_FIELDS, day_bounds, schedule
 from deeptutor.services.practice.storage import PracticeStore, ReviewConflict
 from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
@@ -287,6 +288,103 @@ def test_daily_scheduler_and_dst():
     assert (
         schedule(hard, "good", now)["interval_days"] >= schedule(hard, "hard", now)["interval_days"]
     )
+
+
+T0 = datetime(2026, 9, 1, 12, tzinfo=timezone.utc).timestamp()
+
+
+def test_fsrs_new_card_starts_in_short_learning_steps():
+    good = schedule({}, "good", T0)
+    assert (good["fsrs_state"], good["fsrs_step"]) == (State.Learning, 1)
+    assert good["fsrs_stability"] > 0 and 1 <= good["fsrs_difficulty"] <= 10
+    assert good["due_at"] == pytest.approx(T0 + 10 * 60)
+    assert good["interval_days"] == pytest.approx(10 / 1440)
+    assert (good["review_count"], good["version"], good["streak"], good["lapses"]) == (1, 1, 1, 0)
+    assert good["last_review_at"] == T0 and "ease" not in good
+    again = schedule({}, "again", T0)
+    assert again["due_at"] == pytest.approx(T0 + 60) and again["lapses"] == 1
+    assert again["fsrs_stability"] < good["fsrs_stability"]
+    easy = schedule({}, "easy", T0)
+    assert (easy["fsrs_state"], easy["fsrs_step"]) == (State.Review, None)
+    assert easy["interval_days"] >= 1
+
+
+def test_fsrs_lapse_relearns_soon_and_lowers_stability():
+    learned = schedule(schedule({}, "good", T0), "good", T0 + 600)
+    assert learned["fsrs_state"] == State.Review and learned["interval_days"] >= 1
+    lapse = schedule(learned, "again", learned["due_at"])
+    assert (lapse["fsrs_state"], lapse["fsrs_step"]) == (State.Relearning, 0)
+    assert lapse["due_at"] == pytest.approx(learned["due_at"] + 10 * 60)
+    assert lapse["fsrs_stability"] < learned["fsrs_stability"]
+    assert lapse["fsrs_difficulty"] > learned["fsrs_difficulty"]
+    assert (lapse["lapses"], lapse["streak"], lapse["review_count"]) == (1, 0, 3)
+    relearned = schedule(lapse, "good", lapse["due_at"])
+    assert relearned["fsrs_state"] == State.Review and relearned["interval_days"] >= 1
+    assert relearned["lapses"] == 1
+
+
+def test_unknown_rating_is_rejected():
+    with pytest.raises(ValueError, match="Unknown review rating"):
+        schedule({}, "later", T0)
+
+
+def test_fsrs_state_round_trips_through_the_store(bank):
+    store, repo, _ = bank
+    entry = seed(store)
+    repo.review(entry["id"], "round-trip-first", 0, "again", "A", now=T0)
+    saved = repo.state(entry["id"])
+    first = schedule({"version": 0}, "again", T0)
+    assert {key: saved[key] for key in first} == first
+    assert saved["ease"] == 2.5  # the legacy SM-2 column is no longer written
+    second = repo.review(entry["id"], "round-trip-second", 1, "good", "B", now=T0 + 120)
+    expected = schedule(saved, "good", T0 + 120)
+    assert {key: second[key] for key in expected} == expected
+    assert second["fsrs_stability"] != schedule({}, "good", T0 + 120)["fsrs_stability"]
+
+
+def test_legacy_row_rebuilds_fsrs_state_from_review_history(bank):
+    store, repo, _ = bank
+    kept, legacy = seed(store), seed(store, question_id="q2")
+    history = [(T0, "again", "A"), (T0 + 600, "good", "B"), (T0 + 3 * DAY, "good", "B")]
+    for entry in (kept, legacy):
+        for version, (at, rating, answer) in enumerate(history):
+            repo.review(
+                entry["id"], f"history-{entry['id']}-{version}", version, rating, answer, now=at
+            )
+    with repo.connect() as conn:  # a row scheduled before FSRS has no memory state
+        conn.execute(
+            "UPDATE practice_review_state SET fsrs_stability=NULL, fsrs_difficulty=NULL,"
+            " fsrs_state=NULL, fsrs_step=NULL WHERE entry_id=?",
+            (legacy["id"],),
+        )
+    final = [
+        repo.review(entry["id"], f"final-{entry['id']}", 3, "hard", "B", now=T0 + 10 * DAY)
+        for entry in (kept, legacy)
+    ]
+    kept_fsrs = {key: final[0][key] for key in FSRS_FIELDS}
+    assert final[1]["fsrs_state"] == State.Review  # a new card would still be learning
+    assert {key: final[1][key] for key in FSRS_FIELDS} == kept_fsrs
+    assert {key: repo.state(legacy["id"])[key] for key in FSRS_FIELDS} == kept_fsrs
+
+
+def test_fsrs_columns_migrate_existing_databases_idempotently(bank):
+    store, repo, _ = bank
+    entry = seed(store)
+
+    def fsrs_columns():
+        with repo.connect() as conn:
+            rows = conn.execute("PRAGMA table_info(practice_review_state)").fetchall()
+        return {row[1] for row in rows} & set(FSRS_FIELDS)
+
+    assert fsrs_columns() == set(FSRS_FIELDS)  # fresh database
+    with repo.connect() as conn:  # restore the schema from before FSRS
+        for name in FSRS_FIELDS:
+            conn.execute(f"ALTER TABLE practice_review_state DROP COLUMN {name}")
+    legacy = repo.state(entry["id"])
+    for _ in range(2):
+        SQLiteSessionStore(store.db_path)
+        assert fsrs_columns() == set(FSRS_FIELDS)
+        assert repo.state(entry["id"]) == {**legacy, **dict.fromkeys(FSRS_FIELDS)}
 
 
 def test_malformed_files_are_validation_errors(bank):

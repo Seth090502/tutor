@@ -81,3 +81,6 @@ pageindex>=0.2.10,<0.3.0
 
 # --- Partner channel QR onboarding (WeChat, WeCom, Feishu; core) ---
 qrcode>=7.4.0,<9.0.0
+
+# --- Question-bank practice scheduling (FSRS; imported by the session store) ---
+fsrs>=6.3.2,<7.0.0

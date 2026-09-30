@@ -65,6 +65,8 @@ dependencies = [
     "reportlab>=4.0.0",
     "defusedxml>=0.7.1",
     "youtube-transcript-api>=1.2.0,<2.0.0",
+    # FSRS scheduler for question-bank practice (MIT); the session store imports it.
+    "fsrs>=6.3.2,<7.0.0",
 ]
 
 [project.scripts]

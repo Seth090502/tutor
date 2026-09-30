@@ -90,6 +90,9 @@ dependencies = [
     # deeptutor.runtime.memory_probe imports it lazily and falls back to /proc,
     # so a missing wheel costs the settings strip, not the app.
     "psutil>=5.9.0,<8.0.0",
+    # FSRS scheduler for question-bank practice (MIT). Core: every session
+    # store initialises the practice schema, which imports the scheduler.
+    "fsrs>=6.3.2,<7.0.0",
 ]
 
 [project.scripts]

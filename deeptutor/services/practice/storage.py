@@ -9,13 +9,22 @@ import sqlite3
 import time
 import uuid
 
-from .scheduler import DAY, Rating, day_bounds, schedule
+from .scheduler import DAY, Rating, day_bounds, replay, schedule
 
 # Legacy correct or manually mastered questions start with a three-day interval.
 # Once reviewed, the saved adaptive schedule is authoritative.
 _DUE_AT_SQL = """(CASE WHEN (n.resolved=1 OR n.is_correct=1)
     AND COALESCE(r.review_count, 0)=0 THEN n.updated_at + 259200
     ELSE COALESCE(r.due_at, n.created_at) END)"""
+
+# FSRS memory state (the py-fsrs Card fields). NULL until a card's first FSRS
+# review; review() rebuilds it from practice_review_events for older rows.
+_FSRS_COLUMNS = (
+    ("fsrs_stability", "REAL"),
+    ("fsrs_difficulty", "REAL"),
+    ("fsrs_state", "INTEGER"),
+    ("fsrs_step", "INTEGER"),
+)
 
 
 class ReviewConflict(ValueError):
@@ -88,6 +97,12 @@ def initialize_practice(conn: sqlite3.Connection) -> None:
             WHERE entry_id = NEW.id AND (OLD.is_correct = 1 OR OLD.result = 'ungraded');
         END;
     """)
+    # Added in place so existing databases upgrade. ``ease`` stays for old rows
+    # but is no longer written: FSRS keeps its memory state in these columns.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(practice_review_state)")}
+    for name, kind in _FSRS_COLUMNS:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE practice_review_state ADD COLUMN {name} {kind}")
     if not existing:
         # Additive migration: original IDs, answers, timestamps and categories stay intact.
         conn.execute("""
@@ -272,19 +287,31 @@ class PracticeStore:
             correct = None if self_report else check_answer(dict(entry), answer)
             if correct is False and rating != "again":
                 raise ValueError("An incorrect answer must be reviewed again")
+            if state.get("fsrs_state") is None:
+                # Scheduled before FSRS (or never reviewed): rebuild the memory
+                # state from the retained history; none means a new card.
+                history = conn.execute(
+                    """SELECT reviewed_at, rating FROM practice_review_events
+                    WHERE entry_id=? ORDER BY reviewed_at, rowid""",
+                    (entry_id,),
+                ).fetchall()
+                state.update(replay((event["reviewed_at"], event["rating"]) for event in history))
             next_state = schedule(state, rating, now)
             mistake = bool(state.get("is_mistake")) or rating == "again"
             conn.execute(
                 """
                 INSERT INTO practice_review_state(entry_id, is_mistake, first_wrong_at, due_at,
-                    interval_days, ease, streak, lapses, review_count, last_review_at, version)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    interval_days, streak, lapses, review_count, last_review_at, version,
+                    fsrs_stability, fsrs_difficulty, fsrs_state, fsrs_step)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(entry_id) DO UPDATE SET is_mistake=excluded.is_mistake, due_at=excluded.due_at,
                     first_wrong_at=CASE WHEN practice_review_state.is_mistake=0 AND excluded.is_mistake=1
                         THEN excluded.first_wrong_at ELSE practice_review_state.first_wrong_at END,
-                    interval_days=excluded.interval_days, ease=excluded.ease, streak=excluded.streak,
+                    interval_days=excluded.interval_days, streak=excluded.streak,
                     lapses=excluded.lapses, review_count=excluded.review_count,
-                    last_review_at=excluded.last_review_at, version=excluded.version
+                    last_review_at=excluded.last_review_at, version=excluded.version,
+                    fsrs_stability=excluded.fsrs_stability, fsrs_difficulty=excluded.fsrs_difficulty,
+                    fsrs_state=excluded.fsrs_state, fsrs_step=excluded.fsrs_step
             """,
                 (
                     entry_id,
@@ -295,12 +322,15 @@ class PracticeStore:
                         for key in (
                             "due_at",
                             "interval_days",
-                            "ease",
                             "streak",
                             "lapses",
                             "review_count",
                             "last_review_at",
                             "version",
+                            "fsrs_stability",
+                            "fsrs_difficulty",
+                            "fsrs_state",
+                            "fsrs_step",
                         )
                     ),
                 ),
