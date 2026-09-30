@@ -1,4 +1,4 @@
-import { AudioLines, FlaskConical, Library, ListChecks, Settings, TrendingUp } from "lucide-react"
+import { AudioLines, Brain, FlaskConical, Library, ListChecks, Settings, TrendingUp } from "lucide-react"
 
 import { AppShell } from "@/components/shell/AppShell"
 import type { Section } from "@/components/shell/types"
@@ -7,6 +7,7 @@ import { EvalsScreen } from "@/features/tracker/EvalsScreen"
 import { LibraryScreen } from "@/features/tracker/LibraryScreen"
 import { PlanScreen } from "@/features/tracker/PlanScreen"
 import { ProgressScreen } from "@/features/tracker/ProgressScreen"
+import { TrainScreen } from "@/features/train/TrainScreen"
 import { VoiceTutorScreen } from "@/features/voice/VoiceTutorScreen"
 
 // Screen ownership: docs/tutor/CONTRACTS.md (C4).
@@ -15,6 +16,7 @@ const SECTIONS: Section[] = [
   { id: "library", label: "Library", icon: Library, subtitle: "Your books and papers", Screen: LibraryScreen },
   { id: "evals", label: "Evals", icon: FlaskConical, subtitle: "Hillclimbing, train vs held-out test", Screen: EvalsScreen },
   { id: "progress", label: "Progress", icon: TrendingUp, subtitle: "Your learning", Screen: ProgressScreen },
+  { id: "train", label: "Train", icon: Brain, subtitle: "Dual N-Back, optional skill practice", Screen: TrainScreen },
   { id: "plan", label: "Plan", icon: ListChecks, subtitle: "Build phases, decisions, spend", Screen: PlanScreen },
 ]
 const SETTINGS: Section = {

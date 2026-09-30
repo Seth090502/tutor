@@ -14,7 +14,7 @@
         },
         "conversation": {
             "text_only": false,
-            "max_duration_seconds": 1800,
+            "max_duration_seconds": 2700,
             "client_events": [
                 "audio",
                 "interruption",

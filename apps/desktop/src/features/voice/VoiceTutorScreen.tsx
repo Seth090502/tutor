@@ -26,6 +26,8 @@ type ChatMessage = { role: "user" | "assistant"; content: string }
 
 const TOOL_STATUS: Record<TutorToolName, string> = {
   get_next_question: "Finding a question",
+  set_confidence: "Noting your confidence",
+  get_hint: "Getting a hint",
   check_answer: "Checking your answer",
   record_review: "Scheduling your next review",
   search_library: "Searching your library",

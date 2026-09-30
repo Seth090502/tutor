@@ -284,6 +284,8 @@ dmypy.json
 *.mp3
 *.wav
 *.ogg
+# Dual N-Back letter clips (rendered offline by apps/desktop/scripts/render-letters.ps1)
+!/apps/desktop/src/features/train/audio/*.wav
 
 # ============================================
 # Tutor fork

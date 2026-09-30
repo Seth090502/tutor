@@ -1,5 +1,5 @@
-// The app rail: brand, subject switcher, the five sections and Settings at the bottom. The
-// active-item pill glides on the shared spring. Alt+1..6 jump to a section (see AppShell); the
+// The app rail: brand, subject switcher, the sections and Settings at the bottom. The
+// active-item pill glides on the shared spring. Alt+1..9 jump to a section (see AppShell); the
 // arrow keys, Home and End move focus through the items.
 
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react"

@@ -121,6 +121,7 @@ services as environment variables at launch.
 | Library | `src/features/tracker/LibraryScreen.tsx` |
 | Evals | `src/features/tracker/EvalsScreen.tsx` |
 | Progress | `src/features/tracker/ProgressScreen.tsx` |
+| Train (Dual N-Back) | `src/features/train/TrainScreen.tsx` |
 | Plan | `src/features/tracker/PlanScreen.tsx` |
 | Settings (keys, services) | `src/features/settings/SettingsScreen.tsx` |
 

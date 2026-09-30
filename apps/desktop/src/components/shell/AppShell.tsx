@@ -17,7 +17,7 @@ export function AppShell({ sections, settings }: { sections: Section[]; settings
   const { shown, phase } = useSectionPhase(activeId)
   const section = [...sections, settings].find((s) => s.id === shown) ?? sections[0]
 
-  // Alt+1 .. Alt+6 jump straight to a section.
+  // Alt+1 .. Alt+9 jump straight to a section, in sidebar order.
   useEffect(() => {
     const all = [...sections, settings]
     const onKeyDown = (e: KeyboardEvent) => {
