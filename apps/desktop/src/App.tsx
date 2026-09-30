@@ -1,21 +1,13 @@
-import { useState, type ComponentType } from "react"
 import { AudioLines, FlaskConical, Library, ListChecks, Settings, TrendingUp } from "lucide-react"
 
-import { cn } from "@/lib/utils"
+import { AppShell } from "@/components/shell/AppShell"
+import type { Section } from "@/components/shell/types"
 import { SettingsScreen } from "@/features/settings/SettingsScreen"
 import { EvalsScreen } from "@/features/tracker/EvalsScreen"
 import { LibraryScreen } from "@/features/tracker/LibraryScreen"
 import { PlanScreen } from "@/features/tracker/PlanScreen"
 import { ProgressScreen } from "@/features/tracker/ProgressScreen"
 import { VoiceTutorScreen } from "@/features/voice/VoiceTutorScreen"
-
-type Section = {
-  id: string
-  label: string
-  icon: ComponentType<{ className?: string }>
-  subtitle: string
-  Screen: ComponentType
-}
 
 // Screen ownership: docs/tutor/CONTRACTS.md (C4).
 const SECTIONS: Section[] = [
@@ -33,48 +25,6 @@ const SETTINGS: Section = {
   Screen: SettingsScreen,
 }
 
-function NavButton({ s, active, onSelect }: { s: Section; active: boolean; onSelect: () => void }) {
-  return (
-    <button
-      onClick={onSelect}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-      )}
-    >
-      <s.icon className="size-4" />
-      {s.label}
-    </button>
-  )
-}
-
 export default function App() {
-  const [active, setActive] = useState(SECTIONS[0].id)
-  const section = [...SECTIONS, SETTINGS].find((s) => s.id === active) ?? SECTIONS[0]
-
-  return (
-    <div className="bg-background text-foreground flex h-screen">
-      <nav className="bg-sidebar text-sidebar-foreground flex w-56 shrink-0 flex-col gap-1 border-r p-3">
-        <div className="px-3 pt-2 pb-5 text-sm font-semibold tracking-tight">Tutor</div>
-        {SECTIONS.map((s) => (
-          <NavButton key={s.id} s={s} active={s.id === active} onSelect={() => setActive(s.id)} />
-        ))}
-        <div className="mt-auto">
-          <NavButton s={SETTINGS} active={active === SETTINGS.id} onSelect={() => setActive(SETTINGS.id)} />
-        </div>
-      </nav>
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b px-8 py-4">
-          <h1 className="text-base font-semibold">{section.label}</h1>
-          <p className="text-muted-foreground text-sm">{section.subtitle}</p>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <section.Screen />
-        </div>
-      </main>
-    </div>
-  )
+  return <AppShell sections={SECTIONS} settings={SETTINGS} />
 }

@@ -1,0 +1,146 @@
+/* App shell motion and ambience. Tokens come from src/index.css; motion here is transform,
+   opacity and (for the one-shot motif draw-on) stroke-dashoffset only. */
+
+:root {
+    --shell-ease: cubic-bezier(.2, .8, .2, 1);
+    --shell-vignette: color-mix(in oklab, #3a2a14 8%, transparent);
+}
+
+.dark {
+    --shell-vignette: rgb(0 0 0 / .38);
+}
+
+/* ---- Section transitions: the outgoing view fades, the incoming one rises 8px and fades in. */
+
+.shell-phase[data-phase="out"] {
+    opacity: 0;
+    transition: opacity var(--dur-quick) linear;
+}
+
+.shell-phase[data-phase="in"] {
+    animation: shell-rise var(--dur-base) var(--shell-ease) backwards;
+}
+
+@keyframes shell-rise {
+    from { opacity: 0; transform: translate3d(0, 8px, 0); }
+    to { opacity: 1; transform: none; }
+}
+
+.shell-fade {
+    animation: shell-fade-in var(--dur-base) var(--shell-ease) backwards;
+}
+
+@keyframes shell-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* ---- Ambient layer: two washes, a vignette and a pre-generated grain tile. */
+
+.shell-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+}
+
+.shell-wash {
+    opacity: .85;
+    position: absolute;
+    width: 95vmax;
+    height: 95vmax;
+    border-radius: 50%;
+}
+
+.shell-wash-1 {
+    left: -30vmax;
+    top: -48vmax;
+    background: radial-gradient(closest-side in oklab, var(--wash-1), transparent);
+}
+
+.shell-wash-2 {
+    right: -34vmax;
+    bottom: -56vmax;
+    background: radial-gradient(closest-side in oklab, var(--wash-2), transparent);
+}
+
+.shell-vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 130% 105% at 50% 38%, transparent 58%, var(--shell-vignette));
+}
+
+.shell-grain {
+    position: absolute;
+    inset: 0;
+    background-size: 160px 160px;
+}
+
+.dark .shell-wash {
+    opacity: 1;
+}
+
+.dark .shell-grain {
+    opacity: .7;
+}
+
+/* Drift runs only in rich quality, never under reduced motion, and pauses while hidden. */
+@media (prefers-reduced-motion: no-preference) {
+    html[data-quality="rich"] .shell-wash {
+        will-change: transform;
+        animation-duration: 110s;
+        animation-timing-function: ease-in-out;
+        animation-iteration-count: infinite;
+        animation-direction: alternate;
+    }
+    html[data-quality="rich"] .shell-wash-1 { animation-name: shell-drift-1; }
+    html[data-quality="rich"] .shell-wash-2 { animation-name: shell-drift-2; animation-duration: 94s; }
+    html[data-quality="rich"] .shell-ambient[data-paused="true"] .shell-wash { animation-play-state: paused; }
+}
+
+@keyframes shell-drift-1 {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(9vmax, 6vmax, 0) scale(1.1); }
+}
+
+@keyframes shell-drift-2 {
+    from { transform: translate3d(0, 0, 0) scale(1.06); }
+    to { transform: translate3d(-8vmax, -7vmax, 0) scale(1); }
+}
+
+/* ---- Motifs: drawn on once when the world changes (the header remounts them), static otherwise. */
+
+@media (prefers-reduced-motion: no-preference) {
+    .motif path,
+    .motif ellipse {
+        stroke-dasharray: 1 2;
+        animation: shell-draw 700ms var(--shell-ease) backwards;
+        animation-delay: calc(var(--i, 0) * 45ms);
+    }
+    .motif .fill-world {
+        animation:
+            shell-draw 700ms var(--shell-ease) backwards,
+            shell-fill 260ms linear backwards;
+        animation-delay: calc(var(--i, 0) * 45ms), calc(var(--i, 0) * 45ms + 440ms);
+    }
+}
+
+@keyframes shell-draw {
+    from { stroke-dashoffset: 1; }
+    to { stroke-dashoffset: 0; }
+}
+
+@keyframes shell-fill {
+    from { fill-opacity: 0; }
+    to { fill-opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shell-phase,
+    .shell-fade {
+        animation: none !important;
+        transition: none !important;
+    }
+}
