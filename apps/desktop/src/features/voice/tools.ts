@@ -1,34 +1,21 @@
 // Client tools for the ElevenLabs voice tutor. The agent config declares the same names and
 // parameter schemas (apps/desktop/agent/tool_configs/). Every tool returns a string for the
 // LLM and never throws into the SDK: failures come back as a short "Error: ..." sentence.
-// Practice runs as attempts (contract C7): the server holds the answer key and the hint ladder,
-// and the model sees the answer only in check_answer's result, after the attempt is closed.
-// What the tools did is published as TutorEvents (contract C8) for the Tutor screen.
-// Library search goes through DeepTutor (contract C11) with the open attempt, so the server
+// Practice runs as C12 study sessions: the tools and the screen's typed controls send commands to
+// one server-side attempt through the screen's StudySession (practice.ts), with the source
+// voice_tool. Results are built only from the accepted public state, so the answer, explanation
+// and misconception reach the model only once the server has released them.
+// Library search goes through DeepTutor (contract C11) with the live attempt, so the server
 // withholds passages that contain the answer or sit under a solution heading.
 import { BACKEND_URL, HttpError, fetchJson } from "@/lib/backend"
+import { type AttemptStatus, type CommandResult, type StudyAttempt, StudyError, type StudySession } from "@/lib/study"
+import { confidenceWord, hintsGiven, isLive, lastCheck, offerWords, reviewWords } from "./attempt"
+import { type PanelAction, type VoicePractice, openNext, studyErrorText } from "./practice"
 
 const PRACTICE = "/api/question-notebook/practice"
 const EXCERPT_CHARS = 600
 const CALIBRATION_DAYS = 30
 
-type Entry = {
-  id: number
-  question: string
-  question_type?: string
-  options?: Record<string, string>
-  categories?: { name: string }[] | null
-}
-type PracticeQuestion = { entry: Entry; state: { version?: number } }
-type Attempt = { attempt_id: string; rungs_available: number }
-type Hint = { rung: number; text: string | null; is_answer: boolean }
-type Check = {
-  correct: boolean | null
-  correct_answer: string
-  explanation: string
-  misconception: string | null
-}
-type ReviewOutcome = { rating: string; due_at: number | null }
 type PracticeSummary = {
   total: number
   mistakes: number
@@ -47,51 +34,7 @@ type SearchHit = {
   text: string
 }
 
-export type TutorEvent =
-  | {
-      type: "question"
-      attempt_id: string
-      question_id: number
-      question: string
-      question_type: string
-      options: Record<string, string>
-    }
-  | { type: "confidence"; attempt_id: string; level: 1 | 2 | 3 | 4 }
-  | { type: "hint"; attempt_id: string; rung: number; text: string | null; is_answer: boolean }
-  | {
-      type: "checked"
-      attempt_id: string
-      correct: boolean | null
-      correct_answer: string
-      explanation: string
-      misconception: string | null
-    }
-  | { type: "reviewed"; attempt_id: string; rating: string; next_due: string | null }
-
-const listeners = new Set<(e: TutorEvent) => void>()
-
-/** The attempt get_next_question opened and check_answer has not closed yet. */
-let openAttempt: string | null = null
-
-export function onTutorEvent(listener: (e: TutorEvent) => void): () => void {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
-
-/** A listener that throws must not turn a completed tool call into an error for the agent. */
-function emit(event: TutorEvent) {
-  for (const listener of [...listeners]) {
-    try {
-      listener(event)
-    } catch (e) {
-      console.warn("tutor event listener failed", e)
-    }
-  }
-}
-
-/** A bad argument from the LLM; its message is safe to say aloud. */
+/** A bad argument from the LLM, or a step out of order; its message is safe to say aloud. */
 class ToolInputError extends Error {}
 
 type Params = Record<string, unknown>
@@ -106,21 +49,6 @@ function localTime(epochSeconds: number | null | undefined): string | null {
     dateStyle: "medium",
     timeStyle: "short",
   })
-}
-
-function questionId(value: unknown): number {
-  const id = typeof value === "string" ? Number(value.trim()) : value
-  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) {
-    throw new ToolInputError("question_id must be the number returned by get_next_question.")
-  }
-  return id
-}
-
-function attemptId(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new ToolInputError("attempt_id must be the attempt_id returned by get_next_question.")
-  }
-  return value.trim()
 }
 
 function confidence(value: unknown): 1 | 2 | 3 | 4 {
@@ -141,20 +69,6 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-function flag(value: unknown, name: string): boolean {
-  if (typeof value === "boolean") return value
-  if (value === "true" || value === "false") return value === "true"
-  throw new ToolInputError(`${name} must be true or false.`)
-}
-
-/** 32 random characters from [A-Za-z0-9], the review endpoint's idempotency key. */
-function requestId(): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  // 256 % 62 skews a few characters slightly; irrelevant for a unique id.
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")
-}
-
 function pages(hit: SearchHit): string {
   if (hit.page_start == null) return ""
   return hit.page_end == null || hit.page_end === hit.page_start
@@ -166,14 +80,6 @@ function excerpt(s: string): string {
   return s.length <= EXCERPT_CHARS ? s : `${s.slice(0, EXCERPT_CHARS - 1)}…`
 }
 
-function questionPath(id: number) {
-  return `${PRACTICE}/questions/${id}`
-}
-
-function attemptPath(id: string) {
-  return `${PRACTICE}/attempts/${encodeURIComponent(id)}`
-}
-
 /** What the tutor does when the server has no written text for a rung. */
 function missingRungInstruction(rung: number): string {
   return rung >= 4
@@ -181,190 +87,245 @@ function missingRungInstruction(rung: number): string {
     : "No written hint for this rung. Give one short conceptual nudge in your own words, without stating the answer or anything that gives it away."
 }
 
-/** Wraps a tool so any failure becomes a short sentence the agent can say. */
-function safe(name: string, service: string, run: TutorTool): TutorTool {
-  return async (params) => {
-    try {
-      return await run(params ?? {})
-    } catch (e) {
-      console.warn(`voice tool ${name} failed`, e)
-      if (e instanceof ToolInputError) return `Error: ${e.message}`
-      if (e instanceof HttpError) {
-        return e.status === 404
-          ? `Error: the ${service} could not find that.`
-          : `Error: the ${service} returned HTTP ${e.status}.`
-      }
-      return `Error: the ${service} is not reachable.`
+/** What a live question needs next, for steps asked out of order. */
+const WAITING: Record<AttemptStatus, string> = {
+  open: "the learner's answer, confirmed on screen (propose_answer for a spoken one)",
+  committed: "the learner's confidence (set_confidence)",
+  ready: "check_answer",
+  remediating: "a new try, a hint (get_hint) or give_up",
+  awaiting_self_assessment: "the learner's own judgement, on screen",
+  submitted: "the end of the assessment",
+  closed: "get_next_question",
+}
+
+const NO_QUESTION = "there is no open question; call get_next_question first."
+
+/** Only public fields, one by one: never the whole attempt. */
+function questionResult(a: StudyAttempt) {
+  return {
+    attempt_id: a.attempt_id,
+    question_id: a.entry_id,
+    question: a.item.prompt,
+    question_type: a.item.question_type,
+    options: a.item.options,
+    rungs_available: a.item.rungs_available,
+  }
+}
+
+function hintResult(a: StudyAttempt) {
+  const hints = hintsGiven(a)
+  const { rung, text: hintText } = hints[hints.length - 1]
+  return {
+    rung,
+    text: hintText,
+    ...(hintText == null && rung != null ? { instruction: missingRungInstruction(rung) } : {}),
+  }
+}
+
+function instruction(a: StudyAttempt): string | null {
+  if (a.status === "remediating")
+    return "Not correct yet, and the answer stays hidden. The learner may try again (aloud through propose_answer and the screen, or on screen), ask for a hint, or give up."
+  if (a.status === "awaiting_self_assessment")
+    return "There is no automatic check. The learner judges their answer against the reference answer on screen; wait for their judgement."
+  if (a.closure?.reason === "invalidated")
+    return "The answer key could not be read, so the question was set aside without a review. Offer the next question."
+  return null
+}
+
+/** A check, a retry, a give-up or a self-assessment. The answer appears only when released. */
+function outcomeResult(a: StudyAttempt) {
+  const check = lastCheck(a)
+  const { released, closure } = a
+  const review = reviewWords(a)
+  const nextDue = localTime(closure?.scheduler_disposition.applied?.due_at)
+  const todo = instruction(a)
+  return {
+    ...(check ? { verdict: check.verdict } : {}),
+    ...(check?.diagnostic ? { diagnostic: check.diagnostic } : {}),
+    ...(closure ? { closed: closure.reason } : {}),
+    ...(released
+      ? {
+          correct_answer: released.correct_answer,
+          explanation: released.explanation,
+          ...(released.misconception ? { misconception: released.misconception } : {}),
+        }
+      : {}),
+    ...(review ? { review } : {}),
+    ...(nextDue ? { next_due: nextDue } : {}),
+    ...(a.offer ? { offer: offerWords(a.offer) } : {}),
+    ...(todo ? { instruction: todo } : {}),
+  }
+}
+
+/** The attempt a command left; the server always returns it for attempt commands. */
+function attemptOf(result: CommandResult): StudyAttempt {
+  if (!result.public_state.attempt) throw new Error(`no attempt in the result of ${result.command_id}`)
+  return result.public_state.attempt
+}
+
+/** What the learner did on screen, told to the tutor with the same public data a tool would return. */
+export function screenMessage(action: PanelAction, a: StudyAttempt): string {
+  const json = (value: unknown) => JSON.stringify(value)
+  switch (action) {
+    case "next":
+      return `On screen: the learner opened the next question. ${json(questionResult(a))}`
+    case "answer":
+      return a.first_response?.input_mode === "dont_know"
+        ? `On screen: the learner answered "I don't know".`
+        : `On screen: the learner confirmed their answer: "${a.first_response?.response ?? ""}".`
+    case "confidence": {
+      const level = a.confidence?.level
+      return level
+        ? `On screen: confidence ${level}, ${confidenceWord(level)}.`
+        : `On screen: the learner skipped confidence (${a.confidence?.skipped_reason ?? ""}).`
     }
+    case "hint":
+      return `On screen: the learner asked for a hint. ${json(hintResult(a))}`
+    case "check":
+      return `On screen: the learner checked their answer. ${json(outcomeResult(a))}`
+    case "repair":
+      return `On screen: the learner tried again with "${a.repairs[a.repairs.length - 1]?.response ?? ""}". ${json(outcomeResult(a))}`
+    case "give_up":
+      return `On screen: the learner gave up. ${json(outcomeResult(a))}`
+    case "self_assess":
+      return `On screen: the learner judged their answer ${a.self_assessment?.judged ?? ""}. ${json(outcomeResult(a))}`
   }
 }
 
 const PRACTICE_SERVICE = "practice service"
 const LIBRARY_SERVICE = "library search"
 
-export const tutorTools = {
-  get_next_question: safe("get_next_question", PRACTICE_SERVICE, async ({ domain }) => {
-    const queue = await fetchJson<PracticeQuestion[]>(
-      BACKEND_URL,
-      `${PRACTICE}/queue?limit=20&timezone=${encodeURIComponent(timezone())}`,
-    )
-    if (queue.length === 0) return "No practice questions are due right now."
-    const wanted = optionalText(domain)?.toLowerCase()
-    const match =
-      wanted && queue.find((q) => q.entry.categories?.some((c) => c.name.toLowerCase() === wanted))
-    const { entry } = match || queue[0]
-    const attempt = await fetchJson<Attempt>(BACKEND_URL, `${questionPath(entry.id)}/attempts`, {
-      method: "POST",
-    })
-    // Built field by field: the queue entry carries the answer key and hints, which must not
-    // reach the tutor (or the screen) before check_answer has closed the attempt.
-    const question = {
-      attempt_id: attempt.attempt_id,
-      question_id: entry.id,
-      question: entry.question,
-      question_type: entry.question_type ?? "",
-      options: entry.options ?? {},
-    }
-    openAttempt = attempt.attempt_id
-    emit({ type: "question", ...question })
-    return JSON.stringify({ ...question, rungs_available: attempt.rungs_available })
-  }),
-
-  set_confidence: safe("set_confidence", PRACTICE_SERVICE, async ({ attempt_id, level }) => {
-    const attempt = attemptId(attempt_id)
-    const value = confidence(level)
-    await fetchJson<{ ok: boolean }>(BACKEND_URL, `${attemptPath(attempt)}/confidence`, {
-      method: "POST",
-      body: JSON.stringify({ level: value }),
-    })
-    emit({ type: "confidence", attempt_id: attempt, level: value })
-    return JSON.stringify({ recorded: true, level: value })
-  }),
-
-  get_hint: safe("get_hint", PRACTICE_SERVICE, async ({ attempt_id }) => {
-    const attempt = attemptId(attempt_id)
-    const hint = await fetchJson<Hint>(BACKEND_URL, `${attemptPath(attempt)}/hint`, { method: "POST" })
-    const { rung, text: hintText, is_answer } = hint
-    emit({ type: "hint", attempt_id: attempt, rung, text: hintText, is_answer })
-    return JSON.stringify({
-      rung,
-      text: hintText,
-      is_answer,
-      ...(hintText == null ? { instruction: missingRungInstruction(rung) } : {}),
-    })
-  }),
-
-  check_answer: safe("check_answer", PRACTICE_SERVICE, async ({ attempt_id, answer }) => {
-    const attempt = attemptId(attempt_id)
-    const given = text(answer, "answer")
-    const check = await fetchJson<Check>(BACKEND_URL, `${attemptPath(attempt)}/check`, {
-      method: "POST",
-      body: JSON.stringify({ answer: given }),
-    })
-    // The check closes the attempt, so the answer key may now reach the tutor.
-    if (openAttempt === attempt) openAttempt = null
-    const misconception = check.misconception || null
-    emit({
-      type: "checked",
-      attempt_id: attempt,
-      correct: check.correct,
-      correct_answer: check.correct_answer,
-      explanation: check.explanation,
-      misconception,
-    })
-    return JSON.stringify({
-      correct: check.correct,
-      correct_answer: check.correct_answer,
-      explanation: check.explanation,
-      ...(misconception ? { misconception } : {}),
-    })
-  }),
-
-  record_review: safe(
-    "record_review",
-    PRACTICE_SERVICE,
-    async ({ attempt_id, question_id, answer, judged_correct }) => {
-      const attempt = attemptId(attempt_id)
-      const id = questionId(question_id)
-      const given = text(answer, "answer")
-      const judged = judged_correct == null ? undefined : flag(judged_correct, "judged_correct")
-      const request_id = requestId()
-      const version = async () =>
-        (await fetchJson<PracticeQuestion>(BACKEND_URL, questionPath(id))).state.version ?? 0
-      // No rating: with attempt_id the server computes it from the attempt (C7).
-      const review = async (v: number) =>
-        fetchJson<ReviewOutcome>(BACKEND_URL, `${questionPath(id)}/review`, {
-          method: "POST",
-          body: JSON.stringify({
-            attempt_id: attempt,
-            request_id,
-            version: v,
-            answer: given,
-            ...(judged === undefined ? {} : { judged_correct: judged }),
-          }),
-        })
-      let outcome: ReviewOutcome
+/** The client tools for one Tutor screen, all driving that screen's study session. */
+export function createTutorTools(practice: VoicePractice) {
+  /** Wraps a tool so any failure becomes a short sentence the agent can say. */
+  const safe =
+    (name: string, service: string, run: TutorTool): TutorTool =>
+    async (params) => {
       try {
-        outcome = await review(await version())
+        return await run(params ?? {})
       } catch (e) {
-        // 409: the question changed since we read its version. Re-read once and retry.
-        if (!(e instanceof HttpError && e.status === 409)) throw e
-        outcome = await review(await version())
+        console.warn(`voice tool ${name} failed`, e)
+        if (e instanceof ToolInputError) return `Error: ${e.message}`
+        if (e instanceof StudyError) {
+          const status = practice.session?.state.attempt?.status
+          const waiting = e.code === "invalid_transition" && status ? `; the question is waiting for ${WAITING[status]}` : ""
+          return `Error: ${studyErrorText(e)}${waiting}.`
+        }
+        if (e instanceof HttpError) {
+          return e.status === 404
+            ? `Error: the ${service} could not find that.`
+            : `Error: the ${service} returned HTTP ${e.status}.`
+        }
+        return `Error: the ${service} is not reachable.`
       }
-      const next_due = localTime(outcome.due_at)
-      emit({ type: "reviewed", attempt_id: attempt, rating: outcome.rating, next_due })
-      return JSON.stringify({ rating: outcome.rating, next_due })
-    },
-  ),
+    }
 
-  search_library: safe("search_library", LIBRARY_SERVICE, async ({ query, domain }) => {
-    const q = text(query, "query")
-    const d = optionalText(domain)
-    const { pack } = await fetchJson<{ pack: SearchHit[] }>(BACKEND_URL, "/api/library/search", {
-      method: "POST",
-      body: JSON.stringify({
-        query: q,
-        k: 5,
-        ...(d ? { domains: [d] } : {}),
-        ...(openAttempt ? { attempt_id: openAttempt } : {}),
-      }),
-    })
-    return JSON.stringify({
-      hits: pack.map((h) => ({
-        title: h.title,
-        domain: h.domain,
-        source_type: h.source_type,
-        pages: pages(h),
-        excerpt: excerpt(h.text),
-      })),
-    })
-  }),
+  /** The session and its live question, or a sentence telling the agent to open one. */
+  const live = async (): Promise<{ session: StudySession; attempt: StudyAttempt }> => {
+    const session = await practice.current()
+    const attempt = session?.state.attempt ?? null
+    if (!session || !isLive(attempt)) throw new ToolInputError(NO_QUESTION)
+    return { session, attempt }
+  }
 
-  get_progress: safe("get_progress", PRACTICE_SERVICE, async () => {
-    const tz = encodeURIComponent(timezone())
-    const s = await fetchJson<PracticeSummary>(BACKEND_URL, `${PRACTICE}/summary?timezone=${tz}`)
-    const { calibration } = await fetchJson<{ calibration?: Calibration[] }>(
-      BACKEND_URL,
-      `${PRACTICE}/analytics?timezone=${tz}&days=${CALIBRATION_DAYS}`,
-    )
-    return JSON.stringify({
-      total: s.total,
-      due: s.due,
-      overdue: s.overdue,
-      mistakes: s.mistakes,
-      reviewed_today: s.reviewed_today,
-      next_due: localTime(s.next_due_at),
-      ...(Array.isArray(calibration)
-        ? {
-            calibration_30_days: calibration.map((c) => ({
-              level: c.level,
-              attempts: c.attempts,
-              correct: c.correct,
-            })),
-          }
-        : {}),
-    })
-  }),
-} satisfies Record<string, TutorTool>
+  return {
+    get_next_question: safe("get_next_question", PRACTICE_SERVICE, async ({ domain }) => {
+      const tag = optionalText(domain)
+      const session = await practice.ensure()
+      const current = session.state.attempt
+      if (isLive(current)) return `Finish the current question first: it is waiting for ${WAITING[current.status]}.`
+      const result = await openNext(session, "voice_tool", tag)
+      if (!result) return tag ? `No ${tag} practice questions are due right now.` : "No practice questions are due right now."
+      return JSON.stringify(questionResult(attemptOf(result)))
+    }),
 
-export type TutorToolName = keyof typeof tutorTools
+    propose_answer: safe("propose_answer", PRACTICE_SERVICE, async ({ transcript }) => {
+      const raw = text(transcript, "transcript")
+      const { session } = await live()
+      // A proposal only: the learner commits it on screen (source ui), never the tool.
+      await session.propose(raw)
+      return `Shown on screen for the learner to confirm: "${raw}". It counts only once they confirm or correct it there; wait for that.`
+    }),
+
+    set_confidence: safe("set_confidence", PRACTICE_SERVICE, async ({ level }) => {
+      const value = confidence(level)
+      const { session, attempt } = await live()
+      const { status } = attempt
+      if (status !== "committed") {
+        throw new ToolInputError(
+          `confidence can be set only after the learner has confirmed an answer on screen; the question is waiting for ${WAITING[status]}.`,
+        )
+      }
+      await session.confidence(value, undefined, "voice_tool")
+      return JSON.stringify({ recorded: true, level: value })
+    }),
+
+    get_hint: safe("get_hint", PRACTICE_SERVICE, async () => {
+      const { session } = await live()
+      return JSON.stringify(hintResult(attemptOf(await session.hint("voice_tool"))))
+    }),
+
+    check_answer: safe("check_answer", PRACTICE_SERVICE, async () => {
+      const { session } = await live()
+      return JSON.stringify(outcomeResult(attemptOf(await session.check("voice_tool"))))
+    }),
+
+    give_up: safe("give_up", PRACTICE_SERVICE, async () => {
+      const { session } = await live()
+      return JSON.stringify(outcomeResult(attemptOf(await session.giveUp("voice_tool"))))
+    }),
+
+    search_library: safe("search_library", LIBRARY_SERVICE, async ({ query, domain }) => {
+      const q = text(query, "query")
+      const d = optionalText(domain)
+      const attempt = (await practice.current())?.state.attempt ?? null
+      const { pack } = await fetchJson<{ pack: SearchHit[] }>(BACKEND_URL, "/api/library/search", {
+        method: "POST",
+        body: JSON.stringify({
+          query: q,
+          k: 5,
+          ...(d ? { domains: [d] } : {}),
+          ...(isLive(attempt) ? { attempt_id: attempt.attempt_id } : {}),
+        }),
+      })
+      return JSON.stringify({
+        hits: pack.map((h) => ({
+          title: h.title,
+          domain: h.domain,
+          source_type: h.source_type,
+          pages: pages(h),
+          excerpt: excerpt(h.text),
+        })),
+      })
+    }),
+
+    get_progress: safe("get_progress", PRACTICE_SERVICE, async () => {
+      const tz = encodeURIComponent(timezone())
+      const s = await fetchJson<PracticeSummary>(BACKEND_URL, `${PRACTICE}/summary?timezone=${tz}`)
+      const { calibration } = await fetchJson<{ calibration?: Calibration[] }>(
+        BACKEND_URL,
+        `${PRACTICE}/analytics?timezone=${tz}&days=${CALIBRATION_DAYS}`,
+      )
+      return JSON.stringify({
+        total: s.total,
+        due: s.due,
+        overdue: s.overdue,
+        mistakes: s.mistakes,
+        reviewed_today: s.reviewed_today,
+        next_due: localTime(s.next_due_at),
+        ...(Array.isArray(calibration)
+          ? {
+              calibration_30_days: calibration.map((c) => ({
+                level: c.level,
+                attempts: c.attempts,
+                correct: c.correct,
+              })),
+            }
+          : {}),
+      })
+    }),
+  } satisfies Record<string, TutorTool>
+}
+
+export type TutorTools = ReturnType<typeof createTutorTools>
+export type TutorToolName = keyof TutorTools

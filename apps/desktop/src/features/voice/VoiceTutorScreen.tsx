@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { ConversationProvider, useConversation } from "@elevenlabs/react"
 
 import { idleDimClass } from "@/components/kit"
@@ -7,15 +7,17 @@ import { type AgentState, Orb } from "@/components/ui/orb"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { TutorScreen, type TutorNotice } from "@/features/tutor/TutorScreen"
 import { inTauri, shell } from "@/lib/backend"
+import type { StudyAttempt } from "@/lib/study"
 import { cn } from "@/lib/utils"
 import { AttemptPanel } from "./AttemptPanel"
-import { answerMessage, attemptReducer, confidenceMessage, confidenceWord, type Confidence } from "./attempt"
+import { confidenceWord } from "./attempt"
+import { type PanelAction, type VoicePractice, createVoicePractice, panelActions, studyErrorText } from "./practice"
 import { SessionChrome } from "./SessionChrome"
 import { stageState } from "./session"
 import { OrbStage, VOICES, VoiceSwatches } from "./stage"
 import { TutorFrame } from "./TutorFrame"
 import { type ChatMessage, Transcript } from "./Transcript"
-import { type TutorToolName, onTutorEvent, tutorTools } from "./tools"
+import { type TutorToolName, createTutorTools, screenMessage } from "./tools"
 
 // The orb stage, the transcript and the call bar adapt ElevenLabs UI's voice-chat-03 block
 // (github.com/elevenlabs/ui, MIT).
@@ -24,12 +26,37 @@ type Setup = { kind: "loading" } | { kind: "blocked"; message: string } | { kind
 
 const TOOL_STATUS: Record<TutorToolName, string> = {
   get_next_question: "Finding a question",
+  propose_answer: "Showing your answer to confirm",
   set_confidence: "Noting your confidence",
   get_hint: "Getting a hint",
   check_answer: "Checking your answer",
-  record_review: "Scheduling your next review",
+  give_up: "Showing the answer",
   search_library: "Searching your library",
   get_progress: "Reading your progress",
+}
+
+/** The transcript line for something the learner did on screen. Never answer text. */
+function screenCaption(action: PanelAction, attempt: StudyAttempt): string {
+  switch (action) {
+    case "next":
+      return "Next question"
+    case "answer":
+      return "Answered on screen"
+    case "confidence": {
+      const level = attempt.confidence?.level
+      return level ? `Confidence ${level}, ${confidenceWord(level)}` : "Skipped confidence"
+    }
+    case "check":
+      return "Checked"
+    case "hint":
+      return "Asked for a hint"
+    case "repair":
+      return "Tried again"
+    case "give_up":
+      return "Gave up"
+    case "self_assess":
+      return attempt.self_assessment?.judged === "correct" ? "Got it" : "Missed it"
+  }
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -89,47 +116,57 @@ export function VoiceTutorScreen() {
 }
 
 function VoiceSession({ agentId }: { agentId: string }) {
+  // One study session per Tutor screen (C12), shared by the voice tools and the typed controls.
+  const [practice] = useState(createVoicePractice)
   // Tool calls in flight, so the orb can show "thinking" while the tutor waits on a tool.
   const [pending, setPending] = useState<TutorToolName[]>([])
 
-  const clientTools = useMemo(
-    () =>
-      Object.fromEntries(
-        (Object.keys(tutorTools) as TutorToolName[]).map((name) => [
-          name,
-          async (params: Record<string, unknown>) => {
-            setPending((p) => [...p, name])
-            try {
-              return await tutorTools[name](params)
-            } finally {
-              setPending((p) => {
-                const i = p.indexOf(name)
-                return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)]
-              })
-            }
-          },
-        ]),
-      ),
-    [],
-  )
+  const clientTools = useMemo(() => {
+    const tools = createTutorTools(practice)
+    return Object.fromEntries(
+      (Object.keys(tools) as TutorToolName[]).map((name) => [
+        name,
+        async (params: Record<string, unknown>) => {
+          setPending((p) => [...p, name])
+          try {
+            return await tools[name](params)
+          } finally {
+            setPending((p) => {
+              const i = p.indexOf(name)
+              return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)]
+            })
+          }
+        },
+      ]),
+    )
+  }, [practice])
 
   return (
     <ConversationProvider clientTools={clientTools}>
-      <VoiceTutor agentId={agentId} pendingTool={pending[pending.length - 1] ?? null} />
+      <VoiceTutor agentId={agentId} practice={practice} pendingTool={pending[pending.length - 1] ?? null} />
     </ConversationProvider>
   )
 }
 
-function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: TutorToolName | null }) {
+function VoiceTutor({
+  agentId,
+  practice,
+  pendingTool,
+}: {
+  agentId: string
+  practice: VoicePractice
+  pendingTool: TutorToolName | null
+}) {
   const [voice, setVoice] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [startError, setStartError] = useState<string | null>(null)
-  const [attempt, dispatch] = useReducer(attemptReducer, null)
+  const [practiceError, setPracticeError] = useState<string | null>(null)
+  // The session and attempt exactly as the server last accepted them.
+  const snapshot = useSyncExternalStore(practice.subscribe, practice.getSnapshot)
 
   const { status, message, isSpeaking, getInputVolume, getOutputVolume, sendUserMessage } = useConversation({
     onConnect: () => {
       setMessages([])
-      dispatch({ type: "reset" })
     },
     onMessage: (m) => {
       if (!m.message) return
@@ -137,8 +174,10 @@ function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: Tu
     },
   })
 
-  // What the agent's tools did (contract C8) becomes the attempt panel.
-  useEffect(() => onTutorEvent(dispatch), [])
+  // Resume this screen's study session after a restart; a new one starts with the first question.
+  useEffect(() => {
+    practice.current().catch((e: unknown) => setPracticeError(`Could not resume practice: ${studyErrorText(e)}.`))
+  }, [practice])
 
   const getConversationToken = useCallback(async () => {
     setStartError(null)
@@ -151,31 +190,19 @@ function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: Tu
   }, [agentId])
 
   const connected = status === "connected"
-  const attemptId = attempt?.attemptId
 
-  // Keys send what the learner pressed as a user message, so the agent calls the tools itself.
-  const sendKey = useCallback(
-    (text: string, caption: string) => {
-      sendUserMessage(text)
-      setMessages((prev) => [...prev, { role: "user", kind: "action", content: caption }])
-    },
-    [sendUserMessage],
-  )
-  const onAnswer = useCallback(
-    (choice: string) => {
-      if (!attemptId) return
-      sendKey(answerMessage(choice), `Answered ${choice}`)
-      dispatch({ type: "answered", attempt_id: attemptId, choice })
-    },
-    [attemptId, sendKey],
-  )
-  const onRate = useCallback(
-    (level: Confidence) => {
-      if (!attemptId) return
-      sendKey(confidenceMessage(level), `Confidence ${level}, ${confidenceWord(level)}`)
-      dispatch({ type: "rated", attempt_id: attemptId, level })
-    },
-    [attemptId, sendKey],
+  // What the learner does on screen goes to the server first; once accepted, the tutor hears about
+  // it (contract C8), so it carries on from there instead of repeating the step with a tool.
+  const tell = useRef<(action: PanelAction, attempt: StudyAttempt) => void>(() => {})
+  tell.current = (action, attempt) => {
+    if (!connected) return
+    sendUserMessage(screenMessage(action, attempt))
+    setMessages((prev) => [...prev, { role: "user", kind: "action", content: screenCaption(action, attempt) }])
+  }
+  const session = snapshot ? practice.session : null
+  const actions = useMemo(
+    () => (session ? panelActions(session, (action, attempt) => tell.current(action, attempt)) : undefined),
+    [session],
   )
 
   const agentState: AgentState =
@@ -219,7 +246,7 @@ function VoiceTutor({ agentId, pendingTool }: { agentId: string; pendingTool: Tu
         />
       }
       attempt={
-        <AttemptPanel attempt={attempt} onAnswer={connected ? onAnswer : undefined} onRate={connected ? onRate : undefined} />
+        <AttemptPanel attempt={snapshot?.attempt ?? null} actions={actions} notice={snapshot ? null : practiceError} />
       }
       transcript={<Transcript messages={messages} className="h-full" />}
       composer={
