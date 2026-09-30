@@ -29,6 +29,8 @@ keyring = "4.2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio = { version = "1", features = ["time"] }
+# Dual N-Back sessions (contract C6); same version as crates/rag-engine, SQLite compiled in.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 # The shell is Windows-only: Job Objects keep sidecar process trees tied to the app.
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
