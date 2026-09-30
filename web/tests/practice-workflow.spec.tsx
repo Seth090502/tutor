@@ -114,6 +114,34 @@ it("does not allow a success rating when the server marked the answer wrong", as
   expect(screen.getByRole("button", { name: "Practice again" })).not.toBeDisabled();
 });
 
+async function withMisconception(misconception: string) {
+  const question = await api.getPracticeQuestion(8); // the fixture from beforeEach
+  vi.mocked(api.getPracticeQuestion).mockResolvedValue({
+    ...question,
+    entry: { ...question.entry, misconception },
+  });
+}
+
+it("names the misconception only after a checked answer is wrong", async () => {
+  await withMisconception("Mixes up the two oceans.");
+  vi.mocked(api.checkPracticeAnswer).mockResolvedValue({ correct: false });
+  render(<PracticeSession ids={[8]} onClose={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("radio", { name: "A Pacific" }));
+  expect(screen.queryByText("Mixes up the two oceans.")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Check and reveal answer" }));
+  expect(await screen.findByText("Mixes up the two oceans.")).toBeInTheDocument();
+  expect(screen.getByText("Common misconception")).toBeInTheDocument();
+});
+
+it("keeps the misconception hidden after a correct answer", async () => {
+  await withMisconception("Mixes up the two oceans.");
+  render(<PracticeSession ids={[8]} onClose={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("radio", { name: "B Atlantic" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check and reveal answer" }));
+  await screen.findByText("Reference explanation");
+  expect(screen.queryByText("Mixes up the two oceans.")).not.toBeInTheDocument();
+});
+
 it("requires reloading a stale question instead of retrying its old version", async () => {
   vi.mocked(api.savePracticeReview).mockRejectedValueOnce(
     new api.PracticeRequestError("Question changed", 409),

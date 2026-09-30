@@ -401,9 +401,10 @@ class PracticeStore:
                     """
                     INSERT OR IGNORE INTO notebook_entries(
                         session_id, origin_type, origin_ref, question_id, question, question_type,
-                        options_json, correct_answer, explanation, difficulty, user_answer, source,
-                        result, assessment_type, created_at, updated_at, material_title, material_id)
-                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
+                        options_json, correct_answer, explanation, misconception, difficulty,
+                        user_answer, source, result, assessment_type, created_at, updated_at,
+                        material_title, material_id)
+                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
                 """,
                     (
                         origin_ref,
@@ -413,6 +414,8 @@ class PracticeStore:
                         json.dumps(question["options"], ensure_ascii=False),
                         question["correct_answer"],
                         question["explanation"],
+                        # Previews staged before this field existed lack the key.
+                        question.get("misconception"),
                         question["difficulty"],
                         question["user_answer"],
                         "incorrect" if staged["target"] == "mistakes" else "ungraded",

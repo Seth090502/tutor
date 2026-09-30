@@ -456,6 +456,24 @@ export default function QuestionCard({
             </div>
           )}
 
+          {/* Only after a checked answer went wrong, never as a hint beforehand. */}
+          {showReviewState && entry.misconception && (
+            <div className="rounded-lg border border-amber-200/60 bg-amber-50/30 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/15">
+              <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                {t("Common misconception")}
+              </div>
+              <div className="text-[13px] leading-relaxed text-[var(--foreground)]">
+                <MarkdownRenderer
+                  content={entry.misconception}
+                  variant="prose"
+                  className="text-[13px] leading-relaxed"
+                  enableMath
+                  allowHtml={false}
+                />
+              </div>
+            </div>
+          )}
+
           {!!entry.practice?.review_count && (
             <AnswerBlock
               label={t("Latest practice answer")}

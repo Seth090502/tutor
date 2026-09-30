@@ -191,6 +191,51 @@ it("keeps legacy Partner notebook entries readable without a synthetic chat link
   expect(screen.getByText("Tutor (Partner)")).toBeVisible();
 });
 
+it("names the misconception only on entries that were answered wrong", () => {
+  const entry = {
+    id: 4,
+    question: "1/2 + 1/3 = ?",
+    question_type: "short",
+    options: {},
+    correct_answer: "5/6",
+    user_answer: "2/5",
+    result: "incorrect",
+    source: "import",
+    misconception: "Adds the numerators and the denominators.",
+    categories: [],
+    session_id: "",
+    created_at: 100,
+    updated_at: 100,
+  } as unknown as NotebookEntry;
+  const card = (shown: NotebookEntry) => (
+    <ul>
+      <QuestionCard
+        entry={shown}
+        categories={[]}
+        selected={false}
+        disabled={false}
+        onToggleSelected={vi.fn()}
+        onToggleBookmark={vi.fn()}
+        onToggleResolved={vi.fn()}
+        onDelete={vi.fn()}
+        onFile={vi.fn()}
+        onUnfile={vi.fn()}
+        onCreateAndFile={vi.fn()}
+      />
+    </ul>
+  );
+  const { rerender } = render(card(entry));
+  expect(screen.getByText("Common misconception")).toBeVisible();
+  expect(screen.getByText("Adds the numerators and the denominators.")).toBeVisible();
+  for (const notWrong of [
+    { ...entry, result: "ungraded" as const },
+    { ...entry, result: "correct" as const, is_correct: true },
+  ]) {
+    rerender(card(notWrong));
+    expect(screen.queryByText("Adds the numerators and the denominators.")).not.toBeInTheDocument();
+  }
+});
+
 it("switches metrics and charts without losing course scope and exposes exact daily values", async () => {
   const { rerender } = render(<PracticeInsights courseId="course-a" revision={0} />);
   await screen.findByText("Mastery Path");

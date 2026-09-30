@@ -13321,6 +13321,8 @@ export interface components {
        * @default
        */
       readonly material_title: string;
+      /** Misconception */
+      readonly misconception?: string | null;
       /**
        * Options
        * @default {}
@@ -15653,6 +15655,8 @@ export interface components {
        * @default
        */
       readonly material_title: string;
+      /** Misconception */
+      readonly misconception?: string | null;
       /** Options */
       readonly options?: {
         readonly [key: string]: string;
