@@ -235,6 +235,22 @@ function ChemistryMotif({ className }: { className?: string }) {
   )
 }
 
+// ---- Languages: three scripts on penmanship guide lines. A Latin "é" whose acute accent is the
+// world colour, the hiragana "の" and the hanzi "文" (writing, language).
+function LanguagesMotif({ className }: { className?: string }) {
+  return (
+    <Frame className={className}>
+      <P d="M4 20H180M4 72H180" />
+      <P d="M4 44H180" width={0.6} i={1} />
+      <P d="M17 58H47A15 15 0 1 0 43.49 67.64" i={2} width={1.25} />
+      <P d="M29 38L38 27" accent i={3} width={1.5} />
+      <P d="M93 40C91 54 87 63 80 68C74 72 69 66 70 57C71 42 83 29 97 29C110 29 118 40 117 52C116 64 108 71 96 72" accent i={4} width={1.25} />
+      <P d="M134 32H172M140 32Q150 58 174 71M164 32Q156 58 132 71" i={5} width={1.25} />
+      <P d="M152 20L155 26" accent i={6} width={1.5} />
+    </Frame>
+  )
+}
+
 // ---- Neutral: ruler ticks with a measured span.
 const NEUTRAL_TICKS =
   Array.from({ length: 41 }, (_, k) => {
@@ -259,6 +275,7 @@ const MOTIFS: Record<World, (props: { className?: string }) => ReactNode> = {
   english: EnglishMotif,
   science: ScienceMotif,
   chemistry: ChemistryMotif,
+  languages: LanguagesMotif,
 }
 
 /** The motif for a world. Key it by world so it draws on once when the world changes. */

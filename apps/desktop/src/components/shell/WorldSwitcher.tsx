@@ -2,7 +2,7 @@
 // world-colour fill that glides between segments on the shared spring.
 
 import { useRef, type ComponentType, type KeyboardEvent } from "react"
-import { Atom, BookOpen, CircleDot, Hexagon, Pi } from "lucide-react"
+import { Atom, BookOpen, CircleDot, Hexagon, Languages, Pi } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { WORLDS, useWorld, worldMeta, type World } from "@/lib/world"
@@ -15,6 +15,7 @@ const GLYPHS: Record<World, ComponentType<{ className?: string }>> = {
   english: BookOpen,
   science: Atom,
   chemistry: Hexagon,
+  languages: Languages,
 }
 
 export function WorldSwitcher({ className }: { className?: string }) {
@@ -59,7 +60,7 @@ export function WorldSwitcher({ className }: { className?: string }) {
         role="radiogroup"
         aria-labelledby="world-switcher-label"
         onKeyDown={onKeyDown}
-        className="border-hairline bg-sidebar-accent relative grid grid-cols-5 rounded-xl border p-[3px]"
+        className="border-hairline bg-sidebar-accent relative grid grid-cols-6 rounded-xl border p-[3px]"
       >
         <span
           ref={pill}

@@ -31,17 +31,19 @@ const throwing = {
 }
 
 describe("worlds", () => {
-  it("lists the five worlds with a label and description each", () => {
-    expect(WORLDS.map((w) => w.id)).toEqual(["neutral", "math", "english", "science", "chemistry"])
+  it("lists the six worlds with a label and description each", () => {
+    expect(WORLDS.map((w) => w.id)).toEqual(["neutral", "math", "english", "science", "chemistry", "languages"])
     for (const w of WORLDS) {
       expect(w.label.length).toBeGreaterThan(0)
       expect(w.description.length).toBeGreaterThan(0)
     }
     expect(worldMeta("math").label).toBe("Math")
+    expect(worldMeta("languages").label).toBe("Languages")
   })
 
   it("accepts only known ids", () => {
     expect(isWorld("chemistry")).toBe(true)
+    expect(isWorld("languages")).toBe(true)
     expect(isWorld("history")).toBe(false)
     expect(isWorld(null)).toBe(false)
   })
