@@ -46,9 +46,12 @@ _PROVIDER_DEFAULT_OFF_PATTERNS: dict[str, tuple[str, ...]] = {
 # to one table is an obvious prompt to check the other. OpenRouter marks Meta
 # Muse Spark's reasoning as mandatory and says not to send ``none`` to such
 # models; it has no default-off entry above, so only explicit requests reach it.
+# OpenCode serves the same models under bare ids (``muse-spark-1.3``,
+# ``muse-spark-1.3-contributor``) over the Responses API.
 _MINIMAL_NOT_OFF_PATTERNS: dict[str, tuple[str, ...]] = {
     "gemini": ("gemini-3", "gemini-2.5-pro"),
     "openrouter": ("meta/muse-spark",),
+    "opencode": ("muse-spark",),
 }
 _CUSTOM_MODEL_THINKING_STYLES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("qwen3", "qwen-3", "qwq", "qwen-plus"), "enable_thinking"),

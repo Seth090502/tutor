@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import threading
 from typing import Any
@@ -34,6 +35,29 @@ CATALOG_PATH = get_path_service().get_settings_file("model_catalog")
 # load/edit/save round trip never sends a real secret to the browser.
 CATALOG_SECRET_MASK = "***"
 _SECRET_FIELD_HINTS = ("api_key", "apikey", "token", "secret", "password")
+# A key may name an environment variable instead of holding the secret, as
+# "${OPENCODE_API_KEY}": the desktop shell passes keys to the backend that way
+# and never writes them to disk. Only a whole value of this form is a reference.
+_ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def resolve_env_reference(value: str) -> str:
+    """Return the environment value a ``"${NAME}"`` reference names, else *value*.
+
+    Called only when the runtime resolves the profile it is about to use, never
+    on load or save, so the stored catalog keeps the reference and the settings
+    API masks it like any other key.
+    """
+    match = _ENV_REFERENCE.fullmatch(value)
+    if match is None:
+        return value
+    name = match.group(1)
+    resolved = os.environ.get(name, "")
+    if not resolved:
+        raise ValueError(
+            f"The model catalog references environment variable {name}, which is not set."
+        )
+    return resolved
 
 
 def _is_secret_field(name: str) -> bool:
@@ -654,5 +678,6 @@ __all__ = [
     "ModelCatalogService",
     "get_model_catalog_service",
     "redact_catalog_secrets",
+    "resolve_env_reference",
     "restore_catalog_secrets",
 ]

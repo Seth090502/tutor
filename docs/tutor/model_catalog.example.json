@@ -1,0 +1,105 @@
+{
+  "_notes": [
+    "Example LLM profiles for data/user/settings/model_catalog.json. Keys are environment references only: \"${NAME}\" is read from the backend's environment when a profile is used, is never written back to disk, and is masked as *** by the settings API. The desktop shell supplies OPENCODE_API_KEY and ANTHROPIC_API_KEY.",
+    "PRIVACY: the OpenCode Go Muse Spark 1.3 contributor tier (muse-spark-1.3-contributor) grants Meta permission to train future models on your prompts and completions. It is not zero-retention. Do not send corpus text to it; the active profile here is the Zen standard tier.",
+    "OpenCode Zen states that its other models follow a zero-retention, no-training policy, and that requests to Anthropic models are retained for 30 days under Anthropic's data policies. Check both before sending corpus text.",
+    "Muse Spark has mandatory reasoning: a reasoning_effort of none is sent as minimal. The standard tier (muse-spark-1.3 on Zen) also accepts max; the contributor tier does not.",
+    "Claude Opus 5.5 runs at effort medium when none is set, so effort is explicit here. Thinking cannot be turned off on Opus 5.5 (none is sent as effort low); on Sonnet 5.5, none is sent as thinking between_tools.",
+    "OpenCode Zen's model list did not include claude-sonnet-5-5 on 2026-09-30; its profile may fail until Zen adds it.",
+    "The settings UI offers only none/adaptive for these Claude models and does not offer xhigh for OpenCode, so set reasoning_effort in this file."
+  ],
+  "version": 1,
+  "connections": [],
+  "services": {
+    "llm": {
+      "active_profile_id": "opencode-zen-muse-spark",
+      "active_model_id": "opencode-zen-muse-spark-1-3",
+      "profiles": [
+        {
+          "id": "opencode-go-muse-spark",
+          "name": "OpenCode Go - Muse Spark (contributor tier, trains on prompts)",
+          "binding": "opencode",
+          "base_url": "https://opencode.ai/zen/go/v1",
+          "api_key": "${OPENCODE_API_KEY}",
+          "api_version": "",
+          "api_format": "openai_responses",
+          "extra_headers": {},
+          "models": [
+            {
+              "id": "opencode-go-muse-spark-1-3-contributor",
+              "name": "Muse Spark 1.3 (contributor)",
+              "model": "muse-spark-1.3-contributor",
+              "reasoning_effort": "xhigh"
+            }
+          ]
+        },
+        {
+          "id": "opencode-zen-muse-spark",
+          "name": "OpenCode Zen - Muse Spark (standard tier)",
+          "binding": "opencode",
+          "base_url": "https://opencode.ai/zen/v1",
+          "api_key": "${OPENCODE_API_KEY}",
+          "api_version": "",
+          "api_format": "openai_responses",
+          "extra_headers": {},
+          "models": [
+            {
+              "id": "opencode-zen-muse-spark-1-3",
+              "name": "Muse Spark 1.3",
+              "model": "muse-spark-1.3",
+              "reasoning_effort": "xhigh"
+            }
+          ]
+        },
+        {
+          "id": "opencode-zen-claude",
+          "name": "OpenCode Zen - Claude",
+          "binding": "opencode",
+          "base_url": "https://opencode.ai/zen/v1",
+          "api_key": "${OPENCODE_API_KEY}",
+          "api_version": "",
+          "api_format": "anthropic",
+          "extra_headers": {},
+          "models": [
+            {
+              "id": "opencode-zen-claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "model": "claude-opus-5-5",
+              "reasoning_effort": "high"
+            },
+            {
+              "id": "opencode-zen-claude-sonnet-5-5",
+              "name": "Claude Sonnet 5.5",
+              "model": "claude-sonnet-5-5",
+              "reasoning_effort": "high"
+            }
+          ]
+        },
+        {
+          "id": "anthropic-claude",
+          "name": "Anthropic - Claude",
+          "binding": "anthropic",
+          "base_url": "https://api.anthropic.com/v1",
+          "api_key": "${ANTHROPIC_API_KEY}",
+          "api_version": "",
+          "api_format": "anthropic",
+          "extra_headers": {},
+          "models": [
+            {
+              "id": "anthropic-claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "model": "claude-opus-5-5",
+              "reasoning_effort": "high"
+            },
+            {
+              "id": "anthropic-claude-sonnet-5-5",
+              "name": "Claude Sonnet 5.5",
+              "model": "claude-sonnet-5-5",
+              "reasoning_effort": "high"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
