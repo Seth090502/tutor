@@ -19,7 +19,7 @@
       "title": "Baseline: environment, every test/build/lint, named failure list",
       "depends_on": [],
       "owner": "sonnet worker",
-      "status": "in_progress",
+      "status": "locally_verified",
       "contracts": [],
       "evidence": [],
       "acceptance": "Logs and failures.csv under data/qa/baseline-2026-09-30/; QA.md links them"
@@ -74,7 +74,7 @@
         "P0-4"
       ],
       "owner": "opus worker",
-      "status": "in_progress",
+      "status": "locally_verified",
       "contracts": [
         "C3",
         "C9"
@@ -88,7 +88,7 @@
       "title": "Dependency and licence inventory",
       "depends_on": [],
       "owner": "sonnet worker",
-      "status": "in_progress",
+      "status": "locally_verified",
       "contracts": [],
       "evidence": [],
       "acceptance": "Per-ecosystem CSVs and a copyleft/unknown list"
@@ -133,7 +133,7 @@
         "P0-7"
       ],
       "owner": "lead",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C7",
         "C12"
@@ -153,7 +153,7 @@
         "P1-1"
       ],
       "owner": "lead",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C12"
       ],
@@ -171,7 +171,7 @@
         "P1-1"
       ],
       "owner": "lead",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C11",
         "C12"
@@ -189,7 +189,7 @@
         "P1-2"
       ],
       "owner": "opus worker",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C8",
         "C12"
@@ -209,7 +209,7 @@
         "P1-2"
       ],
       "owner": "sonnet worker",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C10",
         "C12"
@@ -230,11 +230,14 @@
         "P0-5"
       ],
       "owner": "lead",
-      "status": "in_progress",
+      "status": "locally_verified",
       "contracts": [
         "C12"
       ],
-      "evidence": [],
+      "evidence": [
+        "data/qa/p1-walkthrough (screenshots)",
+        "QA.md Phase 1 walkthrough"
+      ],
       "acceptance": "Screenshots under data/qa/ linked from QA.md; no secrets visible"
     },
     {
@@ -245,7 +248,7 @@
         "P1-1"
       ],
       "owner": "lead",
-      "status": "implemented",
+      "status": "locally_verified",
       "contracts": [
         "C7",
         "C12"
@@ -278,12 +281,16 @@
         "P1-1"
       ],
       "owner": "opus",
-      "status": "proposed",
+      "status": "in_progress",
       "contracts": [
         "C13"
       ],
-      "evidence": [],
-      "acceptance": "Exact Beta reference cases incl. the four-success counterexample, decay/replay/timezone tests; spec in CONTRACTS.md C13"
+      "evidence": [
+        "learning-core 3c5d9d98 (skills, plan; 27 tests)",
+        "backend feed/candidates 309ecb9b (10 tests)",
+        "merged 093afde3"
+      ],
+      "acceptance": "Exact Beta reference cases incl. the four-success counterexample, decay/replay/timezone tests; spec in CONTRACTS.md C13; remaining: shell projection host and Tauri commands"
     },
     {
       "id": "P2-2",

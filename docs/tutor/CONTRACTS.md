@@ -538,8 +538,10 @@ code already does, `services/workspace/data_migration.py`) while the backend is 
 
 ## C13. Learner projections, study plan and probes (Rust `learning-core`, desktop shell, backend feed)
 
-Status: specified 2026-09-30 for Phase 2. Every number below is a **local policy default**, versioned and
-provisional (evidence ledger EV-023); none of them establishes improved learning.
+Status (2026-09-30): the backend feed and candidates routes and the `learning-core` skills and plan modules
+are implemented and tested; the shell projection host, probes and the Progress screen are not built yet. Every
+number below is a **local policy default**, versioned and provisional (evidence ledger EV-023); none of them
+establishes improved learning.
 
 **Pieces and owners.**
 - `crates/learning-core` (Rust library, pure: no I/O, no clock; every time is an argument): skill
@@ -549,13 +551,22 @@ provisional (evidence ledger EV-023); none of them establishes improved learning
     `{schema_version: 1, store_id, events: [{event_seq, session_id, seq, attempt_id, kind, recorded_at,
     source, payload}], next_after}` in `event_seq` order. `store_id` is a UUID kept in a `learning_meta`
     table, so projections from different workspaces never mix.
-  - `GET /api/study/candidates` returns, for every visible item that is not quarantined or provisional,
-    `{entry_id, track, question_type, lang, skill_ids, family_id, tags, due_at, retrievability, stability,
-    difficulty, review_count, last_review_at, fsrs_state, estimated_seconds}`. Retrievability comes from
-    py-fsrs (one implementation of the forgetting curve).
-- Projection host (desktop shell, `src-tauri/src/learning.rs`): `<app data>/learning.sqlite` holds
-  `projection_progress(store_id, policy_version, last_event_seq)` and `skill_observations`. It catches up
-  from the feed on demand, and it is rebuilt from scratch when the policy version changes or on request.
+  - `GET /api/study/candidates` returns `{schema_version: 1, store_id, now, items}`: for every visible item that
+    is not quarantined or provisional, ordered by `entry_id`, `{entry_id, track, question_type, lang, skill_ids,
+    family_id, tags, due_at, retrievability, stability, difficulty, review_count, last_review_at, fsrs_state,
+    estimated_seconds, is_new}`.
+    - Retrievability comes from py-fsrs (one implementation of the forgetting curve), counts whole days since
+      the last review, and is null before the first review. `estimated_seconds` is always null from the backend
+      (the plan applies defaults). `is_new` means no review yet. `now` is the server time used.
+    - `track` is `lang:<code>` for a language card, else the first ordinary tag lowercased (tags sorted by
+      name; `lang:`, `card:`, `skill:`, `family:`, `chunk:` and `provisional` are not ordinary), else `general`.
+  - The feed passes stored payloads unchanged, so `assistance_given.payload.text` carries the hints the learner
+    requested (already shown to the learner); unrequested hints and keys never appear.
+- Projection host (desktop shell, `src-tauri/src/learning.rs`, not built yet): `<app data>/learning.sqlite`
+  holds a serialised `SkillFold` snapshot per `(store_id, policy_version, last_event_seq)`; the fold, not a
+  table of observations, is the resume point, because exposures and `families_available` also need the
+  ineligible attempts. JSON snapshots need serde_json's `float_roundtrip` so a resume is bit-exact. It catches
+  up from the feed on demand and is rebuilt from scratch when the policy version changes or on request.
   Tauri commands: `learning_skills()`, `learning_plan(request)`.
 
 **Observations.** One per skill id of an `attempt_closed` event whose `measurement_eligibility.eligible`
@@ -575,11 +586,13 @@ never update the posterior.
   dependent_observations, distinct_families, families_available, distinct_dates, last_exposure_at,
   delayed_evidence: [{attempt_id, at, gap_days, y}], p_mastery, status, limitations}`.
 - Status (advisory, reversible, never a lesson gate):
-  - `insufficient`: fewer than 15 eligible observations or fewer than 3 distinct dates.
+  - `insufficient`: fewer than 15 independent (non-dependent) eligible observations, or fewer than 3
+    distinct dates.
   - `provisionally_mastered`: `p_mastery >= 0.80`, at least 15 eligible observations on at least 3
     dates, at least 3 distinct families when the skill's items span 3 or more families (otherwise the
-    limitation "fewer than 3 families authored" is shown), and at least one correct eligible observation
-    7 or more days after the previous exposure to the skill.
+    limitation "fewer than 3 families authored" is shown; items without a family count as their own), and
+    the most recent delayed eligible observation (7 or more days after the previous exposure, which is any
+    attempt on the skill, eligible or not) is correct.
   - `needs_review`: was provisionally mastered and later fails the probability or delayed criterion.
   - `developing`: otherwise.
 - With a uniform prior, four successes already give `P(p >= 0.70) = 1 - 0.7^5 = 0.832`; the 15-observation
@@ -591,7 +604,8 @@ never update the posterior.
   excluded_experiment_units}`.
 - One global budget across every subject and language: each language card kind (recognition, production,
   listening) is a separate item charged against it. Active language tracks share the budget; five tracks
-  never multiply it.
+  never multiply it. The review budget caps due work; new items use what remains of the global budget, and
+  `new_item_budget` is a count of items.
 - Ranking: due items by lowest retrievability, with each active track's share proportional to its due
   load and a floor so no track starves; procedures and writing keep at least `procedure_share_min` of the
   minutes when such candidates exist; new items only after due work, up to `new_item_budget`.
