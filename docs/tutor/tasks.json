@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-30",
+  "statuses": {
+    "proposed": "Agreed as work, not started",
+    "in_progress": "Being built now",
+    "implemented": "Code exists; its own tests pass",
+    "locally_verified": "Implemented and checked end to end on this PC (tests, build, and the real surface where one exists)",
+    "blocked_owner": "Needs an owner decision or material",
+    "blocked_provider": "Needs a key, budget or provider account",
+    "blocked_hardware": "Needs the second desktop or other hardware",
+    "blocked_external_qa": "Needs native-speaker, expert or rights review",
+    "outcome_unvalidated": "Works as software; no evidence yet that it improves learning"
+  },
+  "tasks": [
+    {"id": "P0-1", "phase": 0, "title": "Baseline: environment, every test/build/lint, named failure list", "depends_on": [], "owner": "sonnet worker", "status": "in_progress", "contracts": [], "evidence": [], "acceptance": "Logs and failures.csv under data/qa/baseline-2026-09-30/; QA.md links them"},
+    {"id": "P0-2", "phase": 0, "title": "Implementation inventory against the mandate contracts", "depends_on": [], "owner": "sonnet worker, lead review", "status": "locally_verified", "contracts": [], "evidence": ["docs/tutor/qa/2026-09-30-inventory.md"], "acceptance": "Each area mapped implemented/partial/missing/docs-only with file references"},
+    {"id": "P0-3", "phase": 0, "title": "Evidence ledger seeded with the load-bearing sources", "depends_on": [], "owner": "sonnet worker, lead review", "status": "locally_verified", "contracts": [], "evidence": ["docs/tutor/evidence-ledger.json"], "acceptance": "Six named sources verified to stated depth; pedagogy leads listed as unverified"},
+    {"id": "P0-4", "phase": 0, "title": "Local boundary review", "depends_on": [], "owner": "opus worker", "status": "locally_verified", "contracts": ["C3", "C9"], "evidence": ["docs/tutor/qa/2026-09-30-boundary-review.md"], "acceptance": "Findings with file references, severity and fixes"},
+    {"id": "P0-5", "phase": 0, "title": "Boundary fixes: Host/Origin guard (backend, rag-engine), key-to-host binding, survey containment, release origins", "depends_on": ["P0-4"], "owner": "opus worker", "status": "in_progress", "contracts": ["C3", "C9"], "evidence": [], "acceptance": "Tests fail before and pass after; full tests/api and cargo tests pass"},
+    {"id": "P0-6", "phase": 0, "title": "Dependency and licence inventory", "depends_on": [], "owner": "sonnet worker", "status": "in_progress", "contracts": [], "evidence": [], "acceptance": "Per-ecosystem CSVs and a copyleft/unknown list"},
+    {"id": "P0-7", "phase": 0, "title": "Decisions reconciled (owner decisions, scheduling authority, confidence timing, closure, held-out, parsing, citation semantics)", "depends_on": ["P0-2"], "owner": "lead", "status": "implemented", "contracts": ["C12"], "evidence": ["docs/tutor/PLAN.md#decisions-2026-09-30"], "acceptance": "Each decision states what, why and what it supersedes"},
+    {"id": "P0-8", "phase": 0, "title": "Owner items found in Phase 0: plaintext key in local model catalog; sandbox subprocess enabled in local settings", "depends_on": ["P0-4"], "owner": "owner", "status": "blocked_owner", "contracts": [], "evidence": ["docs/tutor/qa/2026-09-30-boundary-review.md items 4-5"], "acceptance": "Owner confirms whether the key is real and chooses the sandbox setting"},
+
+    {"id": "P1-1", "phase": 1, "title": "C12 backend: commands, sealed first response, confidence timing, remediation, closure, review policy 2, provenance, quarantine", "depends_on": ["P0-7"], "owner": "lead", "status": "implemented", "contracts": ["C7", "C12"], "evidence": ["wt/loop aaa33173", "tests/api/test_learning_loop.py (24 tests)", "tests/api/test_practice_attempts.py"], "acceptance": "Transitions, idempotency, stale versions, concurrency, crash rollback, replay parity, no duplicate review, voice limits, assessment buffering"},
+    {"id": "P1-2", "phase": 1, "title": "C12 client (StudySession)", "depends_on": ["P1-1"], "owner": "lead", "status": "implemented", "contracts": ["C12"], "evidence": ["wt/loop 664d5e3f", "apps/desktop/src/lib/study.test.ts (8 tests)"], "acceptance": "Version chaining, serialized sends, network retry with same id, conflict refresh"},
+    {"id": "P1-3", "phase": 1, "title": "Library answer-leak guard for C12 attempts", "depends_on": ["P1-1"], "owner": "lead", "status": "implemented", "contracts": ["C11", "C12"], "evidence": ["wt/loop eb63d27e"], "acceptance": "Guard active until the answer is released"},
+    {"id": "P1-4", "phase": 1, "title": "Tutor screen: voice tools and attempt panel on C12; agent prompt and tool configs", "depends_on": ["P1-2"], "owner": "opus worker", "status": "in_progress", "contracts": ["C8", "C12"], "evidence": [], "acceptance": "Tools propose only; panel renders accepted state; no key before release in tool results or DOM"},
+    {"id": "P1-5", "phase": 1, "title": "Languages practice tab on C12", "depends_on": ["P1-2"], "owner": "sonnet worker", "status": "in_progress", "contracts": ["C10", "C12"], "evidence": [], "acceptance": "Server-side language filter; full flow; no key before release"},
+    {"id": "P1-6", "phase": 1, "title": "Desktop walkthrough with screenshots (typed session end to end against a real backend)", "depends_on": ["P1-4", "P1-5", "P0-5"], "owner": "lead", "status": "proposed", "contracts": ["C12"], "evidence": [], "acceptance": "Screenshots under data/qa/ linked from QA.md; no secrets visible"},
+    {"id": "P1-7", "phase": 1, "title": "Legacy entry paths labelled and tested (C7 routes, chat/book/reading record_assessment triggers, imports, stateless check route)", "depends_on": ["P1-1"], "owner": "lead", "status": "proposed", "contracts": ["C7", "C12"], "evidence": [], "acceptance": "Each path has a test showing its provenance or that it cannot create verified evidence"},
+    {"id": "P1-8", "phase": 1, "title": "Shared contract fixtures for C12 used by pytest and vitest", "depends_on": ["P1-1"], "owner": "sonnet worker", "status": "proposed", "contracts": ["C12"], "evidence": [], "acceptance": "One JSON fixture set exercised by both suites"},
+
+    {"id": "P2-1", "phase": 2, "title": "C13 projections in Rust: decayed-Beta skill state with policy versioning, replay from learning_events", "depends_on": ["P1-1"], "owner": "opus", "status": "proposed", "contracts": ["C13"], "evidence": [], "acceptance": "Exact Beta reference cases incl. the four-success counterexample, decay/replay/timezone tests"},
+    {"id": "P2-2", "phase": 2, "title": "Global queue and workload budget across subjects and five language tracks", "depends_on": ["P2-1"], "owner": "opus", "status": "proposed", "contracts": ["C13"], "evidence": [], "acceptance": "Starvation and load tests with all five language tracks; no over-budget card creation"},
+    {"id": "P2-3", "phase": 2, "title": "Probe plans (7/30 days), exposure logging, contamination labels", "depends_on": ["P2-1"], "owner": "opus", "status": "proposed", "contracts": ["C13"], "evidence": [], "acceptance": "Test-clock scheduling; arms reported separately; probes shown pending"},
+    {"id": "P2-4", "phase": 2, "title": "Honest Progress displays and a learner-facing next-session plan", "depends_on": ["P2-1", "P2-2"], "owner": "sonnet worker", "status": "proposed", "contracts": ["C13"], "evidence": [], "acceptance": "Denominators, missing data and uncertainty shown"},
+
+    {"id": "P3", "phase": 3, "title": "Evidence-first library: rights records, parse records, source-stable provenance, citation kinds, guided reading completion, degraded states, gold-set tooling", "depends_on": ["P0-5"], "owner": "opus + sonnet workers", "status": "proposed", "contracts": ["C1", "C9", "C11", "C14"], "evidence": [], "acceptance": "Phase 3 done checks in the mandate"},
+    {"id": "P4", "phase": 4, "title": "Item lifecycle, restricted checkers, blind solving, first mathematics unit", "depends_on": ["P1-1", "P3"], "owner": "opus", "status": "proposed", "contracts": ["C15"], "evidence": [], "acceptance": "Phase 4 done checks; expert-gated item classes stay provisional"},
+    {"id": "P5", "phase": 5, "title": "Subject workspaces and language depth", "depends_on": ["P4"], "owner": "mixed", "status": "proposed", "contracts": ["C10", "C16"], "evidence": [], "acceptance": "Phase 5 done checks; native/expert gates visibly unverified"},
+    {"id": "P6", "phase": 6, "title": "Voice reliability and cost control (usage events, budget reservations)", "depends_on": ["P1-4"], "owner": "opus", "status": "proposed", "contracts": ["C8", "C17"], "evidence": [], "acceptance": "Phase 6 done checks; real-provider smoke tests only with keys and budget"},
+    {"id": "P7", "phase": 7, "title": "Usability, n-back containment, release hardening, packaging", "depends_on": ["P1-6"], "owner": "mixed", "status": "proposed", "contracts": ["C3", "C5", "C6"], "evidence": [], "acceptance": "Phase 7 done checks"},
+    {"id": "P8", "phase": 8, "title": "Independent adversarial review and final gate", "depends_on": ["P7"], "owner": "opus", "status": "proposed", "contracts": [], "evidence": [], "acceptance": "Phase 8 done checks"}
+  ]
+}

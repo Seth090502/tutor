@@ -1,0 +1,614 @@
+{
+  "schema_version": 1,
+  "ledger_version": "2026-09-30.1",
+  "description": "Evidence ledger for Tutor design decisions. Short original summaries only; no copied papers. verification_depth says what was actually read. Agreeing agents are not independent verification.",
+  "fields": [
+    "claim_id",
+    "claim",
+    "source_locator",
+    "publication_or_version_date",
+    "checked_at",
+    "verification_depth",
+    "design",
+    "population",
+    "limitations",
+    "product_decisions",
+    "status",
+    "notes"
+  ],
+  "entries": [
+    {
+      "claim_id": "EV-001",
+      "claim": "Murray, Horner & Goebel (2025) math meta-analysis: spacing g=0.28 (27 studies, 53 effect sizes; course-embedded 0.24, isolated 0.43); testing vs restudy g=0.18 (7 studies, 32 effect sizes) with 95% CI crossing zero. Preprint numbers reportedly differ (0.22 testing, 0.26 spacing).",
+      "source_locator": "doi:10.1007/s10648-025-10035-1 (Springer page fetched; Crossref record api.crossref.org/works/10.1007/s10648-025-10035-1); preprint values from C:/Users/sethy/Projects/tutor/docs/tutor/research/learning.md section 1 and section 6 (report A1, not re-read)",
+      "publication_or_version_date": "Online 2025-07-29; Educational Psychology Review vol 37 issue 3, Sept 2025 (Crossref). Preprint date not retrieved.",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Random-effects meta-analysis of spacing and retrieval practice (testing vs restudy) for mathematics learning.",
+      "population": "Mathematics learners across studies (moderator split: isolated learning vs course-embedded). Age mix not retrieved.",
+      "limitations": "Read the Springer abstract/results summary only, through a summarising fetch; no numeric CI bounds were returned, only that the testing CI crosses zero. Crossref returned no abstract. I could not reach the preprint (Europe PMC empty, OpenAlex 429, search budget exhausted), so the 0.22/0.26 preprint figures are second-hand from learning.md and unverified by me. Effect sizes are priors, not PhD-adult evidence.",
+      "product_decisions": [
+        "PEDAGOGY two practice paths: retrieval/FSRS for atoms, worked-example/fading path for procedures",
+        "PEDAGOGY copy: no claim that retrieval practice is established for math problem solving",
+        "Quote spacing g=0.28 only as 'small to medium, may be smaller than other domains'"
+      ],
+      "status": "conflicting_versions",
+      "notes": "Published abstract matches the claim (0.28 spacing; 0.18 testing, CI crosses zero). Conflict: learning.md says the preprint gave 0.22 (testing) and 0.26 (spacing). Use published values; do not cite preprint numbers. Exact CI bounds still needed from the full text before any interval is displayed."
+    },
+    {
+      "claim_id": "EV-002",
+      "claim": "Anki manual: FSRS treats Hard as a correct recall made with hesitation and much effort; pressing Hard after a failed recall makes all intervals unreasonably high, so use Again when you forget.",
+      "source_locator": "https://docs.ankiweb.net/deck-options.html (FSRS section; fetched twice, including #fsrs anchor)",
+      "publication_or_version_date": "Live manual page, undated; read 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Software documentation (vendor manual), not an empirical study.",
+      "population": "Anki users; no learner population.",
+      "limitations": "Fetched through a summarising model, so wording is paraphrase plus short quotes, not a verbatim page read. Manual defines Hard in terms of hesitation/effort, not in terms of hints or assistance. Separate non-FSRS text says Hard on review cards uses the Hard Interval multiplier (default 1.20) and on learning steps averages the first two steps.",
+      "product_decisions": [
+        "PEDAGOGY rating policy: failure or reveal is Again, never Hard",
+        "PEDAGOGY rating policy: mapping 'correct after rung 2-3' to Hard is a project design choice, not something the Anki manual states",
+        "Review UI: Hard button label should read as 'recalled with difficulty'"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Core claim verified. Note a spec tension to resolve outside this ledger: PEDAGOGY says FSRS learns only from unassisted retrieval yet rates correct-after-rung-2-3 as Hard; expert.md D1 says no study tested this mapping."
+    },
+    {
+      "claim_id": "EV-003",
+      "claim": "Desired retention: Anki/FSRS docs present 90% as the default with a good workload balance, say workload rises quickly above 90% and can be overwhelming above 97%, and call 70%-97% reasonable; no study validates 0.90 as optimal.",
+      "source_locator": "https://docs.ankiweb.net/deck-options.html (FSRS section); https://github.com/open-spaced-repetition/awesome-fsrs/wiki/ABC-of-FSRS (70%-97% range, default parameters fitted on several hundred million reviews from about 10k users); C:/Users/sethy/Projects/tutor/docs/tutor/research/learning.md rule 13",
+      "publication_or_version_date": "Live pages, undated; read 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Vendor and community documentation; workload guidance, not outcome evidence.",
+      "population": "Anki users; default parameters fitted on roughly 10k users.",
+      "limitations": "Via summarising fetch. Documents describe a workload/retention tradeoff, not learning outcomes. The project cap of 0.95 is a design choice stricter than the 97% warning.",
+      "product_decisions": [
+        "PEDAGOGY FSRS: desired retention 0.90 as a tunable default, capped at 0.95",
+        "Retention-workload table shown in UI",
+        "No copy claiming 0.90 is scientifically optimal"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Supports 0.90 as a documented default only. learning.md already says no source validates 0.90 as optimal; that stands."
+    },
+    {
+      "claim_id": "EV-004",
+      "claim": "Anki manual gives a ~1,000-review rule for when to optimize FSRS parameters.",
+      "source_locator": "https://docs.ankiweb.net/deck-options.html (FSRS section, Optimize text; three fetches); https://github.com/open-spaced-repetition/awesome-fsrs/wiki/ABC-of-FSRS; engineering.md rule 12",
+      "publication_or_version_date": "Live pages, undated; read 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Vendor documentation.",
+      "population": "Anki users.",
+      "limitations": "Summarising fetch could miss a sentence; three separate queries (including an explicit search for 1000/1,000) returned none. The earlier FSRS wiki URL failed to render (see fetch_failures); awesome-fsrs ABC page was read and also had no threshold.",
+      "product_decisions": [
+        "PEDAGOGY FSRS: personalise parameters only after about 1,000 unassisted reviews is the project's own conservative rule, not an Anki rule",
+        "Do not attribute the 1,000 figure to Anki in docs or UI copy",
+        "Keep chronological-holdout gate before accepting fitted parameters"
+      ],
+      "status": "contradicted",
+      "notes": "Manual only says 'less than a few hundred' reviews is a common cause of poor FSRS fit, recommends optimizing about monthly, and says defaults were fitted on several hundred million reviews from about 10k users. engineering.md rule 12 already admits 1,000 is the researcher's judgement. The attribution is contradicted; the 1,000 threshold itself is a defensible design choice."
+    },
+    {
+      "claim_id": "EV-005",
+      "claim": "Cawley & Talbot (2010): over-fitting a model-selection criterion on finite data causes selection bias in performance estimates; repeated tuning against the same evaluation data gives optimistic, unreliable results, so held-out data must not drive model selection.",
+      "source_locator": "https://www.jmlr.org/papers/v11/cawley10a.html",
+      "publication_or_version_date": "JMLR vol 11 (issue 70), 2010",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Methodological and empirical study of model-selection over-fitting (cross-validation and related criteria).",
+      "population": "Machine-learning benchmark models and datasets, not learners.",
+      "limitations": "Only the abstract/summary page was read. The paper is about over-fitting the model-selection criterion (for example cross-validation) and the resulting bias in performance evaluation; applying it to a held-out test split that is reused repeatedly is a direct but extended reading. Abstract says low variance of the criterion matters as much as unbiasedness and that degradation can be surprisingly large.",
+      "product_decisions": [
+        "AGENTS eval discipline: never tune against the test split; eval-search keeps --split test held out",
+        "Report hit rates on the test split only once per change set, or use a fresh split/seed",
+        "Keep a never-tuned holdout for eval-search"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Supports the principle behind the project's train/test rule. Full-text reading would be needed to quote specific magnitudes."
+    },
+    {
+      "claim_id": "EV-006",
+      "claim": "PNAS correction 10.1073/pnas.2518204122 to Bastani et al. changes only an author affiliation; it does not change the study's results, including the 17% figure.",
+      "source_locator": "Europe PMC full text XML of the correction, PMC12403119 (PMID 40833419), via https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12403119/fullTextXML; Crossref record api.crossref.org/works/10.1073/pnas.2518204122; pnas.org returned 403",
+      "publication_or_version_date": "Correction published 2025-08-20 (Crossref), PNAS vol 122 issue 34, e2518204122 (Europe PMC lists 2025 Aug 26); original 10.1073/pnas.2422633122 published June-July 2025",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Journal correction notice.",
+      "population": "Not applicable (notice about the original high-school math field experiment, about 1,000 students).",
+      "limitations": "Read through a summarising fetch of the Europe PMC XML; the notice is short, but I did not see the raw XML. Publisher page and PMC HTML page were blocked (403 and a browser check). Correction date differs between Crossref (Aug 20) and Europe PMC (Aug 26), probably online vs issue date.",
+      "product_decisions": [
+        "PEDAGOGY core loop 1: remove the note 'erratum still unread'",
+        "The 17% figure may appear in copy only as 'GPT Base without guardrails, high-school math, after access removed', not as a general AI harm rate",
+        "Keep attempt-first and server-enforced hint rungs"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Correction text summary: Osbert Bastani's affiliation should read Department of Computer and Information Science, School of Engineering and Applied Science, University of Pennsylvania. This resolves the open question in PEDAGOGY, learning.md section 5, languages.md section 5 and domains.md. Note the original abstract (Europe PMC) still states the 17% reduction for GPT Base and substantial mitigation for GPT Tutor."
+    },
+    {
+      "claim_id": "EV-007",
+      "claim": "SymPy documentation warns that parse_expr (and sympify) use eval and should not be used on unsanitized, untrusted input.",
+      "source_locator": "https://docs.sympy.org/latest/modules/parsing.html (parse_expr) and https://docs.sympy.org/latest/modules/core.html (sympify)",
+      "publication_or_version_date": "SymPy 'latest' docs, version not shown; read 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Library documentation warning.",
+      "population": "Not applicable.",
+      "limitations": "Via summarising fetch; quoted wording is 'this function uses eval, and thus shouldn't be used on unsanitized input'. The docs do not say a safe sandbox mode exists, and the sympify page only points to parse_expr for non-Python syntax, not as a safer route. Installed SymPy version not checked.",
+      "product_decisions": [
+        "Verification ladder: never pass learner or model-generated strings to sympify/parse_expr directly",
+        "Answer checker: parse with a restricted grammar or allowlisted tokens, or run in an isolated process with no builtins, before CAS comparison",
+        "Add a security test with a hostile expression string"
+      ],
+      "status": "supported",
+      "notes": "Claim verified on both parse_expr and sympify pages. This is a documented code-execution risk, not just correctness."
+    },
+    {
+      "claim_id": "EV-008",
+      "claim": "RDKit SanitizeMol checks structural validity (valence, kekulizability, aromaticity, conjugation, hybridization, radicals, chirality cleanup, hydrogen adjustment) so that molecules are 'reasonable' octet-complete Lewis structures; it does not assess reaction-mechanism plausibility.",
+      "source_locator": "https://www.rdkit.org/docs/RDKit_Book.html#molecular-sanitization (13-step list); https://www.rdkit.org/docs/source/rdkit.Chem.rdmolops.html (SanitizeFlags enum)",
+      "publication_or_version_date": "Current RDKit docs, release not shown; read 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "full_text",
+      "design": "Software documentation.",
+      "population": "Not applicable.",
+      "limitations": "Via summarising fetch. The positive part (what it checks; goal stated as octet-complete Lewis structures that support computed properties) is documented. The negative part (no mechanism plausibility check) is an inference from scope: the docs do not discuss reactions or mechanisms at all, so it rests on absence. The SanitizeMol docstring itself was not retrieved; only the flag list.",
+      "product_decisions": [
+        "Verification ladder: RDKit check means 'valid structure' only, never 'mechanism correct'",
+        "Mechanism grading needs rubric/expert checker plus a second independent LLM pass, else 'I cannot verify this'",
+        "UI copy must not say 'verified' for a sanitize pass"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Sanitization steps confirmed: clearComputedProps, cleanUp, cleanUpOrganometallics, updatePropertyCache (valence exceptions), symmetrizeSSSR, Kekulize, assignRadicals, setAromaticity, setConjugation, setHybridization, cleanupChirality, adjustHs, updatePropertyCache again."
+    },
+    {
+      "claim_id": "EV-009",
+      "claim": "Unguarded GPT-4 access raised practice scores but cut later unassisted grades (GPT Base about -17% after access removed; +48% in practice); a guardrailed GPT Tutor largely mitigated the harm (+127% in practice).",
+      "source_locator": "doi:10.1073/pnas.2422633122 (Bastani et al. 2025); abstract seen via Europe PMC PMC12232635 this session; research/learning.md row 'Unguarded LLM harm'",
+      "publication_or_version_date": "PNAS, 2025 (vol 122); correction 2025-08",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Field experiment with two AI tutor arms vs control.",
+      "population": "About 1,000 high-school mathematics students.",
+      "limitations": "One field study, adolescents, math only, outcome tests shortly after. No adult or PhD evidence. The 17% applies to GPT Base only.",
+      "product_decisions": [
+        "PEDAGOGY core loop 1: attempt first, no ask-anything answer mode",
+        "PEDAGOGY hint ladder: rung ceilings enforced server-side (C7)",
+        "PEDAGOGY measurement: separate assisted and unassisted results, track reliance gap"
+      ],
+      "status": "supported_with_limits",
+      "notes": "Correction affects affiliation only (EV-006). Abstract text seen via Europe PMC."
+    },
+    {
+      "claim_id": "EV-010",
+      "claim": "Elaborated feedback beats right/wrong-only feedback: g 0.49 elaborated, 0.32 knowledge of correct response, 0.05 knowledge of result.",
+      "source_locator": "Van der Kleij et al. 2015, doi:10.3102/0034654314564881; research/learning.md section 1",
+      "publication_or_version_date": "2015",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis of computer-based item feedback.",
+      "population": "Learners in computer-based assessment and learning studies; mostly school and college.",
+      "limitations": "Per the note, abstract matched; I did not re-check. Feedback-type coding; delayed timing had a negative effect overall without a significant interaction.",
+      "product_decisions": [
+        "PEDAGOGY core loop 4: never right/wrong only; name the misconception",
+        "Feedback timing: default immediate elaborated feedback"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified on the web per brief. learning.md marks it V (abstract)."
+    },
+    {
+      "claim_id": "EV-011",
+      "claim": "Refutation format (state the wrong idea, why it fails, the correct idea) improves learning: g 0.41 across 44 experiments.",
+      "source_locator": "Schroeder & Kucera 2022, doi:10.1007/s10648-021-09656-z; research/domains.md row 17",
+      "publication_or_version_date": "2022",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis of refutation texts.",
+      "population": "Mostly reading comprehension of science misconceptions in students.",
+      "limitations": "The studies are refutation TEXTS read by learners, not tutor feedback turns; applying it to tutoring feedback and to adult PhD learners is an extrapolation.",
+      "product_decisions": [
+        "PEDAGOGY core loop 4: refutation-form feedback",
+        "Do not cite 0.41 in user-facing copy as a tutoring effect"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified. domains.md marks V."
+    },
+    {
+      "claim_id": "EV-012",
+      "claim": "Collecting a confidence rating before feedback routes high-confidence errors to re-study (hypercorrection); hypercorrection is established for facts and unproven for problem solving.",
+      "source_locator": "Butler 2008, Butler 2011, Metcalfe 2017 (all report-level R in research/learning.md rule 7); domains.md rule 4 'hypercorrection (Metcalfe, pattern only)'",
+      "publication_or_version_date": "2008-2017 (per note)",
+      "checked_at": "2026-09-30",
+      "verification_depth": "unverified",
+      "design": "Laboratory memory studies on confidence and error correction (per note).",
+      "population": "Mostly undergraduates on general-knowledge facts.",
+      "limitations": "All cited sources are report-level only, not re-checked by the synthesiser. Note itself calls this a design inference. Also 0.25/0.5/0.75/0.95 probability mapping is a design choice with no cited source. Confidence format conflicts across notes (0-100, 1-5, 1-4); 1-4 was chosen.",
+      "product_decisions": [
+        "PEDAGOGY core loop 2: confidence 1-4 before feedback, never changes FSRS intervals",
+        "PEDAGOGY core loop 5: high-confidence errors get immediate re-study plus later near-transfer item, as routing not a promise",
+        "Calibration chart and Brier score (0.25/0.5/0.75/0.95 mapping)"
+      ],
+      "status": "lead_unverified",
+      "notes": "Keep as a routing rule, not a marketing claim."
+    },
+    {
+      "claim_id": "EV-013",
+      "claim": "A five-rung graded hint ladder (nudge, hint, key step, worked example, answer) with server-enforced ceilings, and after three failed rungs a worked example plus a fresh isomorphic problem, improves learning versus direct answers.",
+      "source_locator": "research/expert.md rule 5 ('ladder details are design inference'); domains.md rule 1; curricula.md rule 1",
+      "publication_or_version_date": "Notes dated 2026-09-30",
+      "checked_at": "2026-09-30",
+      "verification_depth": "unverified",
+      "design": "Design inference from Bastani 2025 (guardrails) and worked-example literature; no trial of this ladder.",
+      "population": "None tested at PhD level.",
+      "limitations": "Only the general guardrail finding has a verified source (EV-009); rung structure, the three-failure threshold and ceilings are untested design choices.",
+      "product_decisions": [
+        "PEDAGOGY core loop 3: graded hint ladder, server-enforced (C7)",
+        "Log hint level for every attempt",
+        "Copy must not claim the ladder itself is evidence-based"
+      ],
+      "status": "lead_unverified",
+      "notes": "Flag as design, not evidence."
+    },
+    {
+      "claim_id": "EV-014",
+      "claim": "FSRS should learn only from unassisted retrieval: correct with no hint or rung 1 = Good; correct after rung 2-3 = Hard; rung 4-5 or wrong = Again.",
+      "source_locator": "research/expert.md row 'When a hint is used, how is FSRS graded?' and rule 3; critique.md item 4",
+      "publication_or_version_date": "2026-09-30 notes",
+      "checked_at": "2026-09-30",
+      "verification_depth": "unverified",
+      "design": "Design inference; expert.md states no study tested any of these mappings.",
+      "population": "None.",
+      "limitations": "Anki's own manual defines Hard as hesitant correct recall and warns against Hard after failure (EV-002); it says nothing about assisted recall. Other candidate rules (D4: not Easy after hint 3; D5: revealed items as new) differ. PEDAGOGY also says 'Assisted attempts never count' for mastery while hinted-correct still feeds FSRS as Hard, which is an unresolved tension.",
+      "product_decisions": [
+        "PEDAGOGY FSRS rating policy: hinted success mapping to Hard",
+        "Variant families are testlets: one FSRS card, at most one fresh variant per day"
+      ],
+      "status": "lead_unverified",
+      "notes": "High-impact scheduling rule with no empirical support. Candidate for an n=1 experiment or a simpler alternative (assisted success not used for FSRS)."
+    },
+    {
+      "claim_id": "EV-015",
+      "claim": "FSRS-6 predicts recall better than DASH, ACT-R and HLR on a large Anki dataset (log loss FSRS-6 0.346 vs DASH 0.368, ACT-R 0.403, HLR 0.469; 349.9M evaluated reviews from 9,999 users).",
+      "source_locator": "srs-benchmark README (github.com/open-spaced-repetition/srs-benchmark) as cited in research/learning.md section 1",
+      "publication_or_version_date": "Benchmark README, 2026 (per note)",
+      "checked_at": "2026-09-30",
+      "verification_depth": "secondary",
+      "design": "Community benchmark of prediction accuracy on Anki review logs.",
+      "population": "Anki users, mostly declarative cards.",
+      "limitations": "Measures prediction of recall, not learning outcomes; community-run by FSRS maintainers; no learning-outcome RCT of FSRS.",
+      "product_decisions": [
+        "PEDAGOGY FSRS: FSRS-6 defaults for atoms; no custom HLR/DASH/ACT-R",
+        "Copy must not claim FSRS improves learning outcomes or 'fewer reviews' (docs' 20-30% claim is unverified)"
+      ],
+      "status": "lead_unverified",
+      "notes": "Note read the README summary, not raw results."
+    },
+    {
+      "claim_id": "EV-016",
+      "claim": "Successive relearning: about 3 correct recalls in session 1 then one correct recall per later spaced session yields large retention gains (ds 1.52-4.19 vs single session).",
+      "source_locator": "Rawson & Dunlosky 2011 (10.1037/a0023956); Rawson et al. 2018 (10.1037/xap0000146); research/learning.md rule 2",
+      "publication_or_version_date": "2011, 2018",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Laboratory and classroom experiments.",
+      "population": "Undergraduates, vocabulary and concept definitions.",
+      "limitations": "Lab vocabulary evidence; FSRS itself has no learning-outcome RCT; Nakata 2016 shows repeat caps are a time-efficiency argument only.",
+      "product_decisions": [
+        "PEDAGOGY atoms path: about 3 correct recalls in first session then one per FSRS review",
+        "Always show the answer after a miss"
+      ],
+      "status": "lead_unverified",
+      "notes": "Note marks V (abstract); not re-checked here."
+    },
+    {
+      "claim_id": "EV-017",
+      "claim": "Spaced practice has a medium-to-large effect on L2 vocabulary learning (48 experiments, 98 effect sizes, N=3,411); equal and expanding gaps do equally well.",
+      "source_locator": "Kim & Webb 2022, doi:10.1111/lang.12479; research/languages.md row 1",
+      "publication_or_version_date": "2022",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis.",
+      "population": "L2 vocabulary learners.",
+      "limitations": "Vocabulary focus; shorter gaps equal longer gaps on immediate tests but worse delayed. The per-word two-card split (recognition, production) is a design choice not cited.",
+      "product_decisions": [
+        "LANGUAGES method 3: FSRS spaced retrieval, retention target 0.9",
+        "LANGUAGES: recognition, production and listening cards per word"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-018",
+      "claim": "Interleaving confusable problem types helps in math (Brunmair & Richter 2019 math g 0.34; Rohrer et al. 61% vs 38%, d 0.83) but hurts vocabulary-like pairs (g -0.39); start with about 30% of problem reviews mixed.",
+      "source_locator": "Brunmair & Richter 2019 (10.1037/bul0000209); Rohrer et al. (10.1037/edu0000367); research/learning.md rule 8",
+      "publication_or_version_date": "2019, 2020",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis and classroom RCT.",
+      "population": "Grade 7 maths, mixed categories; adults in meta-analysis.",
+      "limitations": "The 30% share is a design default with no source. Part of the benefit may be spacing (Foster 2019, report-level). Needs confusable, similar categories.",
+      "product_decisions": [
+        "PEDAGOGY interleaving: block briefly then mix about 30% of problem reviews",
+        "Atoms are never deliberately interleaved",
+        "Interleaved vs blocked n=1 experiment for one math family"
+      ],
+      "status": "lead_unverified",
+      "notes": "The 0.83 d is from grade-7 near transfer."
+    },
+    {
+      "claim_id": "EV-019",
+      "claim": "Worked examples help novices in math (g 0.48, 55 studies); adding self-explanation prompts to worked examples lowered the effect.",
+      "source_locator": "Barbieri et al. 2023, doi:10.1007/s10648-023-09745-1; research/learning.md section 1",
+      "publication_or_version_date": "2023",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis.",
+      "population": "Mostly school and undergraduate math novices.",
+      "limitations": "Math only; novices; note's abstract-level check.",
+      "product_decisions": [
+        "PEDAGOGY stage policy: novice gets worked example first",
+        "PEDAGOGY self-explanation: not prompted while studying a math worked example",
+        "Worked-example, completion, full-problem path for procedures"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-020",
+      "claim": "Expertise reversal: high assistance helps low-knowledge learners (d 0.505) and hurts high-knowledge learners (d -0.428); weaker in humanities and language; fading should follow unassisted accuracy.",
+      "source_locator": "Tetzlaff et al. 2025, doi:10.1016/j.learninstruc.2025.102142; research/learning.md section 1",
+      "publication_or_version_date": "2025",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis of about 60 studies.",
+      "population": "School and university learners.",
+      "limitations": "Stage thresholds (for example 80% accuracy) are unverified assumptions; English track must test its own fading rule.",
+      "product_decisions": [
+        "PEDAGOGY stage policy: novice, developing, proficient per skill from 3-5 item diagnostic",
+        "Fading follows unassisted accuracy; English track tests own rule"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-021",
+      "claim": "Self-explanation improves learning (g 0.55, 69 effect sizes) and, for proof comprehension, d 0.95 in Hodds et al. 2014 Exp 1.",
+      "source_locator": "Bisra et al. 2018 (10.1007/s10648-018-9434-x); Hodds, Alcock & Inglis 2014 (10.5951/jresematheduc.45.1.0062); research/domains.md row 8, expert.md row 12, curricula.md row 22",
+      "publication_or_version_date": "2018, 2014",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis; three small experiments.",
+      "population": "Mixed learners; UK undergraduates at transition-to-proof level.",
+      "limitations": "Hodds samples are small, inflated-effect risk; curricula.md says no effect size was given while domains.md and expert.md quote d 0.95 from the abstract, so notes disagree on whether 0.95 appears. Lab-heavy and shrinks in digital and delayed settings (Tan 2025, report-level).",
+      "product_decisions": [
+        "PEDAGOGY self-explanation: required on proofs and derivations and after an error",
+        "Do not cite d 0.95 in user copy"
+      ],
+      "status": "lead_unverified",
+      "notes": "Resolve the 0.95 discrepancy before it is shown anywhere."
+    },
+    {
+      "claim_id": "EV-022",
+      "claim": "Productive failure (problem solving before instruction) gives g 0.36 [0.20, 0.51] across 53 studies; younger learners and domain-general skills favoured instruction first; the abstract's bias-adjusted g 0.87 is unexplained.",
+      "source_locator": "Sinha & Kapur 2021, doi:10.3102/00346543211019105; research/learning.md row; cognition.md row 20",
+      "publication_or_version_date": "2021",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis.",
+      "population": "Mostly non-adult learners.",
+      "limitations": "Contested at high element interactivity (Ashman 2020, report-level). Do not use the 0.87.",
+      "product_decisions": [
+        "PEDAGOGY stage policy: productive-failure opener only at proficient stage, followed by consolidation",
+        "No UI copy presenting productive failure as settled"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-023",
+      "claim": "Mastery rule: a decayed Beta posterior over unassisted attempts with P(p>=0.7)>=0.8 plus one unassisted success 7 or more days after last exposure (about 15-20 attempts) is a valid definition of skill mastery.",
+      "source_locator": "research/engineering.md (simulation-tagged [sim]); PEDAGOGY Round 2 resolutions",
+      "publication_or_version_date": "2026-09-30 notes",
+      "checked_at": "2026-09-30",
+      "verification_depth": "unverified",
+      "design": "Simulation and design choice; no empirical validation cited.",
+      "population": "None.",
+      "limitations": "Thresholds are design parameters. The note counts attempts on fresh variants; variant independence within a family is itself assumed.",
+      "product_decisions": [
+        "PEDAGOGY mastery: Beta posterior, 0.7/0.8 thresholds, 7-day gap",
+        "Mastery labels and progress copy must say 'Tutor estimate'",
+        "Delayed 7 and 30 day unassisted parallel-item retest as the headline metric"
+      ],
+      "status": "lead_unverified",
+      "notes": "Mastery language is user-facing; keep it labelled as an estimate."
+    },
+    {
+      "claim_id": "EV-024",
+      "claim": "Felt learning and actual learning diverge (students in active learning felt they learned less but learned more), so satisfaction must not be used as an outcome.",
+      "source_locator": "Deslauriers et al. 2019, doi:10.1073/pnas.1821936116; research/tools.md row, expert.md row 20",
+      "publication_or_version_date": "2019",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Randomized crossover in intro physics.",
+      "population": "Undergraduate physics at one site.",
+      "limitations": "No numbers seen in the note; single site.",
+      "product_decisions": [
+        "PEDAGOGY measurement: headline is delayed unassisted accuracy; never satisfaction",
+        "No tuning of prompts from satisfaction ratings"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-025",
+      "claim": "High-variability phonetic training (HVPT) improves L2 perception (g 0.92 pre-post, g 0.67 vs control, 79 studies); production transfer is smaller (d 0.54) and not tied to perception gain.",
+      "source_locator": "Uchihara, Karas & Thomson 2025 (10.1017/s0272263125100879); Sakai & Moorman 2017 (10.1017/s0142716417000418); research/languages.md rows 5-6",
+      "publication_or_version_date": "2025, 2017",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analyses.",
+      "population": "L2 learners, natural human talkers.",
+      "limitations": "ElevenLabs TTS voices as talkers are untested; generalisation to novel stimuli only 'to some extent'.",
+      "product_decisions": [
+        "LANGUAGES method 6: perception-first minimal-pair trainer with several voices",
+        "Train and test production separately",
+        "Label ElevenLabs voices untested until 3 voices vs 1 n=1 test"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified. Note says the authors were added after Crossref check."
+    },
+    {
+      "claim_id": "EV-026",
+      "claim": "Corrective-feedback prompts (clarification, repetition, metalinguistic clue, elicitation) beat recasts; effects significant and durable across 15 classroom studies (N=827).",
+      "source_locator": "Lyster & Saito 2010, doi:10.1017/S0272263109990520; research/languages.md row 2",
+      "publication_or_version_date": "2010",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis of classroom studies.",
+      "population": "Classroom L2 learners; younger learners benefit more.",
+      "limitations": "Classroom, favours younger learners; fluency-mode recast rule is a design reconciliation, not evidence.",
+      "product_decisions": [
+        "LANGUAGES method 5: prompts before explicit correction in accuracy mode; recasts only for comprehension-breaking slips",
+        "n=1 alternating-weeks comparison on delayed error recurrence"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified."
+    },
+    {
+      "claim_id": "EV-027",
+      "claim": "Comprehensible input target: 95-98% known-word coverage for reading and about 95% for audio; 98% is more reasonable for academic texts, with a roughly linear coverage-comprehension relation and no threshold.",
+      "source_locator": "Schmitt, Jiang & Grabe 2011, doi:10.1111/j.1540-4781.2011.01146.x; van Zeeland & Schmitt 2013 (unverified, per languages.md)",
+      "publication_or_version_date": "2011",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Study of reading comprehension vs text coverage.",
+      "population": "661 participants in 8 countries, English texts only.",
+      "limitations": "Reading evidence is English only. The audio figure rests on van Zeeland & Schmitt, which languages.md lists as unverified. A band of 95-98% is a design target, not a finding.",
+      "product_decisions": [
+        "LANGUAGES method 7: comprehensible-input lane with coverage target 95-98% reading, about 95% audio",
+        "Coverage computed from learner's FSRS state",
+        "No 'fluency percentage' copy"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified. The 'no threshold' finding conflicts with presenting 95% as a sharp cutoff."
+    },
+    {
+      "claim_id": "EV-028",
+      "claim": "Explicit instruction produces large L2 gains (g 1.06, 54 studies, 5,051 learners) with only a minor explicit/implicit difference.",
+      "source_locator": "Kang, Sok & Han 2018 (10.1177/1362168818776671); research/languages.md row 4",
+      "publication_or_version_date": "2018",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis (g CI 0.84-1.29).",
+      "population": "L2 learners.",
+      "limitations": "Effect inflated by within-group designs typical of the field; moderated by outcome mode and proficiency.",
+      "product_decisions": [
+        "LANGUAGES method 2: brief explicit rule in English, then production",
+        "Do not cite g 1.06 as a Tutor benchmark"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified. Note advises reporting within-learner change, not literature d benchmarks."
+    },
+    {
+      "claim_id": "EV-029",
+      "claim": "n-back training improves the trained task (g 0.62 on untrained n-back) but transfer to other working-memory tests is small (g 0.24) and to reasoning or academic outcomes is not established.",
+      "source_locator": "Soveri et al. 2017 (10.3758/s13423-016-1217-0); Melby-Lervag et al. 2016 (10.1177/1745691616635612); Redick 2013 (10.1037/a0029082); research/nback.md rows 1, 4, 5",
+      "publication_or_version_date": "2013-2017",
+      "checked_at": "2026-09-30",
+      "verification_depth": "secondary",
+      "design": "Meta-analyses and a placebo-controlled RCT.",
+      "population": "Mostly young and middle-aged adults; none at PhD level with academic outcomes.",
+      "limitations": "Soveri figures confirmed in two citing papers, abstract confirms only 'medium' and 'very small'; CIs unverified. nback.md says figures found only in full text are unverified.",
+      "product_decisions": [
+        "NBACK copy: 'trains the n-back task; transfer is small or unproven'",
+        "PEDAGOGY not building: n-back as a study strategy or gate",
+        "n-back never drives FSRS, difficulty or gating",
+        "Experiment card expects a null result"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified. The Pahor 2022 correction is unread."
+    },
+    {
+      "claim_id": "EV-030",
+      "claim": "Education raises measured intelligence by about 1-5 IQ points per year of schooling; gains carry over mainly to what you practise.",
+      "source_locator": "Ritchie & Tucker-Drob 2018, Psychological Science; research/cognition.md row 1",
+      "publication_or_version_date": "2018",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Meta-analysis of quasi-experimental studies (142 effects, 42 datasets).",
+      "population": "Over 600,000 people, mostly schooling in youth.",
+      "limitations": "Quasi-experimental; youth; 'carry over mainly to what you practise' is the notes' approved line, partly supported by Sala & Gobet 2020 which covers children.",
+      "product_decisions": [
+        "PEDAGOGY cognition track: approved line on schooling-type learning",
+        "No IQ or brain score claims",
+        "Every cognition claim carries an evidence tag"
+      ],
+      "status": "lead_unverified",
+      "notes": "Marketing-language-sensitive claim; keep the approved wording literal."
+    },
+    {
+      "claim_id": "EV-031",
+      "claim": "Decorative images in learning material harm learning (seductive details g -0.16, 50 studies); context-dependent memory effects are small and fragile (Smith & Vela 2001 d about 0.25).",
+      "source_locator": "Cheng et al. 2026 (via ERIC snippet); Smith & Vela 2001 (10.3758/bf03196157, 0.25 secondary via Murre); research/tools.md rows and section 7",
+      "publication_or_version_date": "2026; 2001",
+      "checked_at": "2026-09-30",
+      "verification_depth": "secondary",
+      "design": "Meta-analyses (Cheng: extraneous load).",
+      "population": "Lab lessons; one replication (Murre 2021, N=16) failed.",
+      "limitations": "Cheng read only as ERIC snippet; the 0.25 is unconfirmed and secondary. Emotional-design meta-analysis (g+ 0.27-0.35) points the other way but concerns in-lesson graphics, so neither covers app chrome.",
+      "product_decisions": [
+        "PEDAGOGY subject worlds: theme app chrome only; learning panes neutral",
+        "Never present themes as memory aids",
+        "No decorative imagery in learning panes"
+      ],
+      "status": "lead_unverified",
+      "notes": "Design choice for chrome identity carries no claimed learning benefit."
+    },
+    {
+      "claim_id": "EV-032",
+      "claim": "LLM-assigned difficulty labels are nearly uncorrelated with empirical item difficulty (rho 0.06; 378 items, 7,888 responses).",
+      "source_locator": "An & Wang, arXiv 2609.27063; research/expert.md row 17",
+      "publication_or_version_date": "2026 preprint",
+      "checked_at": "2026-09-30",
+      "verification_depth": "abstract",
+      "design": "Single-course comparison of LLM difficulty labels with student responses.",
+      "population": "One data-science class; preprint.",
+      "limitations": "Single class, preprint, not peer reviewed; generalisation to math/chemistry banks unknown.",
+      "product_decisions": [
+        "PEDAGOGY question bank: LLM difficulty labels are ignored",
+        "Difficulty estimated from the learner's own response data",
+        "Generated items must cite a source chunk and be blind-solved by a different model family"
+      ],
+      "status": "lead_unverified",
+      "notes": "Not re-verified; preprint."
+    },
+    {
+      "claim_id": "EV-033",
+      "claim": "Mastery-based curricula (Shanghai or Singapore style) give small gains: English RCTs found +0.06 to +0.10 SD, and other 'top system' mechanisms are confounded; no national-method claims are supported.",
+      "source_locator": "research/intl.md (mastery RCTs +0.06 to +0.15 SD; Shanghai exchange no attainment effect; lesson study no pupil effect at scale); PEDAGOGY 'What we take from top-performing systems'; Alfieri 2013 d 0.50 for case comparison",
+      "publication_or_version_date": "2026-09-30 notes",
+      "checked_at": "2026-09-30",
+      "verification_depth": "secondary",
+      "design": "Synthesis of K-12 RCTs and observational comparisons.",
+      "population": "School pupils; not adults.",
+      "limitations": "intl.md figures read from notes only; PEDAGOGY quotes +0.06 to +0.10 while intl.md says +0.06 to +0.15, a small inconsistency to reconcile. Alfieri 2013 d 0.50 is verified at abstract level per learning.md.",
+      "product_decisions": [
+        "PEDAGOGY: no 'how Japan or China teaches' claim without a retrieved document",
+        "Prerequisites are advisory, not hard gates",
+        "Mastery-and-coherence features shipped as mechanisms, not national labels"
+      ],
+      "status": "lead_unverified",
+      "notes": "Marketing-language guard: no 'proven' national-method copy."
+    }
+  ],
+  "fetch_failures": [
+    "https://pnas.org/doi/10.1073/pnas.2518204122 and https://www.pnas.org/doi/10.1073/pnas.2518204122: HTTP 403 Forbidden (correction text obtained instead from Europe PMC full text XML PMC12403119)",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC12403119/: returned a 'Checking your browser' page, no article text",
+    "https://link.springer.com/article/10.1007/s10648-025-10035-1: first fetch returned a 303 redirect to idp.springer.com; following the redirect chain eventually returned the abstract/results summary, but no numeric CI bounds",
+    "https://faqs.ankiweb.net/: no FSRS content (points to getting-help page); https://docs.ankiweb.net/faq.html: HTTP 404",
+    "https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS: wiki content failed to load (errors on page); moved page https://github.com/open-spaced-repetition/awesome-fsrs/wiki/ABC-of-FSRS was read",
+    "Murray, Horner & Goebel preprint: not reachable. Europe PMC search returned 0 hits, https://api.openalex.org works search returned HTTP 429 (Retry-After 7885), and WebSearch was refused because the session's search budget (200 of 200) is used up; the preprint values 0.22 and 0.26 are therefore second-hand from learning.md",
+    "Crossref record for 10.1007/s10648-025-10035-1: metadata only, no abstract",
+    "https://www.rdkit.org/docs/source/rdkit.Chem.rdmolops.html: page returned the SanitizeFlags list but not the SanitizeMol docstring"
+  ]
+}
