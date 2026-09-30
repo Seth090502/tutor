@@ -60,7 +60,7 @@ Effect = Literal["instant", "restart", "reindex"]
 
 # Areas group rows for ``inspect_setup`` so the agent can ask about one part of
 # the install ("what's my parsing set up like?") without reading everything.
-Area = Literal["interface", "models", "parsing"]
+Area = Literal["interface", "models", "parsing", "library"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -677,6 +677,73 @@ def _catalog_specs() -> list[SettingSpec]:
 
 
 # --------------------------------------------------------------------------
+# library.json rows (global scope; docs/tutor/CORPUS.md Stage 0)
+# --------------------------------------------------------------------------
+
+_ON_OFF_CHOICES: tuple[tuple[str, str, str], ...] = (
+    ("off", "Off", "Not used (the default until its eval arm wins)."),
+    ("on", "On", "Used for every library search."),
+)
+
+_LIBRARY_ROWS: tuple[tuple[str, str, str], ...] = (
+    (
+        "rewrite",
+        "Library query rewrites",
+        "A small model writes 3-5 extra queries per library search, fused with the raw query.",
+    ),
+    (
+        "rerank",
+        "Library rerank",
+        "One listwise model rerank when the fused library results are too close to call.",
+    ),
+    (
+        "agentic",
+        "Library agentic search",
+        "The model may run up to 4 more library searches or open a result before packing.",
+    ),
+)
+
+
+def _read_library_flag(flag: str) -> Callable[[], str]:
+    def _read() -> str:
+        from deeptutor.services.library.settings import load_library_settings
+
+        return "on" if load_library_settings()[flag] else "off"
+
+    return _read
+
+
+def _write_library_flag(flag: str) -> Callable[[str], None]:
+    def _write(value: str) -> None:
+        from deeptutor.services.library.settings import save_library_settings
+
+        save_library_settings({flag: value == "on"})
+
+    return _write
+
+
+def _library_specs() -> list[SettingSpec]:
+    rows = []
+    for flag, label, summary in _LIBRARY_ROWS:
+        read = _read_library_flag(flag)
+        rows.append(
+            SettingSpec(
+                key=f"library.{flag}",
+                area="library",
+                scope="global",
+                effect="instant",
+                label=label,
+                summary=summary,
+                read=read,
+                choices=_static_choices(_ON_OFF_CHOICES, read),
+                write=_write_library_flag(flag),
+                effect_detail="Applies from the next library search onwards.",
+            )
+        )
+    return rows
+
+
+# --------------------------------------------------------------------------
 # Registry
 # --------------------------------------------------------------------------
 
@@ -688,7 +755,7 @@ def setting_specs() -> dict[str, SettingSpec]:
     imports, and building lazily keeps this module importable from
     ``deeptutor.capabilities`` without closing an import cycle.
     """
-    rows = [*_interface_specs(), *_parsing_specs(), *_catalog_specs()]
+    rows = [*_interface_specs(), *_parsing_specs(), *_catalog_specs(), *_library_specs()]
     return {spec.key: spec for spec in rows}
 
 
@@ -701,7 +768,7 @@ def specs_for_area(area: str) -> tuple[SettingSpec, ...]:
     return tuple(spec for spec in setting_specs().values() if not wanted or spec.area == wanted)
 
 
-SETTING_AREAS: tuple[str, ...] = ("interface", "models", "parsing")
+SETTING_AREAS: tuple[str, ...] = ("interface", "models", "parsing", "library")
 
 __all__ = [
     "SETTING_AREAS",

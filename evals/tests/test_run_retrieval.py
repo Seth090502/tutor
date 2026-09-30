@@ -246,3 +246,136 @@ def test_cli_run_end_to_end(fake_server, dataset, tmp_path, capsys):
     assert code == 0
     assert "recall@10" in out and "math/train" in out and "chemistry/test" in out
     assert len(list((tmp_path / "r").glob("*.json"))) == 1
+
+
+# --- arms A-E through DeepTutor library search (CORPUS.md Stage 0 step 8) ---
+
+
+class Backend:
+    """DeepTutor stand-in: library settings plus /api/library/search over ANSWERS."""
+
+    def __init__(self, fake_server, settings=None):
+        self.settings = {
+            "rewrite": False,
+            "rerank": False,
+            "agentic": False,
+            "model": "m",
+            **(settings or {}),
+        }
+        self.seen_settings = []
+        self.server = fake_server(
+            {
+                "GET /api/library/settings": lambda _: (200, dict(self.settings)),
+                "PUT /api/library/settings": self.put,
+                "/api/library/search": self.search,
+            }
+        )
+
+    def put(self, payload):
+        self.settings.update(payload)
+        return 200, dict(self.settings)
+
+    def search(self, payload):
+        self.seen_settings.append({f: self.settings[f] for f in ("rewrite", "rerank", "agentic")})
+        hits = ANSWERS[payload["query"]][: payload["k"]]
+        ranked = [dict(h, ranks={"final": i}) for i, h in enumerate(hits, start=1)]
+        # The pack comes back strongest first and last, not in rank order.
+        pack = ranked[0::2] + ranked[1::2][::-1]
+        return 200, {
+            "pack": pack,
+            "queries": [payload["query"]],
+            "mode_used": "bm25",
+            "withheld": 0,
+        }
+
+
+@pytest.mark.parametrize(
+    ("arm", "flags"),
+    [
+        ("A", {"rewrite": False, "rerank": False, "agentic": False}),
+        ("B", {"rewrite": False, "rerank": False, "agentic": False}),
+        ("C", {"rewrite": True, "rerank": False, "agentic": False}),
+        ("D", {"rewrite": True, "rerank": True, "agentic": False}),
+        ("E", {"rewrite": True, "rerank": True, "agentic": True}),
+    ],
+)
+def test_arms_run_library_search_with_their_settings_and_restore_them(
+    fake_server, dataset, tmp_path, arm, flags
+):
+    backend = Backend(fake_server, {"rerank": True})
+
+    result = run_retrieval(
+        dataset, change=f"arm {arm}", k=10, url=backend.server.url, arm=arm, runs_dir=tmp_path / "r"
+    )
+
+    assert backend.seen_settings == [flags] * len(ROWS)
+    assert backend.settings == {"rewrite": False, "rerank": True, "agentic": False, "model": "m"}
+    searches = [r for r in backend.server.requests if r["path"] == "/api/library/search"]
+    assert {json.dumps(r["payload"], sort_keys=True) for r in searches} >= {
+        json.dumps({"query": "t1", "k": 10}, sort_keys=True)
+    }
+    assert result.run["config"] == {
+        "mode": "hybrid",
+        "k": 10,
+        "mode_used": ["bm25"],
+        "arm": arm,
+        "library": flags,
+    }
+
+
+def test_arms_score_in_final_rank_order_not_pack_order(fake_server, dataset, tmp_path):
+    backend = Backend(fake_server)
+
+    run = run_retrieval(
+        dataset, change="arm A", k=10, url=backend.server.url, arm="A", runs_dir=tmp_path / "r"
+    ).run
+
+    # Same ranks as the direct engine run: 1, 3, 8, miss.
+    assert run["splits"]["train"]["metrics"]["mrr@10"] == pytest.approx((1 + 1 / 3 + 1 / 8) / 4)
+
+
+def test_settings_are_restored_when_a_search_fails(fake_server, dataset, tmp_path):
+    backend = Backend(fake_server)
+    backend.server.routes["/api/library/search"] = lambda payload: (
+        404,
+        {"detail": "Attempt not found"},
+    )
+
+    with pytest.raises(HttpError):
+        run_retrieval(
+            dataset, change="arm C", k=10, url=backend.server.url, arm="C", runs_dir=tmp_path / "r"
+        )
+    assert backend.settings["rewrite"] is False
+
+
+def test_arm_argument_checks(dataset, tmp_path):
+    with pytest.raises(ValueError, match="arm must be one of"):
+        run_retrieval(dataset, change="x", arm="F", runs_dir=tmp_path / "r")
+    with pytest.raises(ValueError, match="hybrid"):
+        run_retrieval(dataset, change="x", arm="A", mode="bm25", runs_dir=tmp_path / "r")
+    with pytest.raises(ValueError, match="at most 12"):
+        run_retrieval(dataset, change="x", arm="A", k=20, runs_dir=tmp_path / "r")
+    with pytest.raises(ValueError, match="reserved"):
+        run_retrieval(dataset, change="x", arm="A", extra_config={"arm": "B"}, runs_dir=tmp_path)
+
+
+def test_cli_run_with_an_arm(fake_server, dataset, tmp_path, capsys):
+    backend = Backend(fake_server)
+    code = main(
+        [
+            "run",
+            "--dataset",
+            str(dataset),
+            "--change",
+            "arm C: rewrites",
+            "--arm",
+            "C",
+            "--url",
+            backend.server.url,
+            "--runs-dir",
+            str(tmp_path / "r"),
+        ]
+    )
+    assert code == 0
+    run = json.loads(next((tmp_path / "r").glob("*.json")).read_text(encoding="utf-8"))
+    assert run["config"]["arm"] == "C"

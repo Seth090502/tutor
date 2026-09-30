@@ -54,7 +54,7 @@ rag-engine must be serving (`rag-engine serve ...`, default `http://127.0.0.1:88
 |---|---|
 | `split` | Fill `split` by document hash (seeded, default 70/30). |
 | `generate` | Sample chunks, LLM writes one question each, filters, cost record. |
-| `run` | `POST /search` for every question, score, write the run file. |
+| `run` | `POST /search` for every question, score, write the run file. With `--arm A`..`E`, through DeepTutor `POST /api/library/search` with that arm's `library.*` settings (restored afterwards); see `tutor_evals/run_retrieval.py`. |
 | `compare` | Paired bootstrap per split, verdict, optional decision write. |
 
 - `evals/runs/<UTC timestamp>-<slug of change>.json`: the run file, contract C2 exactly (gitignored).

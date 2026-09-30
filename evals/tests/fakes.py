@@ -11,7 +11,7 @@ Route = Callable[[dict], tuple[int, dict]]
 
 
 class FakeServer:
-    """POST-only JSON server. routes maps a path to fn(payload) -> (status, body)."""
+    """JSON server. routes maps a path (POST) or "METHOD /path" to fn(payload) -> (status, body)."""
 
     def __init__(self, routes: dict[str, Route]):
         self.routes = routes
@@ -19,13 +19,20 @@ class FakeServer:
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):
+            def _respond(self):
                 length = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 fake.requests.append(
-                    {"path": self.path, "payload": payload, "headers": dict(self.headers)}
+                    {
+                        "method": self.command,
+                        "path": self.path,
+                        "payload": payload,
+                        "headers": dict(self.headers),
+                    }
                 )
-                route = fake.routes.get(self.path)
+                route = fake.routes.get(f"{self.command} {self.path}")
+                if route is None and self.command == "POST":
+                    route = fake.routes.get(self.path)
                 status, body = route(payload) if route else (404, {"error": "no such route"})
                 data = json.dumps(body).encode()
                 self.send_response(status)
@@ -33,6 +40,8 @@ class FakeServer:
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            do_GET = do_POST = do_PUT = _respond
 
             def log_message(self, *args):
                 pass

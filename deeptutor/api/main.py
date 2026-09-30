@@ -518,6 +518,7 @@ from deeptutor.api.routers import (
     file_preview,
     imports,
     knowledge,
+    library,
     marginnote4,
     mastery_path,
     mcp_settings,
@@ -623,6 +624,7 @@ app.include_router(
 )
 app.include_router(book.router, prefix="/api", tags=["books"], dependencies=_auth)
 app.include_router(book.ws_router, prefix="/ws", tags=["books"])
+app.include_router(library.router, prefix="/api/library", tags=["library"], dependencies=_auth)
 app.include_router(reading.router, prefix="/api/reading", tags=["reading"], dependencies=_auth)
 app.include_router(
     reading_extensions.router,
