@@ -164,8 +164,8 @@ export function countDomain(series: Series[]): [number, number] {
 // ---------- calibration (C7) ----------
 
 export const LEVEL_NAMES = ["Guess", "Unsure", "Fairly sure", "Certain"]
-/** Level 1 to 4 read as 25, 50, 75 and 100 percent: a reference line, not a target. */
-export const expectedPct = (level: number) => level * 25
+/** Level 1 to 4 read as 25, 50, 75 and 95 percent (PEDAGOGY.md): a reference line, not a target. */
+export const expectedPct = (level: number) => [25, 50, 75, 95][level - 1] ?? 0
 
 export type CalibrationRow = { level: number; name: string; attempts: number; correct: number; pct: number | null }
 

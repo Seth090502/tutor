@@ -42,7 +42,7 @@ export function CalibrationPlot({ rows, name }: { rows: CalibrationRow[]; name: 
               {compact ? r.level : `${r.level} ${r.name}`}
             </text>
           ))}
-          <path d={`M${x(1)} ${y(expectedPct(1))}L${x(4)} ${y(expectedPct(4))}`} stroke="var(--ink-3)" strokeWidth={2} strokeDasharray="5 4" fill="none" />
+          <path d={[1, 2, 3, 4].map((l, i) => `${i ? "L" : "M"}${x(l)} ${y(expectedPct(l))}`).join("")} stroke="var(--ink-3)" strokeWidth={2} strokeDasharray="5 4" fill="none" />
           <text x={x(1) + 10} y={y(expectedPct(1)) + 6} textAnchor="start" className="fill-ink-3 font-mono text-[11px]">
             Reference
           </text>

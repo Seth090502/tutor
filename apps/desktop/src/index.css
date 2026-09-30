@@ -108,7 +108,7 @@
     --radius: 0.625rem;
 
     --ink-2: color-mix(in oklab, var(--ink) 74%, var(--paper));
-    --ink-3: color-mix(in oklab, var(--ink) 60%, var(--paper));
+    --ink-3: color-mix(in oklab, var(--ink) 63%, var(--paper));
     --hairline: color-mix(in oklab, var(--ink) 12%, transparent);
     --hairline-strong: color-mix(in oklab, var(--ink) 28%, transparent);
     --ok: #2f7d4f;

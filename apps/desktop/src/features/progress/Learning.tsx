@@ -33,7 +33,7 @@ export function CalibrationPanel({ calibration, days }: { calibration: Calibrati
       footer={
         total === 0 ? undefined : (
           <span>
-            Dashed line: what each level would imply (25, 50, 75, 100%). It is a reference, not a target. Above it you did better than you felt; below it, worse.
+            Dashed line: what each level would imply (25, 50, 75, 95%). It is a reference, not a target. Above it you did better than you felt; below it, worse.
             {small ? ` Levels with fewer than ${SMALL_SAMPLE} attempts are noisy.` : ""}
           </span>
         )
