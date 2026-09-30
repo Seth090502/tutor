@@ -20,7 +20,9 @@ pub struct Config {
 const TARGET_LANGUAGES: [&str; 5] = ["es", "fr", "de", "ja", "zh"];
 
 fn is_language_key(key: &str) -> bool {
-    let lang = key.strip_prefix("agent_").or_else(|| key.strip_prefix("voice_"));
+    let lang = key
+        .strip_prefix("agent_")
+        .or_else(|| key.strip_prefix("voice_"));
     lang.is_some_and(|lang| TARGET_LANGUAGES.contains(&lang))
 }
 

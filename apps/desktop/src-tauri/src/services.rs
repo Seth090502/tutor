@@ -171,9 +171,18 @@ fn python(root: &Path) -> PathBuf {
     root.join(".venv").join("Scripts").join("python.exe")
 }
 
+/// The shell's own origins, so a debug shell can run a release rag-engine (C3), plus its keys.
+fn rag_engine_env(secrets: &Secrets) -> Vec<(String, String)> {
+    let mut env = vec![("RAG_APP_ORIGINS".to_string(), APP_ORIGINS.join(","))];
+    env.extend(secret_env(secrets, &RAG_ENGINE_SECRETS));
+    env
+}
+
 fn backend_env(secrets: &Secrets) -> Vec<(String, String)> {
     let mut env = vec![
         ("CORS_ORIGINS".to_string(), APP_ORIGINS.join(",")),
+        // Only the app's own origins: not the upstream web frontend's defaults (C3).
+        ("DEEPTUTOR_WEB_FRONTEND".to_string(), "0".to_string()),
         ("PYTHONUTF8".to_string(), "1".to_string()),
         ("PYTHONIOENCODING".to_string(), "utf-8".to_string()),
         // Stream logs into the ring buffer as they happen (launcher.py sets it too).
@@ -264,7 +273,7 @@ pub fn rag_engine_spec(root: &Path, secrets: &Secrets) -> Result<LaunchSpec, Str
             "--port".into(),
             "8811".into(),
         ],
-        env: secret_env(secrets, &RAG_ENGINE_SECRETS),
+        env: rag_engine_env(secrets),
         cwd: root.to_path_buf(),
     })
 }
@@ -690,6 +699,7 @@ mod tests {
                 ("PYTHONUTF8", "1"),
                 ("PYTHONIOENCODING", "utf-8"),
                 ("PYTHONUNBUFFERED", "1"),
+                ("DEEPTUTOR_WEB_FRONTEND", "0"),
                 ("OPENCODE_API_KEY", "opencode-value"),
                 ("ANTHROPIC_API_KEY", "anthropic-value"),
                 ("OPENROUTER_API_KEY", "openrouter-value"),
@@ -814,11 +824,19 @@ mod tests {
                 "8811".into(),
             ]
         );
+        let origins = APP_ORIGINS.join(",");
         assert_eq!(
             env_map(&spec),
-            BTreeMap::from([("VOYAGE_API_KEY", "voyage-value")])
+            BTreeMap::from([
+                ("RAG_APP_ORIGINS", origins.as_str()),
+                ("VOYAGE_API_KEY", "voyage-value")
+            ])
         );
-        assert!(rag_engine_spec(r, &Secrets::new()).unwrap().env.is_empty());
+        let keyless = rag_engine_spec(r, &Secrets::new()).unwrap();
+        assert_eq!(
+            env_map(&keyless),
+            BTreeMap::from([("RAG_APP_ORIGINS", origins.as_str())])
+        );
     }
 
     #[test]

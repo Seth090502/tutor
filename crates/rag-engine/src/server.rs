@@ -39,6 +39,16 @@ pub const DEFAULT_PORT: u16 = 8811;
 /// Vite dev server's in debug builds only. No others are allowed.
 pub const ALLOWED_ORIGINS: &[&str] = allowed_origins(cfg!(debug_assertions));
 
+/// The app origins to trust: `RAG_APP_ORIGINS` (comma-separated) when set, else [`ALLOWED_ORIGINS`].
+/// The desktop shell sets it to its own origins, so a debug shell can run a release rag-engine.
+fn app_origins() -> Vec<String> {
+    std::env::var("RAG_APP_ORIGINS")
+        .ok()
+        .map(|v| v.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect::<Vec<_>>())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect())
+}
+
 const fn allowed_origins(debug: bool) -> &'static [&'static str] {
     if debug {
         &["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
@@ -88,8 +98,9 @@ fn parse_body<T: DeserializeOwned + Default>(body: &Bytes) -> ApiResult<T> {
 }
 
 pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
+    let origins = app_origins();
     let cors = CorsLayer::new()
-        .allow_origin(ALLOWED_ORIGINS.iter().map(|&origin| HeaderValue::from_static(origin)).collect::<Vec<_>>())
+        .allow_origin(origins.iter().filter_map(|origin| HeaderValue::from_str(origin).ok()).collect::<Vec<_>>())
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
     Router::new()
@@ -111,7 +122,7 @@ pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         // Between the two: CORS still answers preflights, and a foreign page is refused before
         // the token check or any route sees its request.
-        .layer(middleware::from_fn_with_state(Arc::new(RequestGuard { hosts }), guard_request))
+        .layer(middleware::from_fn_with_state(Arc::new(RequestGuard { hosts, origins }), guard_request))
         .layer(cors)
         .with_state(state)
 }
@@ -123,6 +134,8 @@ pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
 struct RequestGuard {
     /// `Host` values to accept ([`allowed_hosts`]); `None` accepts any.
     hosts: Option<Vec<String>>,
+    /// App origins ([`app_origins`]).
+    origins: Vec<String>,
 }
 
 impl RequestGuard {
@@ -137,7 +150,7 @@ impl RequestGuard {
             return None;
         }
         match headers.get(header::ORIGIN) {
-            Some(origin) if ALLOWED_ORIGINS.iter().any(|o| origin.as_bytes() == o.as_bytes()) => None,
+            Some(origin) if self.origins.iter().any(|o| origin.as_bytes() == o.as_bytes()) => None,
             Some(_) => Some("the Origin is not one of the app's origins"),
             None if headers.get("sec-fetch-site").is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site")) => {
                 Some("a cross-site request without an app Origin")
@@ -526,7 +539,8 @@ mod tests {
 
     #[test]
     fn guard_refuses_foreign_hosts_and_foreign_state_changes() {
-        let guard = RequestGuard { hosts: allowed_hosts("127.0.0.1".parse().unwrap(), 8811) };
+        let origins: Vec<String> = ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect();
+        let guard = RequestGuard { hosts: allowed_hosts("127.0.0.1".parse().unwrap(), 8811), origins: origins.clone() };
         let app = "tauri://localhost";
         let refused = |method: Method, extra: &[(&'static str, &'static str)]| {
             let mut all = headers(&[("host", "127.0.0.1:8811")]);
@@ -548,8 +562,18 @@ mod tests {
         assert!(!refused(Method::POST, &[]));
         assert!(!refused(Method::GET, &[("origin", "http://evil.example"), ("sec-fetch-site", "cross-site")]));
         // Listening on every address: any Host, same Origin rules.
-        let open = RequestGuard { hosts: None };
+        let open = RequestGuard { hosts: None, origins };
         assert!(open.refusal(&Method::GET, &headers(&[("host", "library-pc:8811")])).is_none());
         assert!(open.refusal(&Method::POST, &headers(&[("origin", "http://evil.example")])).is_some());
+    }
+
+    #[test]
+    fn the_shell_can_name_the_app_origins() {
+        // One test owns the variable, so no other test sees it set.
+        unsafe { std::env::set_var("RAG_APP_ORIGINS", " http://localhost:1420 ,tauri://localhost,") };
+        let named = app_origins();
+        unsafe { std::env::remove_var("RAG_APP_ORIGINS") };
+        assert_eq!(named, ["http://localhost:1420", "tauri://localhost"]);
+        assert_eq!(app_origins(), ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect::<Vec<_>>());
     }
 }

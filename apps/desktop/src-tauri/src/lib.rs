@@ -213,13 +213,16 @@ mod tests {
 
     #[test]
     fn microphone_origins_are_exactly_the_app_origins() {
-        for ok in [
-            "http://tauri.localhost/",
-            "http://localhost:1420/#/tutor",
-            "http://127.0.0.1:1420",
-            "tauri://localhost/index.html",
-        ] {
+        for ok in ["http://tauri.localhost/", "tauri://localhost/index.html"] {
             assert!(is_app_origin(&ok.parse().unwrap()), "{ok}");
+        }
+        // The Vite dev server's origins count only in debug builds (C3).
+        for dev in ["http://localhost:1420/#/tutor", "http://127.0.0.1:1420"] {
+            assert_eq!(
+                is_app_origin(&dev.parse().unwrap()),
+                cfg!(debug_assertions),
+                "{dev}"
+            );
         }
         for bad in [
             "https://tauri.localhost/",
