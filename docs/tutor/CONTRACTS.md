@@ -284,3 +284,37 @@ corpus that will grow by orders of magnitude.
   `127.0.0.1:8811`.
 - **Scale:** ingest chunks and tokenises documents in parallel with bounded memory, and search latency
   stays interactive (p95 under 300 ms for BM25 at 10M chunks is the target).
+
+## C10. Languages (spec: `docs/tutor/LANGUAGES.md`)
+
+- **World and language:**
+  - `data-world="languages"` joins C5, with accent `--acc-languages` (light `#7a3b7d`, dark `#d99ad6`).
+  - `src/lib/language.tsx` exports `type TargetLanguage = "es" | "fr" | "de" | "ja" | "zh"`, `LANGUAGES`
+    metadata (English name, native name, script, BCP-47 tag, Scribe language code), `<LanguageProvider>`
+    and `useLanguage(): { language, setLanguage }`, persisted like the world.
+- **Speech through the Rust shell** (the key never reaches the webview):
+
+| Command | Args | Returns |
+|---|---|---|
+| `tts_audio` | `text, lang, voice_id?, model? (default "eleven_v4"), speed?` | raw MP3 bytes (`ArrayBuffer`). Cached at `<app data>/tts-cache/<sha256(model, voice, lang, speed, text)>.mp3`, so each sentence is paid for once |
+| `tts_voices` | `lang` | `{"voices": [{"voice_id", "name", "labels", "preview_url"}]}` for that language |
+| `stt_transcribe` | `audio: bytes (webm/opus or wav), lang` | `{"text": "…", "words": [{"text", "start", "end"}]}` via Scribe v2 with the language pinned |
+
+  - The CSP adds `media-src 'self' blob:`.
+  - Errors are readable sentences that never contain the key.
+  - Per-language voice choices are saved through `config_set` keys `voice_<lang>` (comma-separated voice ids).
+- **Language cards (DeepTutor practice, so FSRS, attempts and analytics apply unchanged):**
+  - Each word or sentence yields up to three practice questions, tagged `lang:<code>` and
+    `card:recognition|production|listening`.
+  - The prompt is in `question`, the target in `correct_answer`, and accepted variants in
+    `accepted_answers: list[str]`.
+  - Source and licence go in `explanation` metadata.
+- **Language answer checking:**
+  - Deterministic normalisation (case, whitespace, punctuation, full-width forms for ja/zh).
+  - Accent or diacritic-only differences return `correct: false` with `diagnostic: "accent"`, so the
+    tutor can name the slip.
+  - Any accepted variant counts as correct.
+  - Free-response items return `correct: null` (rubric grading).
+- **Graded reading:** `POST /api/languages/coverage {"lang", "text"}` returns
+  `{"tokens": int, "known": int, "coverage": float, "unknown": [str]}`. Known means the word has a
+  production or recognition card with FSRS retrievability ≥ 0.9.
