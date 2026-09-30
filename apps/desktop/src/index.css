@@ -122,11 +122,19 @@
     --wash-1: color-mix(in oklab, var(--world) 16%, transparent);
     --wash-2: color-mix(in oklab, var(--world) 9%, transparent);
 
+    /* Subject accents. Each world's chart palette is its own accent plus the other
+       subjects' accents and a green, so series never collide with the world colour. */
+    --acc-math: #2f3f8f;
+    --acc-english: #c8402a;
+    --acc-science: #17727a;
+    --acc-chemistry: #8c6218;
+    --acc-green: #4d7c2f;
+
     --chart-1: var(--world);
-    --chart-2: #1a8a8a;
-    --chart-3: #d99a1c;
-    --chart-4: #7a3b7d;
-    --chart-5: #4a78b5;
+    --chart-2: var(--acc-math);
+    --chart-3: var(--acc-english);
+    --chart-4: var(--acc-science);
+    --chart-5: var(--acc-green);
 
     --sidebar: #efe8dc;
     --sidebar-foreground: var(--ink);
@@ -154,22 +162,35 @@
     --world: #d8c39a;
     --world-ink: #1a1714;
 
-    --chart-2: #56d4e0;
-    --chart-3: #e0a12b;
-    --chart-4: #b8a1ff;
-    --chart-5: #7fa6e6;
+    --acc-math: #9aa6f0;
+    --acc-english: #e4573a;
+    --acc-science: #56d4e0;
+    --acc-chemistry: #dcb86e;
+    --acc-green: #8cc26b;
 
     --sidebar: #16130f;
 }
 
-[data-world="math"] { --world: #2f3f8f; }
-[data-world="english"] { --world: #c8402a; }
-[data-world="science"] { --world: #1a7f86; }
-[data-world="chemistry"] { --world: #8c6218; }
-.dark[data-world="math"] { --world: #9aa6f0; }
-.dark[data-world="english"] { --world: #e4573a; }
-.dark[data-world="science"] { --world: #56d4e0; }
-.dark[data-world="chemistry"] { --world: #dcb86e; }
+[data-world="math"] {
+    --world: var(--acc-math);
+    --chart-2: var(--acc-english); --chart-3: var(--acc-science);
+    --chart-4: var(--acc-chemistry); --chart-5: var(--acc-green);
+}
+[data-world="english"] {
+    --world: var(--acc-english);
+    --chart-2: var(--acc-math); --chart-3: var(--acc-science);
+    --chart-4: var(--acc-chemistry); --chart-5: var(--acc-green);
+}
+[data-world="science"] {
+    --world: var(--acc-science);
+    --chart-2: var(--acc-english); --chart-3: var(--acc-math);
+    --chart-4: var(--acc-chemistry); --chart-5: var(--acc-green);
+}
+[data-world="chemistry"] {
+    --world: var(--acc-chemistry);
+    --chart-2: var(--acc-math); --chart-3: var(--acc-english);
+    --chart-4: var(--acc-science); --chart-5: var(--acc-green);
+}
 
 @media (prefers-reduced-motion: reduce) {
     :root {
