@@ -1,0 +1,9 @@
+Convergence of geometric and harmonic series
+
+A geometric series adds terms that grow or shrink by a fixed ratio. When the absolute value of
+the ratio is below one, the partial sums approach the first term divided by one minus the ratio;
+otherwise the series diverges. The harmonic series, the sum of the reciprocals of the counting
+numbers, is the standard warning: its terms shrink toward zero, yet its partial sums grow
+without bound, roughly like the natural logarithm of the number of terms. The comparison test,
+the ratio test and the integral test decide most textbook cases, and alternating signs can rescue
+convergence, as the alternating harmonic series shows by converging to the logarithm of two.
