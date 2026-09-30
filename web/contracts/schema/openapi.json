@@ -550,6 +550,113 @@
         "title": "AttachCourseResourceRequest",
         "type": "object"
       },
+      "AttemptChecked": {
+        "properties": {
+          "correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct"
+          },
+          "correct_answer": {
+            "title": "Correct Answer",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "misconception": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Misconception"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "enum": [
+                  "good",
+                  "hard",
+                  "again"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          }
+        },
+        "required": [
+          "correct",
+          "rating",
+          "correct_answer",
+          "explanation",
+          "misconception"
+        ],
+        "title": "AttemptChecked",
+        "type": "object"
+      },
+      "AttemptHint": {
+        "properties": {
+          "is_answer": {
+            "title": "Is Answer",
+            "type": "boolean"
+          },
+          "rung": {
+            "title": "Rung",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "rung",
+          "text",
+          "is_answer"
+        ],
+        "title": "AttemptHint",
+        "type": "object"
+      },
+      "AttemptOpened": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "rungs_available": {
+            "title": "Rungs Available",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "rungs_available"
+        ],
+        "title": "AttemptOpened",
+        "type": "object"
+      },
       "AuditRequest": {
         "properties": {
           "budget": {
@@ -1754,6 +1861,21 @@
           "page_id"
         ],
         "title": "CompilePageRequest",
+        "type": "object"
+      },
+      "ConfidenceRequest": {
+        "properties": {
+          "level": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Level",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "ConfidenceRequest",
         "type": "object"
       },
       "ConfirmPartnerDraftRequest": {
@@ -6286,6 +6408,14 @@
             "title": "Followup Session Id",
             "type": "string"
           },
+          "hints": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Hints",
+            "type": "array"
+          },
           "hints_used": {
             "default": 0,
             "title": "Hints Used",
@@ -6895,6 +7025,16 @@
       },
       "PracticeAnalytics": {
         "properties": {
+          "assistance": {
+            "$ref": "#/components/schemas/PracticeAssistance"
+          },
+          "calibration": {
+            "items": {
+              "$ref": "#/components/schemas/PracticeCalibration"
+            },
+            "title": "Calibration",
+            "type": "array"
+          },
           "daily": {
             "items": {
               "$ref": "#/components/schemas/PracticeDailyCounts"
@@ -6941,9 +7081,57 @@
           "updated_at",
           "daily",
           "sources",
-          "totals"
+          "totals",
+          "calibration",
+          "assistance"
         ],
         "title": "PracticeAnalytics",
+        "type": "object"
+      },
+      "PracticeAssistance": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "hinted": {
+            "title": "Hinted",
+            "type": "integer"
+          },
+          "revealed": {
+            "title": "Revealed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempts",
+          "hinted",
+          "revealed"
+        ],
+        "title": "PracticeAssistance",
+        "type": "object"
+      },
+      "PracticeCalibration": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "correct": {
+            "title": "Correct",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level",
+          "attempts",
+          "correct"
+        ],
+        "title": "PracticeCalibration",
         "type": "object"
       },
       "PracticeCounts": {
@@ -8279,15 +8467,45 @@
             "title": "Answer",
             "type": "string"
           },
-          "rating": {
-            "enum": [
-              "again",
-              "hard",
-              "good",
-              "easy"
+          "attempt_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Rating",
-            "type": "string"
+            "title": "Attempt Id"
+          },
+          "judged_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judged Correct"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "enum": [
+                  "again",
+                  "hard",
+                  "good",
+                  "easy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
           },
           "request_id": {
             "maxLength": 100,
@@ -8309,8 +8527,7 @@
         },
         "required": [
           "request_id",
-          "version",
-          "rating"
+          "version"
         ],
         "title": "ReviewRequest",
         "type": "object"
@@ -11726,6 +11943,21 @@
             "default": "",
             "title": "Explanation",
             "type": "string"
+          },
+          "hints": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hints"
           },
           "hints_used": {
             "default": 0,
@@ -40261,6 +40493,249 @@
         ]
       }
     },
+    "/api/question-notebook/practice/attempts/{attempt_id}/check": {
+      "post": {
+        "operationId": "attempt_check_api_question_notebook_practice_attempts__attempt_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{32}$",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptChecked"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempt Check",
+        "tags": [
+          "practice"
+        ]
+      }
+    },
+    "/api/question-notebook/practice/attempts/{attempt_id}/confidence": {
+      "post": {
+        "operationId": "attempt_confidence_api_question_notebook_practice_attempts__attempt_id__confidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{32}$",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempt Confidence",
+        "tags": [
+          "practice"
+        ]
+      }
+    },
+    "/api/question-notebook/practice/attempts/{attempt_id}/hint": {
+      "post": {
+        "operationId": "attempt_hint_api_question_notebook_practice_attempts__attempt_id__hint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{32}$",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptHint"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempt Hint",
+        "tags": [
+          "practice"
+        ]
+      }
+    },
     "/api/question-notebook/practice/import/commit": {
       "post": {
         "operationId": "import_commit_api_question_notebook_practice_import_commit_post",
@@ -40553,6 +41028,80 @@
           }
         },
         "summary": "Practice Question",
+        "tags": [
+          "practice"
+        ]
+      }
+    },
+    "/api/question-notebook/practice/questions/{entry_id}/attempts": {
+      "post": {
+        "operationId": "open_attempt_api_question_notebook_practice_questions__entry_id__attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptOpened"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Attempt",
         "tags": [
           "practice"
         ]

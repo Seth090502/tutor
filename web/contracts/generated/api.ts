@@ -5924,6 +5924,57 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/question-notebook/practice/attempts/{attempt_id}/check": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Attempt Check */
+    readonly post: operations["attempt_check_api_question_notebook_practice_attempts__attempt_id__check_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/question-notebook/practice/attempts/{attempt_id}/confidence": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Attempt Confidence */
+    readonly post: operations["attempt_confidence_api_question_notebook_practice_attempts__attempt_id__confidence_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/question-notebook/practice/attempts/{attempt_id}/hint": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Attempt Hint */
+    readonly post: operations["attempt_hint_api_question_notebook_practice_attempts__attempt_id__hint_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/question-notebook/practice/import/commit": {
     readonly parameters: {
       readonly query?: never;
@@ -5986,6 +6037,23 @@ export interface paths {
     readonly get: operations["practice_question_api_question_notebook_practice_questions__entry_id__get"];
     readonly put?: never;
     readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/question-notebook/practice/questions/{entry_id}/attempts": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Open Attempt */
+    readonly post: operations["open_attempt_api_question_notebook_practice_questions__entry_id__attempts_post"];
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -10589,6 +10657,35 @@ export interface components {
       /** Ref Id */
       readonly ref_id: string;
     };
+    /** AttemptChecked */
+    readonly AttemptChecked: {
+      /** Correct */
+      readonly correct: boolean | null;
+      /** Correct Answer */
+      readonly correct_answer: string;
+      /** Explanation */
+      readonly explanation: string;
+      /** Misconception */
+      readonly misconception: string | null;
+      /** Rating */
+      readonly rating: ("good" | "hard" | "again") | null;
+    };
+    /** AttemptHint */
+    readonly AttemptHint: {
+      /** Is Answer */
+      readonly is_answer: boolean;
+      /** Rung */
+      readonly rung: number;
+      /** Text */
+      readonly text: string | null;
+    };
+    /** AttemptOpened */
+    readonly AttemptOpened: {
+      /** Attempt Id */
+      readonly attempt_id: string;
+      /** Rungs Available */
+      readonly rungs_available: number;
+    };
     /** AuditRequest */
     readonly AuditRequest: {
       /** Budget */
@@ -11160,6 +11257,11 @@ export interface components {
       readonly force: boolean;
       /** Page Id */
       readonly page_id: string;
+    };
+    /** ConfidenceRequest */
+    readonly ConfidenceRequest: {
+      /** Level */
+      readonly level: number;
     };
     /**
      * ConfirmPartnerDraftRequest
@@ -13290,6 +13392,11 @@ export interface components {
        */
       readonly followup_session_id: string;
       /**
+       * Hints
+       * @default []
+       */
+      readonly hints: readonly string[];
+      /**
        * Hints Used
        * @default 0
        */
@@ -13605,6 +13712,9 @@ export interface components {
     };
     /** PracticeAnalytics */
     readonly PracticeAnalytics: {
+      readonly assistance: components["schemas"]["PracticeAssistance"];
+      /** Calibration */
+      readonly calibration: readonly components["schemas"]["PracticeCalibration"][];
       /** Daily */
       readonly daily: readonly components["schemas"]["PracticeDailyCounts"][];
       /** Days */
@@ -13620,6 +13730,24 @@ export interface components {
       readonly totals: components["schemas"]["PracticeCounts"];
       /** Updated At */
       readonly updated_at: number;
+    };
+    /** PracticeAssistance */
+    readonly PracticeAssistance: {
+      /** Attempts */
+      readonly attempts: number;
+      /** Hinted */
+      readonly hinted: number;
+      /** Revealed */
+      readonly revealed: number;
+    };
+    /** PracticeCalibration */
+    readonly PracticeCalibration: {
+      /** Attempts */
+      readonly attempts: number;
+      /** Correct */
+      readonly correct: number;
+      /** Level */
+      readonly level: number;
     };
     /** PracticeCounts */
     readonly PracticeCounts: {
@@ -14248,11 +14376,12 @@ export interface components {
        * @default
        */
       readonly answer: string;
-      /**
-       * Rating
-       * @enum {string}
-       */
-      readonly rating: "again" | "hard" | "good" | "easy";
+      /** Attempt Id */
+      readonly attempt_id?: string | null;
+      /** Judged Correct */
+      readonly judged_correct?: boolean | null;
+      /** Rating */
+      readonly rating?: ("again" | "hard" | "good" | "easy") | null;
       /** Request Id */
       readonly request_id: string;
       /**
@@ -15625,6 +15754,8 @@ export interface components {
        * @default
        */
       readonly explanation: string;
+      /** Hints */
+      readonly hints?: readonly string[] | null;
       /**
        * Hints Used
        * @default 0
@@ -16121,6 +16252,9 @@ export type SchemaAssetAddRequest = components["schemas"]["AssetAddRequest"];
 export type SchemaAssetSpec = components["schemas"]["AssetSpec"];
 export type SchemaAttachCourseResourceRequest =
   components["schemas"]["AttachCourseResourceRequest"];
+export type SchemaAttemptChecked = components["schemas"]["AttemptChecked"];
+export type SchemaAttemptHint = components["schemas"]["AttemptHint"];
+export type SchemaAttemptOpened = components["schemas"]["AttemptOpened"];
 export type SchemaAuditRequest = components["schemas"]["AuditRequest"];
 export type SchemaAuthStatusResponse =
   components["schemas"]["AuthStatusResponse"];
@@ -16195,6 +16329,8 @@ export type SchemaCodexReasoningEffortUpdate =
 export type SchemaCommitRequest = components["schemas"]["CommitRequest"];
 export type SchemaCompilePageRequest =
   components["schemas"]["CompilePageRequest"];
+export type SchemaConfidenceRequest =
+  components["schemas"]["ConfidenceRequest"];
 export type SchemaConfirmPartnerDraftRequest =
   components["schemas"]["ConfirmPartnerDraftRequest"];
 export type SchemaConfirmProposalRequest =
@@ -16429,6 +16565,10 @@ export type SchemaPositionInfo = components["schemas"]["PositionInfo"];
 export type SchemaPositionPayload = components["schemas"]["PositionPayload"];
 export type SchemaPracticeAnalytics =
   components["schemas"]["PracticeAnalytics"];
+export type SchemaPracticeAssistance =
+  components["schemas"]["PracticeAssistance"];
+export type SchemaPracticeCalibration =
+  components["schemas"]["PracticeCalibration"];
 export type SchemaPracticeCounts = components["schemas"]["PracticeCounts"];
 export type SchemaPracticeDailyCounts =
   components["schemas"]["PracticeDailyCounts"];
@@ -29859,6 +29999,119 @@ export interface operations {
       };
     };
   };
+  readonly attempt_check_api_question_notebook_practice_attempts__attempt_id__check_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly attempt_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["AnswerRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["AttemptChecked"];
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly attempt_confidence_api_question_notebook_practice_attempts__attempt_id__confidence_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly attempt_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["ConfidenceRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly attempt_hint_api_question_notebook_practice_attempts__attempt_id__hint_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly attempt_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["AttemptHint"];
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   readonly import_commit_api_question_notebook_practice_import_commit_post: {
     readonly parameters: {
       readonly query?: never;
@@ -29990,6 +30243,41 @@ export interface operations {
         };
         content: {
           readonly "application/json": components["schemas"]["PracticeQuestion"];
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly open_attempt_api_question_notebook_practice_questions__entry_id__attempts_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly entry_id: number;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["AttemptOpened"];
         };
       };
       /** @description Validation Error */

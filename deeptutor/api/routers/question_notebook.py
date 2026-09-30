@@ -59,6 +59,7 @@ class NotebookEntryItem(BaseModel):
     correct_answer: str = ""
     explanation: str = ""
     misconception: str | None = None
+    hints: list[str] = []
     difficulty: str = ""
     user_answer: str = ""
     user_answer_images: list[AnswerImageItem] = []
@@ -169,6 +170,8 @@ class UpsertEntryRequest(BaseModel):
     explanation: str = ""
     # ``None`` keeps the stored misconception on update; "" clears it.
     misconception: str | None = None
+    # Hint ladder rungs 1-4. ``None`` keeps the stored hints on update; [] clears them.
+    hints: list[str] | None = Field(default=None, max_length=4)
     difficulty: str = ""
     user_answer: str = ""
     # Optional: list of images attached as part of the learner's answer.

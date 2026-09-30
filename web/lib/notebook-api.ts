@@ -213,6 +213,8 @@ export interface NotebookEntry {
   explanation: string;
   /** The specific misconception behind a likely wrong answer; null when none is recorded. */
   misconception?: string | null;
+  /** Hint ladder rungs 1-4 (nudge, hint, key step, worked example); [] when none are written. */
+  hints?: string[];
   difficulty: string;
   user_answer: string;
   user_answer_images?: NotebookAnswerImage[];

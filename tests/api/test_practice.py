@@ -215,6 +215,7 @@ def test_template_round_trips_and_formulas_are_rejected(bank):
         data = client.get(f"/practice/import/template?format={format}").content
         assert len(preview(data, f"template.{format}")["questions"]) == 4
         assert preview(data, f"template.{format}")["questions"][0]["misconception"]
+        assert preview(data, f"template.{format}")["questions"][0]["hints"]
     book = Workbook()
     book.active.append(["question", "answer"])
     book.active.append(["=1+1", "2"])
@@ -265,6 +266,90 @@ def test_misconception_is_optional_and_not_part_of_the_import_identity():
     assert noted["misconception"] == "Thinks B"
     assert noted["question_id"] == plain["question_id"]
     assert normalize_question({"题目": "Q", "答案": "A", "误区": "B"})["misconception"] == "B"
+
+
+def test_question_bank_csv_hints_round_trip_and_default_to_empty(bank, tmp_path):
+    _, _, client = bank
+    with QUESTION_BANK_CSV.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert "hints" not in rows[0]
+
+    # Without a hints column every question imports with no rungs.
+    plain_store = SQLiteSessionStore(tmp_path / "plain.db")
+    plain_repo = PracticeStore(plain_store.db_path)
+    questions = preview(QUESTION_BANK_CSV.read_bytes(), "question_bank.csv")["questions"]
+    plain_repo.commit_import(plain_repo.stage_import("question_bank.csv", "bank", questions))
+    plain = asyncio.run(plain_store.list_notebook_entries(limit=200))["items"]
+    assert len(plain) == 60 and all(item["hints"] == [] for item in plain)
+    ids = {item["question"]: item["question_id"] for item in plain}
+
+    # The same file with a hints column: rungs split on "|", blanks dropped,
+    # and the import identity (so every existing id) is unchanged.
+    rungs = ["Nudge", "Hint", "Key step", "Worked"]
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, [*rows[0], "hints"])
+    writer.writeheader()
+    for number, row in enumerate(rows):
+        writer.writerow(
+            {**row, "hints": " Nudge | Hint || Key step|Worked " if number == 0 else ""}
+        )
+    staged = client.post(
+        "/practice/import/preview",
+        files={"file": ("question_bank.csv", output.getvalue().encode())},
+        data={"target": "bank"},
+    ).json()
+    assert (staged["valid"], staged["errors"]) == (60, [])
+    commit = client.post("/practice/import/commit", json={"token": staged["token"]})
+    assert commit.json()["created"] == 60
+    listing = client.get("/bank/entries?limit=200").json()["items"]
+    assert {item["question"]: item["question_id"] for item in listing} == ids
+    hinted = {item["question"]: item["hints"] for item in listing}
+    assert hinted == {row["question"]: rungs if n == 0 else [] for n, row in enumerate(rows)}
+    first = next(item for item in listing if item["question"] == rows[0]["question"])
+    assert client.get(f"/practice/questions/{first['id']}").json()["entry"]["hints"] == rungs
+
+
+def test_hints_import_from_a_committed_file_and_json_lists():
+    row = normalize_question({"question": "Q", "answer": "A", "Hints": "One|Two"})
+    assert row["hints"] == ["One", "Two"]
+    assert row["question_id"] == normalize_question({"question": "Q", "answer": "A"})["question_id"]
+    assert normalize_question({"question": "Q", "answer": "A", "hints": ["X", " "]})["hints"] == [
+        "X"
+    ]
+    with pytest.raises(ValueError, match="hints"):
+        normalize_question({"question": "Q", "answer": "A", "hints": "1|2|3|4|5"})
+
+
+def test_committed_import_stores_hints_on_the_entry(bank):
+    _, repo, client = bank
+    question = normalize_question({"question": "Q", "answer": "A", "hints": "Look again|Think"})
+    repo.commit_import(repo.stage_import("q.json", "bank", [question]))
+    (item,) = client.get("/bank/entries").json()["items"]
+    assert item["hints"] == ["Look again", "Think"]
+    assert client.get(f"/practice/questions/{item['id']}").json()["entry"]["hints"] == [
+        "Look again",
+        "Think",
+    ]
+    # Previews staged before this field existed lack the key.
+    legacy = {key: value for key, value in question.items() if key != "hints"}
+    legacy["question_id"] = "import:legacy"
+    repo.commit_import(repo.stage_import("old.json", "bank", [legacy]))
+    listed = {row["question_id"]: row for row in client.get("/bank/entries").json()["items"]}
+    assert listed["import:legacy"]["hints"] == []
+
+
+def test_notebook_api_carries_hints_and_keeps_them_across_answer_saves(bank):
+    _, _, client = bank
+    base = {"origin_type": "external_import", "origin_ref": "notes", "question": "1/2 + 1/3?"}
+    saved = client.post(
+        "/bank/entries/upsert", json={**base, "question_id": "q1", "hints": ["Common base?"]}
+    ).json()
+    assert saved["hints"] == ["Common base?"]
+    client.post("/bank/entries/upsert", json={**base, "question_id": "q1", "user_answer": "2/5"})
+    assert client.get(f"/bank/entries/{saved['id']}").json()["hints"] == ["Common base?"]
+    assert client.get("/bank/entries").json()["items"][0]["hints"] == ["Common base?"]
+    too_many = {**base, "question_id": "q2", "hints": ["1", "2", "3", "4", "5"]}
+    assert client.post("/bank/entries/upsert", json=too_many).status_code == 422
 
 
 def test_notebook_api_keeps_misconception_across_answer_saves(bank):
