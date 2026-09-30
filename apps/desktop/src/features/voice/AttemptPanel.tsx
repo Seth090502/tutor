@@ -314,7 +314,7 @@ function AttemptView({ attempt, actions }: { attempt: StudyAttempt; actions?: Pa
             {verdict ? <VerdictPill verdict={verdict} /> : null}
             {lastCheck(attempt)?.diagnostic ? <p className="text-[15px]">{lastCheck(attempt)?.diagnostic}</p> : null}
             {attempt.offer ? <p className="text-ink-2 text-[15px]">{offerWords(attempt.offer)}</p> : null}
-            <TextAnswer label="Try again" submit="Try again" disabled={!enabled} onSubmit={(t) => run((a) => a.repair(t))} />
+            <TextAnswer label="Your new answer" submit="Try again" disabled={!enabled} onSubmit={(t) => run((a) => a.repair(t))} />
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled={!enabled || hintsGiven(attempt).length >= HINT_RUNGS.length} onClick={() => run((a) => a.hint())}>
                 Hint
@@ -331,6 +331,12 @@ function AttemptView({ attempt, actions }: { attempt: StudyAttempt; actions?: Pa
             <p className="text-[15px]">
               This answer has no automatic check. Compare yours with the reference answer on the card, then say how it went.
             </p>
+            {attempt.first_response?.response ? (
+              <div className="border-hairline rounded-xl border px-4 py-3">
+                <p className="text-ink-3 font-mono text-[11px] tracking-[0.14em] uppercase">Your answer</p>
+                <p className="mt-1 font-serif text-[17px] leading-snug whitespace-pre-wrap">{attempt.first_response.response}</p>
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button disabled={!enabled} onClick={() => run((a) => a.selfAssess("correct"))}>
                 I got it
@@ -393,7 +399,14 @@ function TextAnswer({
   }
   return (
     <form className="flex gap-2" onSubmit={send}>
-      <TextField aria-label={label} className="flex-1" value={value} onChange={(e) => setValue(e.target.value)} disabled={disabled} />
+      <TextField
+        aria-label={label}
+        placeholder={label}
+        className="flex-1"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        disabled={disabled}
+      />
       <Button type="submit" variant="outline" disabled={disabled || !value.trim()}>
         {submit}
       </Button>

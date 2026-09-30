@@ -136,7 +136,7 @@ describe("AttemptPanel", () => {
     expect(session.state.attempt?.status).toBe("remediating")
     expect(t).toContain("Not quite")
     expect(t).toContain("Not the expected answer.")
-    expect(markup).toContain('aria-label="Try again"')
+    expect(markup).toContain('aria-label="Your new answer"')
     expect(markup).toContain(">Give up</button>")
     expect(markup).toContain(">Hint</button>")
     // The keys stay pressable for a new try: no marks before the answer is released.
@@ -170,6 +170,9 @@ describe("AttemptPanel", () => {
     expect(t).toContain(ESSAY.explanation)
     expect(t).toContain("I got it")
     expect(t).toContain("I missed it")
+    // The learner's own answer sits beside the reference, so there is something to compare.
+    expect(t).toContain("Your answer")
+    expect(t).toContain("Water moves to the saltier side.")
   })
 
   it("closed correct: verdict, released answer, explanation, misconception, the rating in words and Next question", async () => {
