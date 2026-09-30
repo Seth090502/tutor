@@ -1,0 +1,54 @@
+/* Chart kit motion. Durations come from the --dur-* tokens (1ms under reduced motion); the stagger delays
+   are dropped there too. Transform and opacity only. */
+
+@keyframes chart-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes chart-pop {
+  from { opacity: 0; transform: scale(0.55); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes chart-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes chart-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chart-rise {
+  animation: chart-rise var(--dur-slow) cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.chart-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-pop calc(var(--dur-slow) + 160ms) cubic-bezier(.3, 1.35, .4, 1) both;
+}
+
+.chart-grow-x {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: chart-grow-x calc(var(--dur-slow) + 360ms) cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.chart-fade {
+  animation: chart-fade calc(var(--dur-slow) + 200ms) cubic-bezier(.2, .8, .2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-rise,
+  .chart-pop,
+  .chart-grow-x,
+  .chart-fade {
+    animation: none;
+  }
+}
+
+/* Keyboard focus on SVG groups is drawn by the component (outline on <g> is not reliable); hide the default. */
+.chart-focusable:focus { outline: none; }
