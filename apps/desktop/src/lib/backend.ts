@@ -62,6 +62,65 @@ export type TtsVoice = { voice_id: string; name: string; labels: Record<string, 
 export type SttWord = { text: string; start: number; end: number }
 export type SttResult = { text: string; words: SttWord[] }
 
+/** Learner projections (contract C13). Every number is a provisional local policy, not a validated measure. */
+export type SkillStatus = "insufficient" | "developing" | "provisionally_mastered" | "needs_review"
+export type SkillState = {
+  skill_id: string
+  policy_version: string
+  alpha: number
+  beta: number
+  effective_weight: number
+  eligible_observations: number
+  dependent_observations: number
+  distinct_families: number
+  families_available: number
+  distinct_dates: number
+  last_exposure_at: number | null
+  delayed_evidence: { attempt_id: string; at: number; gap_days: number; y: 0 | 1 }[]
+  p_mastery: number
+  status: SkillStatus
+  limitations: string[]
+}
+export type LearningSkills = {
+  store_id: string
+  policy_version: string
+  last_event_seq: number
+  skills: SkillState[]
+  excluded: Record<string, number>
+  skipped_unknown: number
+  limitations: string[]
+}
+export type PlanRequest = {
+  now: number
+  timezone: string
+  available_minutes: number
+  active_tracks: string[]
+  review_budget_minutes?: number
+  new_item_budget: number
+  study_soft_stop_minutes?: number
+  procedure_share_min?: number
+  fatigue?: "none" | "tired" | "rested"
+  excluded_experiment_units?: number[]
+}
+export type PlanItem = {
+  entry_id: number
+  track: string
+  reason: string
+  estimated_seconds: number
+  priority_components: { retrievability: number | null; overdue_days: number; track_share: number }
+  due_at: number | null
+}
+export type StudyPlan = {
+  items: PlanItem[]
+  summary: {
+    minutes_by_track: Record<string, number>
+    deferred_by_track: Record<string, number>
+    total_minutes: number
+    budget_minutes: number
+    notes: string[]
+  }
+}
+
 export const shell = {
   servicesStatus: () => invoke<ServicesStatus>("services_status"),
   servicesRestart: (name: "backend" | "rag_engine") => invoke<void>("services_restart", { name }),
@@ -84,4 +143,8 @@ export const shell = {
   /** Scribe transcript of WebM/Opus or WAV bytes; `lang` is the Scribe (ISO 639-3) code. */
   sttTranscribe: (audio: Uint8Array, lang: string) =>
     invoke<SttResult>("stt_transcribe", { audio: Array.from(audio), lang }),
+  /** Skill estimates, after catching up from the study feed (C13). */
+  learningSkills: (timezone: string) => invoke<LearningSkills>("learning_skills", { timezone }),
+  /** One global study plan over the due items (C13). */
+  learningPlan: (request: PlanRequest) => invoke<StudyPlan>("learning_plan", { request }),
 }
