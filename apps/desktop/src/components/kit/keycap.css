@@ -1,0 +1,237 @@
+/* Answer keycaps (gallery 061 and 020 recipes, written fresh). Layers, back to front:
+   contact shadow, base plate (the ledge), cap (moves), skirt, top face, legend. Travel is
+   4px with a slight shrink; press and release use spring-shaped linear() easings.
+   Durations come from the --dur-* tokens, so everything is instant under reduced motion. */
+
+:root {
+  /* Damped-spring curves from _spring.ts (zeta .72 press, .38 release); _spring.test.ts
+     fails if these drift from springLinear(). */
+  --kit-ease-press: linear(0, .012, .044, .091, .149, .215, .285, .357, .428, .498, .565, .629, .687, .741, .79, .833, .871, .905, .933, .957, .978, .994, 1.008, 1.018, 1.026, 1.032, 1.035, 1.037, 1.038, 1.038, 1.037, 1.036, 1.033, 1.031, 1.028, 1.026, 1.023, 1.02, 1.017, 1.015, 1);
+  --kit-ease-release: linear(0, .042, .154, .311, .492, .677, .851, 1.001, 1.12, 1.204, 1.255, 1.275, 1.268, 1.241, 1.199, 1.15, 1.099, 1.051, 1.008, .973, .948, .932, .925, .925, .932, .943, .956, .97, .983, .996, 1.006, 1.013, 1.018, 1.02, 1.021, 1.019, 1.016, 1.013, 1.009, 1.005, 1);
+
+  --kc-cap-base: #e9dfc6;
+  --kc-edge: rgb(70 48 14 / 0.3);
+  --kc-hl: rgb(255 255 255 / 0.72);
+  --kc-bevel: rgb(60 38 8 / 0.16);
+  --kc-contact: rgb(40 26 6 / 0.36);
+  --kc-legend-fx: rgb(255 255 255 / 0.8);
+  --kc-tint-mix: 42%;
+}
+
+.dark {
+  --kc-cap-base: #463d32;
+  --kc-edge: rgb(0 0 0 / 0.55);
+  --kc-hl: rgb(255 255 255 / 0.17);
+  --kc-bevel: rgb(0 0 0 / 0.42);
+  --kc-contact: rgb(0 0 0 / 0.7);
+  --kc-legend-fx: rgb(255 255 255 / 0.1);
+  --kc-tint-mix: 30%;
+}
+
+.kc {
+  --u: 3.25rem;
+  --travel: 4px;
+  --kc-cap: var(--kc-cap-base);
+  --kc-high: color-mix(in oklab, var(--kc-cap) 86%, white);
+  --kc-low: color-mix(in oklab, var(--kc-cap) 64%, black);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 6px 10px 6px 6px;
+  border: 0;
+  border-radius: 1rem;
+  background: none;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kc[data-status="correct"] {
+  --kc-cap: color-mix(in oklab, var(--kc-cap-base) calc(100% - var(--kc-tint-mix)), var(--ok));
+}
+.kc[data-status="wrong"] {
+  --kc-cap: color-mix(in oklab, var(--kc-cap-base) calc(100% - var(--kc-tint-mix)), var(--bad));
+}
+
+.kc:focus-visible {
+  outline: 2px solid var(--world);
+  outline-offset: 2px;
+}
+
+.kc:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.kc[aria-disabled="true"] {
+  cursor: default;
+}
+
+.kc-key {
+  position: relative;
+  flex: none;
+  width: var(--u);
+  height: calc(var(--u) + var(--travel));
+}
+
+.kc-contact {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: calc(var(--travel) + 8%);
+  bottom: -2px;
+  border-radius: 0.6rem;
+  background: var(--kc-contact);
+  box-shadow: 0 3px 8px 1px var(--kc-contact);
+  opacity: 0.85;
+  transition:
+    opacity calc(var(--dur-base) * 1.6) var(--kit-ease-release),
+    transform calc(var(--dur-base) * 1.6) var(--kit-ease-release);
+}
+
+.kc-base {
+  position: absolute;
+  inset: var(--travel) 0 auto 0;
+  height: var(--u);
+  border-radius: calc(var(--u) * 0.16);
+  background: var(--kc-low);
+  box-shadow: inset 0 0 0 1px var(--kc-edge);
+}
+
+.kc-cap {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--u);
+  transform-origin: 50% 62%;
+  transition: transform calc(var(--dur-base) * 1.6) var(--kit-ease-release);
+}
+
+.kc-skirt {
+  position: absolute;
+  inset: 0;
+  border-radius: calc(var(--u) * 0.16);
+  background: linear-gradient(180deg, var(--kc-high) 0%, var(--kc-cap) 42%, var(--kc-low) 100%);
+  box-shadow:
+    inset 0 0 0 1px var(--kc-edge),
+    inset 0 1px 0 var(--kc-hl);
+}
+
+.kc-face {
+  position: absolute;
+  inset: 6% 10% 14% 10%;
+  display: grid;
+  place-items: center;
+  border-radius: calc(var(--u) * 0.11);
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgb(255 255 255 / 0.3), transparent 62%),
+    linear-gradient(180deg, color-mix(in oklab, var(--kc-cap) 88%, white), var(--kc-cap));
+  box-shadow:
+    inset 0 1.5px 0 var(--kc-hl),
+    inset 0 -3px 5px var(--kc-bevel),
+    0 1px 0 rgb(0 0 0 / 0.1);
+}
+
+/* Press overlay: darkens the face while the key is down. */
+.kc-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #000;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-soft);
+}
+
+.kc-legend {
+  position: relative;
+  font-family: var(--font-sans);
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--foreground);
+  text-shadow: 0 1px 0 var(--kc-legend-fx);
+}
+
+/* Latched LED and result mark live in the face corner. */
+.kc-led {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity var(--dur-quick) var(--ease-soft),
+    transform calc(var(--dur-base) * 1.6) var(--kit-ease-release);
+}
+.kc[data-latched] .kc-led {
+  opacity: 1;
+  transform: scale(1);
+}
+.kc[data-status] .kc-led {
+  display: none;
+}
+
+.kc-mark {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 13px;
+  height: 13px;
+  color: var(--foreground);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity var(--dur-quick) var(--ease-soft),
+    transform calc(var(--dur-base) * 1.6) var(--kit-ease-release);
+}
+.kc[data-status] .kc-mark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Make room for the mark so it never sits on the legend. */
+.kc[data-status] .kc-legend {
+  transform: translateX(-2px);
+}
+
+.kc-label {
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: 1.45;
+  color: var(--foreground);
+  text-wrap: pretty;
+}
+
+/* Hover lift (pointer devices only), then the pressed and latched positions. */
+@media (hover: hover) {
+  .kc:not(:disabled):not([aria-disabled="true"]):hover:not(:active) .kc-cap {
+    transform: translateY(-1px);
+  }
+}
+
+.kc[data-latched] .kc-cap {
+  transform: translateY(calc(var(--travel) - 1px)) scale(0.985);
+  transition-duration: var(--dur-quick);
+  transition-timing-function: var(--kit-ease-press);
+}
+.kc:not(:disabled):not([aria-disabled="true"]):active .kc-cap {
+  transform: translateY(var(--travel)) scale(0.98);
+  transition-duration: var(--dur-quick);
+  transition-timing-function: var(--kit-ease-press);
+}
+
+.kc[data-latched] .kc-face::after {
+  opacity: 0.07;
+}
+.kc:not(:disabled):not([aria-disabled="true"]):active .kc-face::after {
+  opacity: 0.11;
+}
+.kc[data-latched] .kc-contact,
+.kc:not(:disabled):not([aria-disabled="true"]):active .kc-contact {
+  opacity: 0.4;
+  transform: scaleX(0.96);
+}

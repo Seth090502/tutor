@@ -1,0 +1,181 @@
+/* Question card: a flippable study card with a hover-only holo sheen (gallery 029 idea, written
+   fresh). The moving layers sit in a container behind the text, never in front of it, and only
+   exist while the pointer is over the card. Text is never part of the blend stack. */
+
+.qc {
+  --qc-ring: var(--hairline-strong);
+  --qc-halo: transparent;
+  --qc-glyph: var(--ink-3);
+  --qc-flip-dur: calc(var(--dur-slow) * 1.875); /* 900 ms; 1.9 ms under reduced motion */
+  --qc-ease-flip: cubic-bezier(0.3, 1.22, 0.4, 1);
+  --qc-l: 54%;
+  position: relative;
+}
+.qc[data-mastery="learning"] {
+  --qc-ring: color-mix(in oklab, var(--warn) 70%, transparent);
+  --qc-halo: color-mix(in oklab, var(--warn) 9%, transparent);
+  --qc-glyph: var(--warn);
+}
+.qc[data-mastery="mastered"] {
+  --qc-ring: color-mix(in oklab, var(--ok) 70%, transparent);
+  --qc-halo: color-mix(in oklab, var(--ok) 9%, transparent);
+  --qc-glyph: var(--ok);
+}
+:root:not(.dark) .qc {
+  --qc-l: 74%;
+}
+
+.qc-tilt {
+  transform: perspective(1200px);
+  transform-style: preserve-3d;
+}
+
+.qc-flip {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform var(--qc-flip-dur) var(--qc-ease-flip);
+}
+.qc-flip[data-flipped] {
+  transform: rotateY(180deg);
+}
+
+.qc-face {
+  grid-area: 1 / 1;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1.5px solid var(--qc-ring);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow:
+    inset 0 1px 0 var(--kit-highlight),
+    var(--kit-shadow),
+    0 0 0 4px var(--qc-halo);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.qc-back {
+  transform: rotateY(180deg);
+}
+
+.qc-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.75rem 2rem 1.6rem;
+}
+
+/* Holo stack: every moving layer is oversized and moved with translate3d only. It is removed
+   from rendering entirely while idle. */
+.qc-holo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.qc:not([data-holo]) .qc-holo {
+  display: none;
+}
+
+.qc-layer {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.qc-rainbow {
+  background: linear-gradient(
+    115deg,
+    transparent 34%,
+    hsl(350 100% var(--qc-l)) 40%,
+    hsl(40 100% var(--qc-l)) 45%,
+    hsl(120 80% var(--qc-l)) 50%,
+    hsl(190 100% var(--qc-l)) 55%,
+    hsl(270 90% var(--qc-l)) 60%,
+    transparent 66%
+  );
+  mix-blend-mode: color-dodge;
+}
+.qc-diffraction {
+  background: repeating-linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0) 0 3px,
+    rgb(255 255 255 / 0.6) 3px 4px,
+    rgb(255 255 255 / 0) 4px 8px
+  );
+  mix-blend-mode: overlay;
+}
+.qc-sparkle {
+  background: conic-gradient(
+    from 20deg at 50% 50%,
+    hsl(0 100% 72%),
+    hsl(60 100% 72%),
+    hsl(120 100% 72%),
+    hsl(200 100% 72%),
+    hsl(280 100% 72%),
+    hsl(0 100% 72%)
+  );
+  -webkit-mask: radial-gradient(circle, #000 0 1px, transparent 1.7px) 0 0 / 14px 14px;
+  mask: radial-gradient(circle, #000 0 1px, transparent 1.7px) 0 0 / 14px 14px;
+  mix-blend-mode: color-dodge;
+}
+.qc-sheen {
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.3) 42%,
+    rgb(255 255 255 / 0.5) 50%,
+    rgb(255 255 255 / 0.3) 58%,
+    transparent 70%
+  );
+  mix-blend-mode: soft-light;
+}
+.qc-glare {
+  left: -60%;
+  top: -60%;
+  width: 220%;
+  height: 220%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(255 255 255 / 0.95) 0,
+    rgb(255 255 255 / 0.28) 22%,
+    transparent 46%
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Paper card: dodge and overlay on a light surface wash out, so darken instead. */
+:root:not(.dark) .qc-rainbow,
+:root:not(.dark) .qc-sparkle {
+  mix-blend-mode: multiply;
+}
+:root:not(.dark) .qc-diffraction {
+  background: repeating-linear-gradient(
+    115deg,
+    rgb(40 24 6 / 0) 0 3px,
+    rgb(40 24 6 / 0.35) 3px 4px,
+    rgb(40 24 6 / 0) 4px 8px
+  );
+  mix-blend-mode: multiply;
+}
+:root:not(.dark) .qc-sheen {
+  mix-blend-mode: normal;
+}
+:root:not(.dark) .qc-glare {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(255 252 244 / 1) 0,
+    rgb(255 252 244 / 0.4) 24%,
+    transparent 48%
+  );
+  mix-blend-mode: normal;
+}

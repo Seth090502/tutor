@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Tutor kit gallery</title>
+  </head>
+
+  <body>
+    <!-- Dev-only page: Vite builds index.html only. ?theme=dark|light&world=math|english|science|chemistry|neutral -->
+    <div id="root"></div>
+    <script type="module">
+      import { mountKitGallery } from "/src/dev/KitGallery.tsx"
+      mountKitGallery(document.getElementById("root"))
+    </script>
+  </body>
+</html>
