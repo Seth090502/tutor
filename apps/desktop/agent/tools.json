@@ -6,6 +6,14 @@
         },
         {
             "type": "client",
+            "config": "tool_configs/set_confidence.json"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/get_hint.json"
+        },
+        {
+            "type": "client",
             "config": "tool_configs/check_answer.json"
         },
         {

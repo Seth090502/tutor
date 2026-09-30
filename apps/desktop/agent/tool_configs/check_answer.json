@@ -1,6 +1,6 @@
 {
     "name": "check_answer",
-    "description": "Grade the learner's answer to a practice question. Call it before saying anything about whether the answer is right. Returns correct (true, false, or null for open-ended questions), correct_answer, explanation and, when recorded, misconception.",
+    "description": "Grade the learner's committed answer and close the attempt. Call it before saying anything about whether the answer is right. Returns correct (true, false, or null when it cannot be auto-checked), correct_answer, explanation and, when recorded, misconception.",
     "type": "client",
     "expects_response": true,
     "response_timeout_secs": 30,
@@ -8,9 +8,9 @@
         "type": "object",
         "description": "Arguments for check_answer",
         "properties": {
-            "question_id": {
-                "type": "integer",
-                "description": "The question_id returned by get_next_question."
+            "attempt_id": {
+                "type": "string",
+                "description": "The attempt_id returned by get_next_question for the current question."
             },
             "answer": {
                 "type": "string",
@@ -18,7 +18,7 @@
             }
         },
         "required": [
-            "question_id",
+            "attempt_id",
             "answer"
         ]
     },
