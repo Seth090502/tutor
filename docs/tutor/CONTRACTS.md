@@ -228,6 +228,31 @@ keep working unchanged.
   - highest rung 2-3: `hard`;
   - otherwise `good`.
   - Confidence never changes the rating.
-- **`GET /analytics`** adds:
+- **`GET /analytics`** adds (see also C8 for how the voice screen shows attempts):
   - `calibration: [{"level": 1-4, "attempts": int, "correct": int}]`;
   - `assistance: {"attempts": int, "hinted": int, "revealed": int}`.
+
+## C8. Voice tutor events (desktop)
+
+`apps/desktop/src/features/voice/tools.ts` owns the client tools and publishes what they did, so the Tutor
+screen can show the current question without the answer key leaking to the model.
+
+```ts
+export type TutorEvent =
+  | { type: "question"; attempt_id: string; question_id: number; question: string;
+      question_type: string; options: Record<string, string> }
+  | { type: "confidence"; attempt_id: string; level: 1 | 2 | 3 | 4 }
+  | { type: "hint"; attempt_id: string; rung: number; text: string | null; is_answer: boolean }
+  | { type: "checked"; attempt_id: string; correct: boolean | null; correct_answer: string;
+      explanation: string; misconception: string | null }
+  | { type: "reviewed"; attempt_id: string; rating: string; next_due: string | null }
+export function onTutorEvent(listener: (e: TutorEvent) => void): () => void
+```
+
+- **Showing the attempt:** the screen renders the question card, the A-D keycaps, the confidence keys 1-4
+  and the hint rung from these events.
+- **Answers and confidence from the screen:** they are sent to the agent as user messages
+  (`"My answer: B"`, `"Confidence: 3"`), so the agent still calls the tools. The screen never calls the
+  practice API directly.
+- **After the check:** the card flips to show the explanation and misconception only after a `checked`
+  event.
