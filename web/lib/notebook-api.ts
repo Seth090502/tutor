@@ -215,6 +215,8 @@ export interface NotebookEntry {
   misconception?: string | null;
   /** Hint ladder rungs 1-4 (nudge, hint, key step, worked example); [] when none are written. */
   hints?: string[];
+  /** Other answers graded as correct (language cards); [] when none are recorded. */
+  accepted_answers?: string[];
   difficulty: string;
   user_answer: string;
   user_answer_images?: NotebookAnswerImage[];

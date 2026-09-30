@@ -14,6 +14,7 @@ MAX_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 500
 MAX_CELL = 20000
 MAX_COLUMNS = 64
+MAX_ACCEPTED = 20
 ALIASES = {
     "question": ("question", "题目", "题干"),
     "question_type": ("question_type", "type", "题型"),
@@ -21,6 +22,7 @@ ALIASES = {
     "explanation": ("explanation", "解析"),
     "misconception": ("misconception", "误区"),
     "hints": ("hints", "提示"),
+    "accepted_answers": ("accepted_answers",),
     "difficulty": ("difficulty", "难度"),
     "tags": ("tags", "标签", "分类"),
     "user_answer": ("user_answer", "我的答案", "作答"),
@@ -185,6 +187,13 @@ def normalize_question(raw: dict) -> dict:
     hints = [_cell(hint) for hint in hints if _cell(hint)]
     if len(hints) > 4:
         raise ValueError("Use at most 4 hints (rungs 1-4), separated by |")
+    accepted_value = fields["accepted_answers"]
+    accepted = (
+        accepted_value if isinstance(accepted_value, list) else _cell(accepted_value).split("|")
+    )
+    accepted = [_cell(value) for value in accepted if _cell(value)]
+    if len(accepted) > MAX_ACCEPTED:
+        raise ValueError("Use at most 20 accepted answers, separated by |")
     result = dict(
         question=question,
         question_type=kind,
@@ -193,6 +202,7 @@ def normalize_question(raw: dict) -> dict:
         explanation=_cell(fields["explanation"]),
         misconception=_cell(fields["misconception"]) or None,
         hints=hints,
+        accepted_answers=accepted,
         difficulty=_cell(fields["difficulty"]),
         user_answer=_cell(fields["user_answer"]),
         tags=tags,

@@ -519,6 +519,7 @@ from deeptutor.api.routers import (
     guided_reading,
     imports,
     knowledge,
+    languages,
     library,
     marginnote4,
     mastery_path,
@@ -662,6 +663,9 @@ app.include_router(
     prefix="/api/question-notebook/practice",
     tags=["practice"],
     dependencies=_auth,
+)
+app.include_router(
+    languages.router, prefix="/api/languages", tags=["languages"], dependencies=_auth
 )
 # Public UI-settings read (auth pages bootstrap the interface language
 # before a session exists, so GET /api/settings/ui must not be gated
