@@ -1,0 +1,62 @@
+/* Library screen motion. One-shot entrances only: transform and opacity (plus clip-path on the tiny typed
+   log lines). Nothing loops. Reduced motion shows the final state at once. */
+
+.lib-rise {
+  animation: lib-rise 520ms cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+@keyframes lib-rise {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Bars grow from the left once, staggered by row. */
+.lib-bar {
+  transform-origin: left center;
+  animation: lib-grow 600ms cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(250ms + var(--i, 0) * 50ms);
+}
+@keyframes lib-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+/* Log lines type in character by character (mono, so steps() lands on character edges). */
+.lib-type {
+  animation: lib-type calc(var(--ch, 20) * 18ms) steps(var(--ch, 20), end) both;
+  animation-delay: 60ms;
+}
+@keyframes lib-type {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+/* The completion check stamps down with a little overshoot. */
+.lib-stamp {
+  animation: lib-stamp 620ms cubic-bezier(.3, 1.6, .4, 1) both;
+  animation-delay: 240ms;
+}
+@keyframes lib-stamp {
+  from { opacity: 0; transform: scale(2.1) rotate(-16deg); }
+  55% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
+/* Hero numerals scale with the stat row's own width so six cells fit from 900px up. */
+.lib-stats { container-type: inline-size; }
+.lib-stats [data-slot="kit-stat"] dd > span:first-child {
+  font-size: clamp(34px, 5.8cqi, 56px);
+}
+.lib-stats [data-slot="kit-stat"].lib-stat-sm dd > span:first-child {
+  font-size: clamp(28px, 4.2cqi, 40px);
+  font-weight: 300;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-rise, .lib-bar, .lib-type, .lib-stamp { animation: none; }
+}
+
+/* Three cells per row at every width; the numerals above shrink to fit. */
+.lib-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
