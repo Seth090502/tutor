@@ -1,79 +1,42 @@
 // Library: rag-engine status, survey projections and job control (contract C1).
-import { useCallback, useEffect, useState } from "react"
-import { Play, ScanSearch, ServerOff } from "lucide-react"
+import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
 
-import { Button } from "@/components/ui/button"
-import { HttpError, RAG_ENGINE_URL, fetchJson } from "@/lib/backend"
-import {
-  BarList,
-  LegendDot,
-  Notice,
-  Page,
-  Panel,
-  ScreenBoundary,
-  StackedBar,
-  Stat,
-  StateMessage,
-  errorText,
-  fmtBytes,
-  fmtCompact,
-  fmtInt,
-  fmtPct,
-  fmtUsd,
-  type Segment,
-} from "./ui"
+import { ChartFrame, StackedBar, stackTable, type StackSegment } from "@/components/charts"
+import { Led, Panel, Stat, StatRow } from "@/components/kit"
+import { BarRows, NEUTRAL_BAR } from "@/features/library/BarRows"
+import { fmtInt, fmtPct } from "@/features/library/format"
+import { JobsPanel } from "@/features/library/JobsPanel"
+import { ErrorState, LoadingState, OfflineState } from "@/features/library/LibraryStates"
+import { domainColor, sortedRows, type Status } from "@/features/library/logic"
+import { SurveyPanel } from "@/features/library/SurveyPanel"
+import { useLibrary } from "@/features/library/useLibrary"
+import "@/features/library/library.css"
 
-type Job = {
-  job_id: string
-  kind: "survey" | "ingest"
-  state: "queued" | "running" | "done" | "failed"
-  progress: { done: number; total: number }
-  started_at: number | null
-  finished_at: number | null
-  error: string | null
-}
-
-type Status = {
-  corpus_root: string
-  data_dir: string
-  documents: { total: number; by_domain: Record<string, number>; by_source_type: Record<string, number> }
-  pages: { total: number; by_class: Record<string, number> }
-  chunks: { total: number; embedded: number }
-  ocr: { pending_pages: number; done_pages: number }
-  errors: number
-  embedding: { provider: string | null; model: string | null; dims: number | null }
-  active_job: Job | null
-  spend_usd: { embedding: number; ocr: number }
-}
-
-// GET /survey/latest returns the `rag-engine survey` report (crates/rag-engine/src/report.rs).
-type Survey = {
-  root?: string
-  totals?: { duplicate_bytes?: number; duplicate_files?: number }
-  extrapolation?: {
-    measured_bytes?: number
-    tokens_est_per_gb: number | null
-    pages_per_gb: number | null
-    projections?: { corpus_gb: number; tokens_est: number | null; pages: number | null }[]
-  }
-}
-
-const POLL_STATUS_MS = 5000
-const POLL_JOB_MS = 1000
-
-const isActive = (j: Job | null | undefined): j is Job => j?.state === "queued" || j?.state === "running"
-
-const TRIAGE: { key: string; label: string; color: string }[] = [
-  { key: "born_digital", label: "Born digital", color: "var(--viz-1)" },
-  { key: "scanned", label: "Scanned", color: "var(--viz-2)" },
-  { key: "math_heavy", label: "Math heavy", color: "var(--viz-3)" },
-  { key: "empty", label: "Empty", color: "var(--viz-neutral)" },
+// Pages by triage class. The first three take the chart palette in order; an empty page is neutral.
+const TRIAGE: { id: string; label: string; color?: string }[] = [
+  { id: "born_digital", label: "Born digital" },
+  { id: "scanned", label: "Scanned" },
+  { id: "math_heavy", label: "Math heavy" },
+  { id: "empty", label: "Empty", color: NEUTRAL_BAR },
 ]
 
-const sortedRows = (counts: Record<string, number> | undefined) =>
-  Object.entries(counts ?? {})
-    .map(([label, value]) => ({ label, value }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
+/** Entrance stagger: each block rises 8px and fades, 70 ms after the one before. */
+const rise = (i: number) => ({ "--i": i }) as CSSProperties
+
+class ScreenBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("library screen failed to render", error, info.componentStack)
+  }
+  render() {
+    const { error } = this.state
+    if (error) return <ErrorState message={String(error.message ?? error)} onRetry={() => this.setState({ error: null })} />
+    return this.props.children
+  }
+}
 
 export function LibraryScreen() {
   return (
@@ -84,261 +47,121 @@ export function LibraryScreen() {
 }
 
 function LibraryView() {
-  const [status, setStatus] = useState<Status | null>(null)
-  const [fault, setFault] = useState<{ offline: boolean; message: string } | null>(null)
-  const [survey, setSurvey] = useState<Survey | null | undefined>(undefined) // null: none yet
-  const [surveyError, setSurveyError] = useState<string | null>(null)
-  const [job, setJob] = useState<Job | null>(null) // the job this window started
-  const [starting, setStarting] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const { status, fault, survey, surveyError, job, busy, notice, start, reload } = useLibrary()
 
-  const loadStatus = useCallback(async () => {
-    try {
-      setStatus(await fetchJson<Status>(RAG_ENGINE_URL, "/status"))
-      setFault(null)
-    } catch (e) {
-      setFault({ offline: !(e instanceof HttpError), message: errorText(e) })
-    }
-  }, [])
+  if (fault?.offline && !status) return <OfflineState onRetry={reload} />
+  if (!status) return fault ? <ErrorState message={fault.message} onRetry={reload} /> : <LoadingState />
+  return <Loaded status={status} stale={fault} {...{ survey, surveyError, job, busy, notice, start }} />
+}
 
-  const loadSurvey = useCallback(async () => {
-    try {
-      setSurvey(await fetchJson<Survey>(RAG_ENGINE_URL, "/survey/latest"))
-      setSurveyError(null)
-    } catch (e) {
-      if (e instanceof HttpError && e.status === 404) {
-        setSurvey(null)
-        setSurveyError(null)
-      } else {
-        setSurveyError(errorText(e))
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    void loadStatus()
-    void loadSurvey()
-    const timer = setInterval(() => void loadStatus(), POLL_STATUS_MS)
-    return () => clearInterval(timer)
-  }, [loadStatus, loadSurvey])
-
-  const jobId = job?.job_id
-  const polling = isActive(job)
-  useEffect(() => {
-    if (!jobId || !polling) return
-    let alive = true
-    const timer = setInterval(async () => {
-      try {
-        const next = await fetchJson<Job>(RAG_ENGINE_URL, `/jobs/${jobId}`)
-        if (!alive) return
-        setJob(next)
-        setNotice(null)
-      } catch (e) {
-        if (alive) setNotice(`Could not read job ${jobId}: ${errorText(e)}`)
-      }
-    }, POLL_JOB_MS)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [jobId, polling])
-
-  const finishedKind = job?.state === "done" ? job.kind : null
-  useEffect(() => {
-    if (!finishedKind) return
-    void loadStatus()
-    if (finishedKind === "survey") void loadSurvey()
-  }, [finishedKind, loadStatus, loadSurvey])
-
-  async function start(kind: "survey" | "ingest") {
-    setStarting(true)
-    setNotice(null)
-    try {
-      const { job_id } = await fetchJson<{ job_id: string }>(RAG_ENGINE_URL, `/${kind}`, {
-        method: "POST",
-        body: JSON.stringify(kind === "ingest" ? { rebuild: false } : {}),
-      })
-      setJob({ job_id, kind, state: "queued", progress: { done: 0, total: 0 }, started_at: null, finished_at: null, error: null })
-    } catch (e) {
-      setNotice(e instanceof HttpError && e.status === 409 ? `A job is already running: ${errorText(e)}` : errorText(e))
-    } finally {
-      setStarting(false)
-    }
-  }
-
-  if (fault?.offline) return <StateMessage icon={ServerOff} title="rag-engine is not running; start it from Settings" />
-  if (!status) {
-    return fault ? (
-      <StateMessage icon={ServerOff} title="rag-engine returned an error" detail={fault.message} />
-    ) : (
-      <StateMessage title="Loading…" />
-    )
-  }
-
-  const remote = status.active_job
-  const shown = job && (!remote || remote.job_id === job.job_id) ? job : (remote ?? job)
-  const busy = starting || isActive(job)
-
-  const triage: Segment[] = TRIAGE.map((t) => ({ ...t, value: status.pages?.by_class?.[t.key] ?? 0 }))
+function Loaded({
+  status,
+  stale,
+  survey,
+  surveyError,
+  job,
+  busy,
+  notice,
+  start,
+}: { status: Status; stale: { offline: boolean; message: string } | null } & Omit<ReturnType<typeof useLibrary>, "status" | "fault" | "reload">) {
   const pagesTotal = status.pages?.total ?? 0
+  const triage: StackSegment[] = TRIAGE.map((t) => ({ id: t.id, label: t.label, color: t.color, value: status.pages?.by_class?.[t.id] ?? 0 }))
+  const chunks = status.chunks ?? { total: 0, embedded: 0 }
   const { provider, model, dims } = status.embedding ?? { provider: null, model: null, dims: null }
-  const spend = (status.spend_usd?.embedding ?? 0) + (status.spend_usd?.ocr ?? 0)
+  const spendEmbedding = status.spend_usd?.embedding ?? 0
+  const spendOcr = status.spend_usd?.ocr ?? 0
+  const spend = spendEmbedding + spendOcr
+  const errors = status.errors ?? 0
+  const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`
 
   return (
-    <Page>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <span className="bg-muted inline-block rounded-full px-2.5 py-1 text-xs font-medium">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 pt-6 pb-10">
+      <div className="lib-rise flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <span className="border-hairline bg-card inline-flex max-w-full items-center gap-3 rounded-full border py-1.5 pr-4 pl-3">
+          <Led tone={provider ? "ok" : "off"} />
+          <span className="text-ink-3 font-mono text-[11px] tracking-[0.18em] uppercase">Embeddings</span>
+          <span className="text-foreground min-w-0 truncate font-mono text-[12px]">
             {provider ? `${provider} · ${model ?? "default model"}${dims ? ` · ${dims} dims` : ""}` : "BM25 only"}
           </span>
-          <p className="text-muted-foreground mt-2 truncate text-xs">{status.corpus_root}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void start("survey")} disabled={busy}>
-            <ScanSearch />
-            Survey
-          </Button>
-          <Button onClick={() => void start("ingest")} disabled={busy}>
-            <Play />
-            Ingest
-          </Button>
-        </div>
+        </span>
+        <p className="text-ink-3 flex min-w-0 max-w-full gap-3 font-mono text-[11px] tracking-[0.04em]">
+          <span className="shrink-0 tracking-[0.18em] uppercase">Corpus</span>
+          <span className="min-w-0 truncate" title={status.corpus_root}>
+            {status.corpus_root}
+          </span>
+        </p>
       </div>
 
-      {fault && <Notice>rag-engine returned an error: {fault.message}</Notice>}
-      {notice && <Notice>{notice}</Notice>}
-      {shown && <JobPanel job={shown} />}
+      {stale ? (
+        <p role="status" className="text-ink-2 -mt-2 font-mono text-[12px]">
+          {stale.offline ? "rag-engine stopped answering; showing the last reading." : `rag-engine returned an error; showing the last reading. ${stale.message}`}
+        </p>
+      ) : null}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Documents" value={fmtInt(status.documents?.total)} />
-        <Stat label="Pages" value={fmtInt(pagesTotal)} />
+      <StatRow className="lib-stats lib-rise grid-cols-3" style={rise(1)}>
+        <Stat label="Documents" value={status.documents?.total ?? 0} />
+        <Stat label="Pages" value={pagesTotal} />
         <Stat
           label="Chunks embedded"
-          value={fmtPct(status.chunks?.embedded ?? 0, status.chunks?.total ?? 0)}
-          hint={`${fmtInt(status.chunks?.embedded)} of ${fmtInt(status.chunks?.total)}`}
+          value={chunks.embedded}
+          unit={chunks.total > 0 ? `of ${fmtInt(chunks.total)} · ${fmtPct(chunks.embedded, chunks.total)}` : "of 0"}
         />
-        <Stat label="OCR pending" value={fmtInt(status.ocr?.pending_pages)} hint={`${fmtInt(status.ocr?.done_pages)} pages done`} />
-        <Stat label="Errors" value={fmtInt(status.errors)} />
         <Stat
-          label="Spend"
-          value={fmtUsd(spend)}
-          hint={`embedding ${fmtUsd(status.spend_usd?.embedding)} · OCR ${fmtUsd(status.spend_usd?.ocr)}`}
+          className="lib-stat-sm"
+          label="OCR pending"
+          value={status.ocr?.pending_pages ?? 0}
+          unit={`pages · ${fmtInt(status.ocr?.done_pages)} done`}
         />
-      </div>
+        <Stat
+          className="lib-stat-sm"
+          label="Errors"
+          value={errors}
+          delta={errors > 0 ? { text: "needs a look", tone: "bad" } : { text: "none", tone: "ok" }}
+        />
+        <Stat className="lib-stat-sm" label="Spend" value={spend} decimals={spend > 0 && spend < 1 ? 4 : 2} unit="USD" />
+      </StatRow>
 
-      <Panel title="Pages by triage class">
-        <StackedBar segments={triage} label="Pages by triage class" height={18} />
-        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-          {triage.map((t) => (
-            <LegendDot key={t.key} color={t.color} label={t.label} value={pagesTotal > 0 ? `${fmtInt(t.value)} · ${fmtPct(t.value, pagesTotal)}` : fmtInt(t.value)} />
-          ))}
-        </ul>
-      </Panel>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <JobsPanel className="lib-rise h-full" style={rise(2)} job={job} busy={busy} notice={notice} onStart={(k) => void start(k)} />
+        <div className="lib-rise min-w-0 [&>section]:h-full" style={rise(3)}>
+          <ChartFrame
+            title="Pages by triage class"
+            subtitle="Scanned and math-heavy pages wait for OCR."
+            table={stackTable(triage, "pages", fmtInt, "Pages by triage class")}
+          >
+            {pagesTotal > 0 ? (
+              <StackedBar segments={triage} name="Pages by triage class" unit="pages" height={28} />
+            ) : (
+              <p className="text-ink-2 py-6 text-[13px] leading-relaxed">No pages yet. Run Ingest once there are files in the corpus.</p>
+            )}
+          </ChartFrame>
+        </div>
+      </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Panel title="Documents by domain">
-          <BarList rows={sortedRows(status.documents?.by_domain)} color="var(--viz-1)" />
+        <Panel className="lib-rise" style={rise(4)} eyebrow="Corpus" title="Documents by domain">
+          <BarRows
+            label="Documents by domain"
+            rows={sortedRows(status.documents?.by_domain)}
+            colorFor={domainColor}
+            empty="No documents yet. Put files in a subject shelf, then run Ingest."
+          />
         </Panel>
-        <Panel title="Documents by source type">
-          <BarList rows={sortedRows(status.documents?.by_source_type)} color="var(--viz-2)" />
+        <Panel className="lib-rise" style={rise(5)} eyebrow="Corpus" title="Documents by source type">
+          <BarRows label="Documents by source type" rows={sortedRows(status.documents?.by_source_type)} empty="No documents yet." />
         </Panel>
       </div>
 
-      <SurveyPanel survey={survey} error={surveyError} />
+      <SurveyPanel className="lib-rise" style={rise(6)} survey={survey} error={surveyError} />
 
-      <p className="text-muted-foreground text-xs">Data: {status.data_dir}</p>
-    </Page>
-  )
-}
-
-function JobPanel({ job }: { job: Job }) {
-  const { done, total } = job.progress ?? { done: 0, total: 0 }
-  const active = isActive(job)
-  const known = total > 0
-  const ratio = job.state === "done" ? 1 : known ? Math.min(1, done / total) : 0
-  return (
-    <Panel>
-      <div className="mb-2 flex items-baseline justify-between gap-3 text-sm">
-        <span className="font-medium">
-          {job.kind === "survey" ? "Survey" : "Ingest"} <span className="text-muted-foreground font-normal">· {job.state}</span>
-        </span>
-        <span className="text-muted-foreground tabular-nums">
-          {known ? `${fmtInt(done)} / ${fmtInt(total)} (${fmtPct(done, total)})` : active ? "starting…" : ""}
-        </span>
-      </div>
-      <div
-        role="progressbar"
-        aria-label={`${job.kind} progress`}
-        aria-valuemin={0}
-        aria-valuemax={known ? total : undefined}
-        aria-valuenow={known ? done : undefined}
-        className="bg-muted h-2 overflow-hidden rounded-full"
-      >
-        <div
-          className={`h-full rounded-full ${job.state === "failed" ? "bg-destructive" : "bg-primary"} ${active && !known ? "w-1/3 animate-pulse" : ""}`}
-          style={active && !known ? undefined : { width: `${ratio * 100}%` }}
-        />
-      </div>
-      {job.error && <p className="text-destructive mt-2 text-sm break-words">{job.error}</p>}
-    </Panel>
-  )
-}
-
-function SurveyPanel({ survey, error }: { survey: Survey | null | undefined; error: string | null }) {
-  const ex = survey?.extrapolation
-  return (
-    <Panel title="Latest survey">
-      {error ? (
-        <p className="text-destructive text-sm break-words">Could not load the survey: {error}</p>
-      ) : survey === undefined ? (
-        <p className="text-muted-foreground text-sm">Loading…</p>
-      ) : survey === null ? (
-        <p className="text-muted-foreground text-sm">No survey yet. Run Survey to measure the corpus.</p>
-      ) : (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
-            <Fact label="Tokens per GB" value={fmtCompact(ex?.tokens_est_per_gb)} />
-            <Fact label="Pages per GB" value={fmtCompact(ex?.pages_per_gb)} />
-            <Fact label="Measured" value={fmtBytes(ex?.measured_bytes)} />
-            <Fact
-              label="Duplicate bytes"
-              value={fmtBytes(survey.totals?.duplicate_bytes)}
-              hint={survey.totals?.duplicate_files !== undefined ? `${fmtInt(survey.totals.duplicate_files)} extra copies` : undefined}
-            />
-          </div>
-          {ex?.projections && ex.projections.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-muted-foreground border-b text-left text-xs">
-                  <th className="py-2 font-medium">Projected corpus</th>
-                  <th className="py-2 text-right font-medium">Tokens (est.)</th>
-                  <th className="py-2 text-right font-medium">Pages</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ex.projections.map((p) => (
-                  <tr key={p.corpus_gb} className="border-b last:border-0">
-                    <td className="py-2">{fmtInt(p.corpus_gb)} GB</td>
-                    <td className="py-2 text-right tabular-nums">{fmtCompact(p.tokens_est)}</td>
-                    <td className="py-2 text-right tabular-nums">{fmtCompact(p.pages)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {survey.root && <p className="text-muted-foreground truncate text-xs">Surveyed: {survey.root}</p>}
-        </div>
-      )}
-    </Panel>
-  )
-}
-
-function Fact({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div>
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums">{value}</div>
-      {hint && <div className="text-muted-foreground text-xs">{hint}</div>}
+      <footer className="lib-rise border-hairline text-ink-3 flex flex-col gap-1.5 border-t pt-4 font-mono text-[11px] tracking-[0.04em]" style={rise(7)}>
+        <p className="min-w-0 truncate" title={status.data_dir}>
+          Data {status.data_dir}
+        </p>
+        <p>
+          Spend: embedding {usd(spendEmbedding)} · OCR {usd(spendOcr)}
+        </p>
+      </footer>
     </div>
   )
 }
