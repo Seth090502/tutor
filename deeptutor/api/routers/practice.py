@@ -13,7 +13,7 @@ from defusedxml.ElementTree import ParseError
 from fastapi import APIRouter, File, Form, HTTPException, Path, Query, Response, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
-from deeptutor.services.practice.answers import check_answer
+from deeptutor.services.practice.answers import grade
 from deeptutor.services.practice.importing import MAX_BYTES, preview
 from deeptutor.services.practice.scheduler import Rating, day_bounds
 from deeptutor.services.practice.storage import AttemptConflict, PracticeStore, ReviewConflict
@@ -131,6 +131,8 @@ class AttemptChecked(BaseModel):
     correct_answer: str
     explanation: str
     misconception: str | None
+    # Additive (contract C10): "accent" for a diacritic-only slip; absent otherwise.
+    diagnostic: str | None = None
 
 
 class CommitRequest(BaseModel):
@@ -305,7 +307,8 @@ async def practice_question(entry_id: int):
 @router.post("/questions/{entry_id}/check")
 async def check(entry_id: int, payload: AnswerRequest):
     entry = await _entry(entry_id)
-    return {"correct": check_answer(entry, payload.answer)}
+    correct, diagnostic = grade(entry, payload.answer)
+    return {"correct": correct, **({"diagnostic": diagnostic} if diagnostic else {})}
 
 
 @router.post("/questions/{entry_id}/review")
@@ -360,7 +363,9 @@ async def attempt_hint(attempt_id: str = Path(pattern=ATTEMPT_ID)):
     return await _attempt_step("next_hint", attempt_id)
 
 
-@router.post("/attempts/{attempt_id}/check", response_model=AttemptChecked)
+@router.post(
+    "/attempts/{attempt_id}/check", response_model=AttemptChecked, response_model_exclude_unset=True
+)
 async def attempt_check(payload: AnswerRequest, attempt_id: str = Path(pattern=ATTEMPT_ID)):
     return await _attempt_step("check_attempt", attempt_id, payload.answer)
 

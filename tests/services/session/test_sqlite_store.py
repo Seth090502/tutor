@@ -197,6 +197,37 @@ def test_hints_column_migrates_fresh_and_rebuilt_dbs_idempotently(tmp_path: Path
     assert stored["hints"] == ["Nudge"]
 
 
+def test_accepted_answers_column_migrates_fresh_and_rebuilt_dbs_idempotently(
+    tmp_path: Path,
+) -> None:
+    fresh = tmp_path / "fresh.db"
+    for _ in range(2):
+        SQLiteSessionStore(db_path=fresh)
+        assert _notebook_columns(fresh).count("accepted_answers_json") == 1
+
+    # A DB that already went through the origin rebuild, before this column.
+    rebuilt = tmp_path / "rebuilt.db"
+    item = {
+        "origin_type": "external_import",
+        "origin_ref": "notes",
+        "question_id": "q1",
+        "question": "casa",
+    }
+    first = SQLiteSessionStore(db_path=rebuilt)
+    asyncio.run(first.upsert_notebook_entries(None, [item]))
+    (original,) = asyncio.run(first.list_notebook_entries())["items"]
+    with sqlite3.connect(rebuilt) as conn:
+        conn.execute("ALTER TABLE notebook_entries DROP COLUMN accepted_answers_json")
+    assert "accepted_answers_json" not in _notebook_columns(rebuilt)
+    for _ in range(2):
+        store = SQLiteSessionStore(db_path=rebuilt)
+        assert _notebook_columns(rebuilt).count("accepted_answers_json") == 1
+        (entry,) = asyncio.run(store.list_notebook_entries())["items"]
+        assert (entry["id"], entry["accepted_answers"]) == (original["id"], [])
+    asyncio.run(store.upsert_notebook_entries(None, [{**item, "accepted_answers": ["home"]}]))
+    assert asyncio.run(store.get_notebook_entry(original["id"]))["accepted_answers"] == ["home"]
+
+
 def test_store_migrates_legacy_workspace_ownership_without_reordering(
     tmp_path: Path,
 ) -> None:
@@ -559,6 +590,33 @@ def test_upsert_keeps_updates_and_clears_hints(store: SQLiteSessionStore) -> Non
     assert stored()["hints"] == []
     asyncio.run(store.upsert_notebook_entries(sid, _make_items(("q2", "Q2?", False))))
     assert asyncio.run(store.find_notebook_entry(sid, "q2"))["hints"] == []
+
+
+def test_upsert_keeps_updates_and_clears_accepted_answers(store: SQLiteSessionStore) -> None:
+    sid = asyncio.run(store.create_session())["id"]
+    base = {"question_id": "q1", "question": "house", "correct_answer": "casa"}
+
+    def stored() -> dict:
+        return asyncio.run(store.find_notebook_entry(sid, "q1"))
+
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "accepted_answers": [" hogar ", ""]}]))
+    assert stored()["accepted_answers"] == ["hogar"]
+    # An answer save that does not carry the field keeps the stored variants.
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "user_answer": "casa"}]))
+    assert stored()["accepted_answers"] == ["hogar"]
+    asyncio.run(
+        store.upsert_notebook_entries(sid, [{**base, "accepted_answers": ["hogar", "la casa"]}])
+    )
+    assert stored()["accepted_answers"] == ["hogar", "la casa"]
+    assert asyncio.run(store.list_notebook_entries())["items"][0]["accepted_answers"] == [
+        "hogar",
+        "la casa",
+    ]
+    # An explicit empty list clears them; entries without any serialize to [].
+    asyncio.run(store.upsert_notebook_entries(sid, [{**base, "accepted_answers": []}]))
+    assert stored()["accepted_answers"] == []
+    asyncio.run(store.upsert_notebook_entries(sid, _make_items(("q2", "Q2?", False))))
+    assert asyncio.run(store.find_notebook_entry(sid, "q2"))["accepted_answers"] == []
 
 
 def test_upsert_skips_blank_questions(store: SQLiteSessionStore) -> None:

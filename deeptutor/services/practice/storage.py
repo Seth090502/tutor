@@ -10,7 +10,7 @@ import sqlite3
 import time
 import uuid
 
-from .answers import check_answer
+from .answers import check_answer, grade
 from .attempts import ANSWER_RUNG, attempt_rating
 from .scheduler import DAY, Rating, day_bounds, replay, schedule
 
@@ -38,9 +38,14 @@ class AttemptConflict(ValueError):
     """The attempt is past the step this request needs (checked, revealed or reviewed)."""
 
 
+# A language card's code from its ``lang:<code>`` tag (contract C10), or NULL.
+_LANG_SQL = """(SELECT substr(c.name, 6) FROM notebook_entry_categories ec
+    JOIN notebook_categories c ON c.id=ec.category_id
+    WHERE ec.entry_id=n.id AND c.name LIKE 'lang:_%' ORDER BY c.name LIMIT 1) AS lang"""
+
 # The attempt with the question fields its steps need, if the question is visible.
-_ATTEMPT_SQL = """SELECT a.*, n.question_type, n.options_json, n.correct_answer, n.explanation,
-        n.misconception, n.hints_json
+_ATTEMPT_SQL = f"""SELECT a.*, n.question_type, n.options_json, n.correct_answer, n.explanation,
+        n.misconception, n.hints_json, n.accepted_answers_json, {_LANG_SQL}
     FROM practice_attempts a JOIN notebook_entries n ON n.id=a.entry_id
     LEFT JOIN sessions s ON s.id=n.session_id
     WHERE a.attempt_id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)"""
@@ -305,8 +310,9 @@ class PracticeStore:
                     )
                 return outcome
             entry = conn.execute(
-                """SELECT n.* FROM notebook_entries n LEFT JOIN sessions s ON s.id=n.session_id
-                WHERE n.id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)""",
+                f"""SELECT n.*, {_LANG_SQL} FROM notebook_entries n
+                LEFT JOIN sessions s ON s.id=n.session_id
+                WHERE n.id=? AND (n.session_id IS NULL OR s.deleted_at IS NULL)""",  # nosec B608
                 (entry_id,),
             ).fetchone()
             if not entry:
@@ -473,12 +479,14 @@ class PracticeStore:
     def check_attempt(self, attempt_id: str, answer: str) -> dict:
         with self.connect() as conn:
             attempt = self._open_attempt(conn, attempt_id)
-            correct = check_answer(dict(attempt), answer)
+            correct, diagnostic = grade(dict(attempt), answer)
             conn.execute(
                 "UPDATE practice_attempts SET answer=?, correct=?, closed_at=? WHERE attempt_id=?",
                 (answer, None if correct is None else int(correct), time.time(), attempt_id),
             )
+        # The diagnostic is additive: present only when there is one (contract C10).
         return {
+            **({"diagnostic": diagnostic} if diagnostic else {}),
             "correct": correct,
             "rating": None
             if correct is None
@@ -538,9 +546,9 @@ class PracticeStore:
                     INSERT OR IGNORE INTO notebook_entries(
                         session_id, origin_type, origin_ref, question_id, question, question_type,
                         options_json, correct_answer, explanation, misconception, hints_json,
-                        difficulty, user_answer, source, result, assessment_type, created_at,
-                        updated_at, material_title, material_id)
-                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
+                        accepted_answers_json, difficulty, user_answer, source, result,
+                        assessment_type, created_at, updated_at, material_title, material_id)
+                    VALUES(NULL, 'external_import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, 'quiz', ?, ?, ?, ?)
                 """,
                     (
                         origin_ref,
@@ -553,6 +561,7 @@ class PracticeStore:
                         # Previews staged before this field existed lack the key.
                         question.get("misconception"),
                         json.dumps(question.get("hints") or [], ensure_ascii=False),
+                        json.dumps(question.get("accepted_answers") or [], ensure_ascii=False),
                         question["difficulty"],
                         question["user_answer"],
                         "incorrect" if staged["target"] == "mistakes" else "ungraded",
