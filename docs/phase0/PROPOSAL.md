@@ -161,14 +161,31 @@ the run finishes.
     choice.
     - Claude Code models: opus, sonnet, fable, haiku, or full names. Effort: low, medium, high, xhigh, max.
     - OpenCode Go models come from `opencode models opencode-go`, each with its own variants.
-  - **The session is locked down so it can reach only libraryd:**
-    - **Claude Code:** `--tools ""`, `--strict-mcp-config` with a generated config holding only libraryd,
-      our own `--system-prompt`, no user CLAUDE.md, memory, hooks, plugins or skills, an empty working
-      directory, and `--no-session-persistence` for eval runs.
-    - **OpenCode:** an app-only config with every built-in tool disabled and only `libraryd_*` allowed,
-      with none of your global instructions or AGENTS.md.
-    - The exact switches for each are being verified now (`docs/phase0/opencode-headless.md` and the Claude
-      Code docs check), and are proven by the canary test run *through the session itself*.
+  - **The session is locked down so it can reach only libraryd.** Verified from docs, and for OpenCode in a
+    scratch test; Phase 1 tests every item.
+    - **Claude Code** (`docs/phase0/claude-code-headless.md`):
+      - Its own config directory, authenticated by a `claude setup-token` token held in Credential Manager.
+      - `--safe-mode --restricted --tools "" --strict-mcp-config`, allowing only `mcp__libraryd__*` with
+        `--permission-mode dontAsk`.
+      - CLAUDE.md files and auto-memory disabled by environment variable.
+      - `--system-prompt-file TUTOR.md`.
+      - A working directory with no CLAUDE.md or AGENTS.md in any parent folder.
+    - **OpenCode** (`docs/phase0/opencode-headless.md`):
+      - `opencode serve` (about 1.3 s to start once), not `run` (which restarts the session on every turn).
+      - Home and XDG directories pointed at app-only folders, so your global config never loads.
+      - The auth supplied inline.
+      - `permission: {"*":"deny","libraryd_*":"allow"}`, which removed all 13 built-in tools in a scratch
+        test.
+      - A dedicated `tutor` agent whose prompt replaces the default one.
+    - **Startup self-test, fail closed:** before the first turn, the app checks the session's reported tools,
+      MCP servers, plugins and model. If anything other than libraryd is present, or the model isn't the one
+      requested, it refuses to start. Claude Code silently swaps an unusable `--model` for the default.
+    - **Limits:** both CLIs enforce tool limits in-process only. An operating-system-level guarantee needs
+      the optional separate Windows account (section 3, item 15).
+  - **libraryd response budget:** about 8k tokens by default, with pagination and explicit "truncated; ask for
+    X" notes.
+    - Over 25k tokens (Claude Code) or 51,200 bytes (OpenCode), a result is spilled to a file that the
+      locked-down tutor cannot open.
   - **No web tools by default,** so every claim has to cite the vault. Please confirm.
 
 ### 2.5 Intake handoff
@@ -312,6 +329,11 @@ transfer and the checkpoint covers what is ingested by then.
     - Measure throughput first, and restrict enrichment to a sample if needed.
     - Sending book text to cloud models for enrichment would also conflict with the earlier "library indexing
       stays local" decision (tutor PLAN D8), so I don't propose using the headless cloud sessions for it.
+12. **The claude-api skill's `build-eval` and `hillclimb`** expect a Claude-provider app plus node or bun (D).
+    I apply their principles manually to our Rust eval.
+13. **RAPTOR's controlled gain is about 0.5-2 points (D).** It stays an experiment that has to earn its place.
+14. **moka has open crash reports, one with a Windows stack trace (D).** `quick_cache` is the alternative;
+    decide in Phase 4 under load.
 15. **Unreachable eval answers when the tutor is a local agent CLI.** Claude Code and OpenCode normally have
     file, shell and web tools on the same disk as the eval directory. The guarantee therefore rests on:
     - the session lock-down in 2.4;
@@ -325,11 +347,6 @@ transfer and the checkpoint covers what is ingested by then.
     judge.
     - No API key is needed. It uses your subscriptions' quotas instead, so a full layer D run (cases × repeats
       × 2 sessions) draws on those limits. I'll report the run size before each run.
-12. **The claude-api skill's `build-eval` and `hillclimb`** expect a Claude-provider app plus node or bun (D).
-    I apply their principles manually to our Rust eval.
-13. **RAPTOR's controlled gain is about 0.5-2 points (D).** It stays an experiment that has to earn its place.
-14. **moka has open crash reports, one with a Windows stack trace (D).** `quick_cache` is the alternative;
-    decide in Phase 4 under load.
 
 ## 4. Version pins
 
@@ -414,31 +431,40 @@ gets its own warning, reported by `vault_info`, the status page and intake.
      - Move the app's other LLM features (quiz generation, guided reading, voice and the rest, which today
        call LLM APIs from the Python backend) onto the same runtime as a separate track after Phase 2.
    - **Tradeoff:** doing all of it now delays the vault by days. Is that the split you want?
-4. **The judge pairing** (section 3, item 16): a model family different from the tutor's, run through the
+4. **Runtime credentials and subscription use:**
+   - **OpenCode Go:** there is no `opencode-go` credential on this PC; `auth.json` holds only OpenRouter.
+     Please log in to OpenCode Go, or have the key ready for the app's settings, where it goes into Credential
+     Manager.
+   - **Claude Code:** run `claude setup-token` once when the app asks for it. I never see either value.
+   - **Policy:** Anthropic's docs say subscription limits "assume ordinary, individual usage". A personal app
+     driving your own unmodified `claude` binary is the closest case to that. Automated eval runs of hundreds
+     of sessions are the part that strains it. Your call; the conservative option is an API key for eval runs
+     only.
+5. **The judge pairing** (section 3, item 16): a model family different from the tutor's, run through the
    other runtime.
    - Which tutor configurations should the eval cover? I'd default to your most likely daily choice plus one
      cheaper one.
    - Do you accept the subscription quota the eval runs will use?
-5. **OpenAlex:** a free API key (you create it; I never see the value), or accept keyless rates, which make
+6. **OpenAlex:** a free API key (you create it; I never see the value), or accept keyless rates, which make
    enrichment slower (about 3 days for 160k DOIs).
-6. **GROBID hosting:** install Docker Desktop (a system install), or let me set up GROBID with JDK 21 in a
+7. **GROBID hosting:** install Docker Desktop (a system install), or let me set up GROBID with JDK 21 in a
    new, dedicated WSL distro (also a system change). Both need your approval. I won't touch the `Ubuntu`
    distro, which holds Cinference.
-7. **The pilot slice,** per 2.6. Also these changes on your side to oa-forge:
+8. **The pilot slice,** per 2.6. Also these changes on your side to oa-forge:
    - carry `level`, `type`, `mode` and `url` into `manifest.jsonl`;
    - write `_meta\_BATCH_COMPLETE` at the end of a run;
    - for books, record ISBN, edition and language when known.
-8. **For the eval:**
+9. **For the eval:**
    - real tutoring transcripts or logs, if any exist;
    - questions the tutor got wrong;
    - **5-10 questions you write by hand** of the kinds you actually ask (concepts, landmark studies, exact
      quotes, definitions, comparisons, citation chains, maths and notation, code, navigating a book, Chinese
      sources), plus 2-3 whose answer you know is not in your material.
-9. **The transfer:** the exact date and time once you know them. Also the AI PC's Windows edition and network
+10. **The transfer:** the exact date and time once you know them. Also the AI PC's Windows edition and network
    link speed (1 or 2.5 GbE).
    - **Optional:** enabling OpenSSH on the AI PC before the move would let me measure the 7800 XT and the
      network early. The Stage 2 decisions would still wait for Stage 2.
-10. **Approvals:**
+11. **Approvals:**
     - this plan;
     - the Stage 1 model sizes (after the matrix);
     - the vector index (after the benchmark);
