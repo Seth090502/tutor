@@ -137,9 +137,10 @@ pub fn scan(bytes: &[u8]) -> PdfScan {
             let lo = m.start().saturating_sub(256);
             let hi = chunk.len().min(m.end() + 512);
             if let Some(c) = COUNT.captures(&chunk[lo..hi])
-                && let Ok(n) = String::from_utf8_lossy(&c[1]).parse::<u32>() {
-                    max_count = max_count.max(n);
-                }
+                && let Ok(n) = String::from_utf8_lossy(&c[1]).parse::<u32>()
+            {
+                max_count = max_count.max(n);
+            }
         }
         for c in BASEFONT.captures_iter(chunk) {
             let name = clean_font_name(&String::from_utf8_lossy(&c[1]));
@@ -176,7 +177,8 @@ mod tests {
 
     #[test]
     fn scans_an_uncompressed_pdf() {
-        let pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /r >>] >> >>\nendobj\n\
+        let pdf =
+            b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /r >>] >> >>\nendobj\n\
 2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n\
 3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n4 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n\
 5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF+CMMI10 >>\nendobj\n\
@@ -196,8 +198,11 @@ mod tests {
 
     #[test]
     fn reads_fonts_and_pages_out_of_object_streams() {
-        let inner = b"9 0 10 40 << /Type /Pages /Count 7 /Kids [] >> << /Type /Font /BaseFont /QRSTUV+STIXMath-Regular >>";
-        let mut pdf = b"%PDF-1.5\n12 0 obj\n<< /Type /ObjStm /N 2 /First 10 /Filter /FlateDecode /Length 99 >>\nstream\n".to_vec();
+        let inner =
+            b"9 0 10 40 << /Type /Pages /Count 7 /Kids [] >> << /Type /Font /BaseFont /QRSTUV+STIXMath-Regular >>";
+        let mut pdf =
+            b"%PDF-1.5\n12 0 obj\n<< /Type /ObjStm /N 2 /First 10 /Filter /FlateDecode /Length 99 >>\nstream\n"
+                .to_vec();
         pdf.extend(deflate(inner));
         pdf.extend(b"\nendstream\nendobj\n%%EOF");
         let s = scan(&pdf);
@@ -216,7 +221,19 @@ mod tests {
 
     #[test]
     fn math_font_names() {
-        for n in ["CMMI10", "CMSY8", "CMEX10", "MSAM10", "MSBM7", "STIXMathJax_Main", "CambriaMath", "Cambria Math", "LatinModernMath-Regular", "MTExtra", "NewTXMI"] {
+        for n in [
+            "CMMI10",
+            "CMSY8",
+            "CMEX10",
+            "MSAM10",
+            "MSBM7",
+            "STIXMathJax_Main",
+            "CambriaMath",
+            "Cambria Math",
+            "LatinModernMath-Regular",
+            "MTExtra",
+            "NewTXMI",
+        ] {
             assert!(is_math_font(n), "{n}");
         }
         for n in ["CMR10", "CMBX12", "Times-Roman", "Symbol", "Arial", "STIXGeneral-Regular", "Cambria"] {

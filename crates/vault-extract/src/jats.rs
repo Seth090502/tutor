@@ -165,7 +165,10 @@ impl Jats {
 
     fn front(&mut self, front: Node) {
         if let Some(jm) = child(front, "journal-meta") {
-            self.meta.journal = descendant(jm, "journal-title").map(text_of).filter(|t| !t.is_empty()).or_else(|| descendant(jm, "abbrev-journal-title").map(text_of));
+            self.meta.journal = descendant(jm, "journal-title")
+                .map(text_of)
+                .filter(|t| !t.is_empty())
+                .or_else(|| descendant(jm, "abbrev-journal-title").map(text_of));
         }
         let Some(am) = child(front, "article-meta").or(Some(front)) else { return };
         for id in children_named(am, "article-id") {
@@ -173,12 +176,16 @@ impl Jats {
             match attr(id, "pub-id-type").unwrap_or("") {
                 "doi" => self.meta.doi = ids::find_doi(&v).or(self.meta.doi.take()),
                 "pmc" | "pmcid" => self.meta.pmcid = ids::normalize_pmcid(&v).or(self.meta.pmcid.take()),
-                "arxiv" => self.meta.arxiv_id = ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v)).or(self.meta.arxiv_id.take()),
+                "arxiv" => {
+                    self.meta.arxiv_id =
+                        ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v)).or(self.meta.arxiv_id.take())
+                }
                 _ => {}
             }
         }
         let title_group = child(am, "title-group");
-        let title = title_group.and_then(|t| child(t, "article-title")).map(|t| self.inline_text(t)).unwrap_or_default();
+        let title =
+            title_group.and_then(|t| child(t, "article-title")).map(|t| self.inline_text(t)).unwrap_or_default();
         let subtitle = title_group.and_then(|t| child(t, "subtitle")).map(|t| self.inline_text(t)).unwrap_or_default();
         let full_title = match (title.is_empty(), subtitle.is_empty()) {
             (false, false) => format!("{title}: {subtitle}"),
@@ -319,7 +326,9 @@ impl Jats {
 
     fn block(&mut self, n: Node, depth: usize) {
         match name(n) {
-            "sec" | "app" | "notes" | "glossary" | "bio" | "ack" | "ref-list" | "fn-group" | "app-group" => self.section(n, depth),
+            "sec" | "app" | "notes" | "glossary" | "bio" | "ack" | "ref-list" | "fn-group" | "app-group" => {
+                self.section(n, depth)
+            }
             "p" => self.para(n),
             "title" | "label" | "sec-meta" | "object-id" | "kwd-group" | "permissions" => {}
             "list" => self.list(n, 0),
@@ -510,7 +519,12 @@ impl Jats {
         match name(n) {
             "sup" => script('^', &self.inline_text(n), out),
             "sub" => script('_', &self.inline_text(n), out),
-            "inline-formula" | "tex-math" | "math" | "disp-formula" | "chem-struct" | "inline-supplementary-material" => {
+            "inline-formula"
+            | "tex-math"
+            | "math"
+            | "disp-formula"
+            | "chem-struct"
+            | "inline-supplementary-material" => {
                 if let Some(l) = formula_latex(n) {
                     out.push('$');
                     out.push_str(&l);
@@ -524,7 +538,9 @@ impl Jats {
                     out.push('$');
                     out.push_str(&l);
                     out.push('$');
-                } else if let Some(first) = n.children().find(|c| c.is_element() && name(*c) != "graphic" && name(*c) != "inline-graphic") {
+                } else if let Some(first) =
+                    n.children().find(|c| c.is_element() && name(*c) != "graphic" && name(*c) != "inline-graphic")
+                {
                     self.inline(first, out);
                 }
             }
@@ -607,10 +623,14 @@ impl Jats {
         let label = text_of_child(tw, "label");
         let text = self.caption_text(label.as_deref(), child(tw, "caption"));
         self.b.paragraph(&text);
-        let table = child(tw, "table").or_else(|| child(tw, "alternatives").and_then(|a| child(a, "table"))).or_else(|| descendant(tw, "table"));
+        let table = child(tw, "table")
+            .or_else(|| child(tw, "alternatives").and_then(|a| child(a, "table")))
+            .or_else(|| descendant(tw, "table"));
         match table {
             Some(t) => self.table(t),
-            None => self.warnings.push(format!("table {} has no <table> (image only)", label.as_deref().unwrap_or("?"))),
+            None => {
+                self.warnings.push(format!("table {} has no <table> (image only)", label.as_deref().unwrap_or("?")))
+            }
         }
         if let Some(foot) = child(tw, "table-wrap-foot") {
             for k in foot.children().filter(Node::is_element) {
@@ -658,16 +678,21 @@ impl Jats {
             push_rows(table, false, &mut g);
             // No <thead>: a first row made only of <th> is the header.
             if let Some(first) = children_named(table, "tr").next()
-                && first.children().filter(Node::is_element).all(|c| is(c, "th")) && first.children().any(|c| c.is_element()) {
-                    header_rows = 1;
-                }
+                && first.children().filter(Node::is_element).all(|c| is(c, "th"))
+                && first.children().any(|c| c.is_element())
+            {
+                header_rows = 1;
+            }
         }
         g.header_rows = header_rows;
         g
     }
 
     fn list(&mut self, l: Node, depth: usize) {
-        let ordered = matches!(attr(l, "list-type"), Some("order" | "alpha-lower" | "alpha-upper" | "roman-lower" | "roman-upper"));
+        let ordered = matches!(
+            attr(l, "list-type"),
+            Some("order" | "alpha-lower" | "alpha-upper" | "roman-lower" | "roman-upper")
+        );
         if depth == 0 {
             self.b.break_list();
         }
@@ -774,9 +799,13 @@ impl Jats {
                 let kind = attr(id, "pub-id-type").or(attr(id, "ext-link-type")).unwrap_or("");
                 match kind {
                     "doi" => entry.doi = ids::find_doi(&v).or(entry.doi.take()),
-                    "pmid" => entry.pmid = Some(v).filter(|v| v.chars().all(|c| c.is_ascii_digit())).or(entry.pmid.take()),
+                    "pmid" => {
+                        entry.pmid = Some(v).filter(|v| v.chars().all(|c| c.is_ascii_digit())).or(entry.pmid.take())
+                    }
                     "pmcid" | "pmc" => entry.pmcid = ids::normalize_pmcid(&v).or(entry.pmcid.take()),
-                    "arxiv" => entry.arxiv_id = ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v)).or(entry.arxiv_id.take()),
+                    "arxiv" => {
+                        entry.arxiv_id = ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v)).or(entry.arxiv_id.take())
+                    }
                     _ => {}
                 }
             }
@@ -793,7 +822,9 @@ impl Jats {
     fn format_element_citation(&self, c: Node) -> String {
         let mut names: Vec<String> = Vec::new();
         for pg in children_named(c, "person-group") {
-            if matches!(attr(pg, "person-group-type"), Some("editor" | "translator")) && children_named(c, "person-group").count() > 1 {
+            if matches!(attr(pg, "person-group-type"), Some("editor" | "translator"))
+                && children_named(c, "person-group").count() > 1
+            {
                 continue;
             }
             for n in pg.children().filter(Node::is_element) {
@@ -888,15 +919,30 @@ fn strip_leading_label(raw: &str, label: Option<&str>) -> String {
     let bracket = format!("[{l}]");
     for p in [bracket.as_str(), l, &format!("{l}.")] {
         if let Some(rest) = raw.strip_prefix(p)
-            && (rest.starts_with(' ') || p == bracket) {
-                return rest.trim_start().to_string();
-            }
+            && (rest.starts_with(' ') || p == bracket)
+        {
+            return rest.trim_start().to_string();
+        }
     }
     raw.to_string()
 }
 
 fn is_block_name(n: &str) -> bool {
-    matches!(n, "p" | "sec" | "list" | "fig" | "table-wrap" | "disp-formula" | "def-list" | "disp-quote" | "boxed-text" | "preformat" | "code" | "statement" | "fn")
+    matches!(
+        n,
+        "p" | "sec"
+            | "list"
+            | "fig"
+            | "table-wrap"
+            | "disp-formula"
+            | "def-list"
+            | "disp-quote"
+            | "boxed-text"
+            | "preformat"
+            | "code"
+            | "statement"
+            | "fn"
+    )
 }
 
 fn join_label(label: &str, title: &str) -> String {
@@ -914,7 +960,8 @@ pub(crate) fn script(mark: char, text: &str, out: &mut String) {
     if t.is_empty() {
         return;
     }
-    let simple = t.chars().count() <= 6 && t.chars().all(|c| c.is_alphanumeric() || matches!(c, '*' | '†' | '‡' | '§' | '¶' | '+' | '-' | '−' | ','));
+    let simple = t.chars().count() <= 6
+        && t.chars().all(|c| c.is_alphanumeric() || matches!(c, '*' | '†' | '‡' | '§' | '¶' | '+' | '-' | '−' | ','));
     out.push(mark);
     if simple {
         out.push_str(t);
@@ -1052,7 +1099,11 @@ After the formula we continue.</p>
     #[test]
     fn display_formula_splits_the_paragraph_and_prefers_tex() {
         let r = run();
-        assert!(r.markdown.contains("Before the formula.\n\n$$\nE=mc^{2}\n$$\n\nAfter the formula we continue."), "{}", r.markdown);
+        assert!(
+            r.markdown.contains("Before the formula.\n\n$$\nE=mc^{2}\n$$\n\nAfter the formula we continue."),
+            "{}",
+            r.markdown
+        );
         let eq = r.blocks.iter().find(|b| b.kind == BlockKind::Equation).unwrap();
         let lines: Vec<&str> = r.markdown.lines().collect();
         assert_eq!(lines[eq.start as usize - 1], "$$");
@@ -1085,7 +1136,11 @@ After the formula we continue.</p>
         assert_eq!(b.arxiv_id.as_deref(), Some("1706.03762"));
         assert_eq!(b.year, Some(2017));
         assert_eq!(b.title.as_deref(), Some("Attention is all you need"));
-        assert!(b.raw.starts_with("Vaswani A, et al. (2017) Attention is all you need. NeurIPS 30:5998-6008"), "{}", b.raw);
+        assert!(
+            b.raw.starts_with("Vaswani A, et al. (2017) Attention is all you need. NeurIPS 30:5998-6008"),
+            "{}",
+            b.raw
+        );
         let refs_line = r.headings.iter().find(|h| h.text == "References").unwrap().line as usize;
         let lines: Vec<&str> = r.markdown.lines().collect();
         assert!(lines[refs_line + 1].starts_with("[1] Smith J, Doe A."), "{:?}", &lines[refs_line..]);

@@ -64,7 +64,11 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
     let mut warnings = Vec::new();
     let d = text::decode_for_conversion(bytes, opts, &mut warnings);
     let nb: Notebook = serde_json::from_str(&d.text).map_err(|e| ExtractError::corrupt("notebook", e.to_string()))?;
-    let cells: Vec<&Cell> = if nb.cells.is_empty() { nb.worksheets.iter().flat_map(|w| w.cells.iter()).collect() } else { nb.cells.iter().collect() };
+    let cells: Vec<&Cell> = if nb.cells.is_empty() {
+        nb.worksheets.iter().flat_map(|w| w.cells.iter()).collect()
+    } else {
+        nb.cells.iter().collect()
+    };
 
     let kernel_lang = nb
         .metadata
@@ -285,7 +289,10 @@ mod tests {
     #[test]
     fn broken_and_empty_notebooks_are_errors() {
         assert!(matches!(convert(b"{not json", &ConvertOptions::default()), Err(ExtractError::Corrupt { .. })));
-        assert!(matches!(convert(br#"{"cells":[],"metadata":{},"nbformat":4}"#, &ConvertOptions::default()), Err(ExtractError::Convert { .. })));
+        assert!(matches!(
+            convert(br#"{"cells":[],"metadata":{},"nbformat":4}"#, &ConvertOptions::default()),
+            Err(ExtractError::Convert { .. })
+        ));
         assert!(matches!(convert(b"", &ConvertOptions::default()), Err(ExtractError::Empty)));
     }
 

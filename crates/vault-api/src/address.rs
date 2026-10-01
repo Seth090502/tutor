@@ -240,12 +240,12 @@ mod tests {
     #[test]
     fn rejects_malformed() {
         for s in [
-            "3F9A1C07B2E4D55E#L1",        // uppercase hex
-            "3f9a1c07b2e4d55#L1",         // 15 hex
-            "3f9a1c07b2e4d55e#L0",        // line zero
-            "3f9a1c07b2e4d55e#L5-L4",     // backwards
-            "3f9a1c07b2e4d55e#L05",       // leading zero
-            "3f9a1c07b2e4d55e#120-148",   // missing L
+            "3F9A1C07B2E4D55E#L1",      // uppercase hex
+            "3f9a1c07b2e4d55#L1",       // 15 hex
+            "3f9a1c07b2e4d55e#L0",      // line zero
+            "3f9a1c07b2e4d55e#L5-L4",   // backwards
+            "3f9a1c07b2e4d55e#L05",     // leading zero
+            "3f9a1c07b2e4d55e#120-148", // missing L
             "3f9a1c07b2e4d55e-Bad_Slug#L1",
             "3f9a1c07b2e4d55e--x#L1",
             "C:\\vault\\text\\3f#L1",

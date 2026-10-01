@@ -227,7 +227,11 @@ fn detect_binary_magic(b: &[u8], name_hint: Option<&str>) -> Option<Detected> {
             _ => BinaryKind::Video,
         });
     }
-    if b.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) || riff(b, b"AVI ") || b.starts_with(b"FLV\x01") || b.starts_with(&[0, 0, 1, 0xBA]) {
+    if b.starts_with(&[0x1A, 0x45, 0xDF, 0xA3])
+        || riff(b, b"AVI ")
+        || b.starts_with(b"FLV\x01")
+        || b.starts_with(&[0, 0, 1, 0xBA])
+    {
         return bin(BinaryKind::Video);
     }
     if b.starts_with(b"ID3")
@@ -236,7 +240,10 @@ fn detect_binary_magic(b: &[u8], name_hint: Option<&str>) -> Option<Detected> {
         || riff(b, b"WAVE")
         || b.starts_with(b"MThd")
         || b.starts_with(b"FORM") && b.len() > 12 && matches!(&b[8..12], b"AIFF" | b"AIFC")
-        || (b.len() > 2 && b[0] == 0xFF && b[1] & 0xE0 == 0xE0 && matches!(ext_of(name_hint).as_deref(), Some("mp3" | "aac" | "mp2")))
+        || (b.len() > 2
+            && b[0] == 0xFF
+            && b[1] & 0xE0 == 0xE0
+            && matches!(ext_of(name_hint).as_deref(), Some("mp3" | "aac" | "mp2")))
     {
         return bin(BinaryKind::Audio);
     }
@@ -253,13 +260,23 @@ fn detect_binary_magic(b: &[u8], name_hint: Option<&str>) -> Option<Detected> {
         return bin(BinaryKind::Executable);
     }
     // Fonts.
-    if b.starts_with(b"wOFF") || b.starts_with(b"wOF2") || b.starts_with(b"OTTO") || b.starts_with(b"ttcf") || b.starts_with(b"true") || looks_like_ttf(b) {
+    if b.starts_with(b"wOFF")
+        || b.starts_with(b"wOF2")
+        || b.starts_with(b"OTTO")
+        || b.starts_with(b"ttcf")
+        || b.starts_with(b"true")
+        || looks_like_ttf(b)
+    {
         return bin(BinaryKind::Font);
     }
     if b.starts_with(b"SQLite format 3\0") {
         return bin(BinaryKind::Database);
     }
-    if b.starts_with(b"AT&TFORM") || b.starts_with(b"ITSF") || b.starts_with(b"%!PS") || (b.len() > 68 && &b[60..68] == b"BOOKMOBI") {
+    if b.starts_with(b"AT&TFORM")
+        || b.starts_with(b"ITSF")
+        || b.starts_with(b"%!PS")
+        || (b.len() > 68 && &b[60..68] == b"BOOKMOBI")
+    {
         return bin(BinaryKind::LegacyDocument);
     }
     None
@@ -270,7 +287,10 @@ fn riff(b: &[u8], kind: &[u8; 4]) -> bool {
 }
 
 fn looks_like_ttf(b: &[u8]) -> bool {
-    b.len() > 28 && b[..4] == [0, 1, 0, 0] && (1..=64).contains(&u16::from_be_bytes([b[4], b[5]])) && b[12..16].iter().all(u8::is_ascii_alphabetic)
+    b.len() > 28
+        && b[..4] == [0, 1, 0, 0]
+        && (1..=64).contains(&u16::from_be_bytes([b[4], b[5]]))
+        && b[12..16].iter().all(u8::is_ascii_alphabetic)
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
@@ -306,12 +326,18 @@ fn detect_zip(b: &[u8]) -> Detected {
     };
     let format = match mimetype.as_deref() {
         Some("application/epub+zip") => Format::Epub,
-        Some("application/vnd.oasis.opendocument.text") | Some("application/vnd.oasis.opendocument.text-template") => Format::Odt,
+        Some("application/vnd.oasis.opendocument.text") | Some("application/vnd.oasis.opendocument.text-template") => {
+            Format::Odt
+        }
         Some(m) if m.starts_with("application/vnd.oasis.opendocument.") => Format::Binary(BinaryKind::OtherOffice),
         _ if has("[Content_Types].xml") && has("word/document.xml") => Format::Docx,
-        _ if has("[Content_Types].xml") && (has("xl/workbook.xml") || has("ppt/presentation.xml")) => Format::Binary(BinaryKind::OtherOffice),
+        _ if has("[Content_Types].xml") && (has("xl/workbook.xml") || has("ppt/presentation.xml")) => {
+            Format::Binary(BinaryKind::OtherOffice)
+        }
         _ if has("META-INF/container.xml") && names.iter().any(|n| n.ends_with(".opf")) => Format::Epub,
-        _ if has("META-INF/MANIFEST.MF") && names.iter().any(|n| n.ends_with(".class")) => Format::Binary(BinaryKind::Executable),
+        _ if has("META-INF/MANIFEST.MF") && names.iter().any(|n| n.ends_with(".class")) => {
+            Format::Binary(BinaryKind::Executable)
+        }
         _ => Format::Zip,
     };
     let mut d = Detected::new(format);
@@ -352,11 +378,7 @@ fn is_tar_header(h: &[u8]) -> bool {
     if digits.is_empty() {
         return false;
     }
-    let sum: u32 = h
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| if (148..156).contains(&i) { 32u32 } else { c as u32 })
-        .sum();
+    let sum: u32 = h.iter().enumerate().map(|(i, &c)| if (148..156).contains(&i) { 32u32 } else { c as u32 }).sum();
     sum == stored && h[..100].iter().take_while(|&&c| c != 0).all(|c| c.is_ascii_graphic() || *c == b' ')
 }
 
@@ -407,7 +429,10 @@ fn detect_text(b: &[u8], name_hint: Option<&str>) -> Detected {
             XmlKind::NotXml => {}
         }
     }
-    if lower_head.contains("<!doctype html") || lower_head.contains("<html") || (lower_head.contains("<body") && lower_head.contains("</")) {
+    if lower_head.contains("<!doctype html")
+        || lower_head.contains("<html")
+        || (lower_head.contains("<body") && lower_head.contains("</"))
+    {
         d.format = Format::Html;
         return d;
     }
@@ -420,10 +445,11 @@ fn detect_text(b: &[u8], name_hint: Option<&str>) -> Detected {
         return d;
     }
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
-        && serde_json::from_slice::<serde::de::IgnoredAny>(b).is_ok() {
-            d.format = Format::Json;
-            return d;
-        }
+        && serde_json::from_slice::<serde::de::IgnoredAny>(b).is_ok()
+    {
+        d.format = Format::Json;
+        return d;
+    }
     if trimmed.starts_with("{\\rtf") {
         d.format = Format::Rtf;
         return d;
@@ -499,13 +525,19 @@ fn sniff_xml(s: &str, lower: &str) -> XmlKind {
     let tag_end = tag.find('>').unwrap_or(tag.len());
     let root_tag = tag[..tag_end].to_ascii_lowercase();
 
-    let jats_doctype = doctype.contains("jats") || doctype.contains("nlm") || doctype.contains("journalpublishing") || doctype.contains("archivearticle") || doctype.contains("bits");
+    let jats_doctype = doctype.contains("jats")
+        || doctype.contains("nlm")
+        || doctype.contains("journalpublishing")
+        || doctype.contains("archivearticle")
+        || doctype.contains("bits");
     let jats_ns = root_tag.contains("jats.nlm.nih.gov") || root_tag.contains("ncbi.nlm.nih.gov/pmc/");
     let jats_shape = lower.contains("<article-meta") || lower.contains("<front>") && lower.contains("<journal-meta");
     let docbook = root_tag.contains("docbook.org") || doctype.contains("docbook");
 
     match local_lc.as_str() {
-        "article" | "book" | "book-part" | "book-part-wrapper" | "pmc-articleset" if !docbook && (jats_doctype || jats_ns || jats_shape || root_tag.contains("article-type")) => {
+        "article" | "book" | "book-part" | "book-part-wrapper" | "pmc-articleset"
+            if !docbook && (jats_doctype || jats_ns || jats_shape || root_tag.contains("article-type")) =>
+        {
             XmlKind::Format(Format::Jats, Some(local))
         }
         "tei" | "teicorpus" => XmlKind::Format(Format::Tei, Some(local)),
@@ -532,15 +564,50 @@ fn sniff_xml(s: &str, lower: &str) -> XmlKind {
 fn is_html_tag(name: &str) -> bool {
     matches!(
         name,
-        "head" | "body" | "div" | "p" | "span" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "table" | "section" | "main" | "a" | "br" | "img" | "pre" | "em" | "strong" | "blockquote" | "meta" | "title" | "link" | "script" | "style" | "nav" | "header" | "footer" | "b" | "i"
+        "head"
+            | "body"
+            | "div"
+            | "p"
+            | "span"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "ul"
+            | "ol"
+            | "table"
+            | "section"
+            | "main"
+            | "a"
+            | "br"
+            | "img"
+            | "pre"
+            | "em"
+            | "strong"
+            | "blockquote"
+            | "meta"
+            | "title"
+            | "link"
+            | "script"
+            | "style"
+            | "nav"
+            | "header"
+            | "footer"
+            | "b"
+            | "i"
     )
 }
 
 fn html_fragment_score(lower: &str) -> usize {
-    ["<p>", "<p ", "<div", "<h1", "<h2", "<h3", "<br", "<a href", "<table", "<span", "<ul", "<li", "<em>", "<strong>", "<pre"]
-        .iter()
-        .filter(|t| lower.contains(*t))
-        .count()
+    [
+        "<p>", "<p ", "<div", "<h1", "<h2", "<h3", "<br", "<a href", "<table", "<span", "<ul", "<li", "<em>",
+        "<strong>", "<pre",
+    ]
+    .iter()
+    .filter(|t| lower.contains(*t))
+    .count()
 }
 
 /// Cheap but exact: a notebook has a `cells` array and an `nbformat` number.
@@ -574,7 +641,9 @@ fn markdown_score(s: &str, ext: Option<&str>) -> usize {
     }
     let head: String = s.chars().take(32 * 1024).collect();
     let lines: Vec<&str> = head.lines().collect();
-    if lines.first().is_some_and(|l| l.trim_end() == "---") && lines.iter().skip(1).take(60).any(|l| l.trim_end() == "---" || l.trim_end() == "...") {
+    if lines.first().is_some_and(|l| l.trim_end() == "---")
+        && lines.iter().skip(1).take(60).any(|l| l.trim_end() == "---" || l.trim_end() == "...")
+    {
         score += 2;
     }
     let atx = lines.iter().filter(|l| is_atx_heading(l)).count();
@@ -683,7 +752,8 @@ mod tests {
         assert_eq!(fmt(&epub), Format::Epub);
         let odt = zip_bytes(&[("mimetype", b"application/vnd.oasis.opendocument.text"), ("content.xml", b"<x/>")]);
         assert_eq!(fmt(&odt), Format::Odt);
-        let ods = zip_bytes(&[("mimetype", b"application/vnd.oasis.opendocument.spreadsheet"), ("content.xml", b"<x/>")]);
+        let ods =
+            zip_bytes(&[("mimetype", b"application/vnd.oasis.opendocument.spreadsheet"), ("content.xml", b"<x/>")]);
         assert_eq!(fmt(&ods), Format::Binary(BinaryKind::OtherOffice));
         let docx = zip_bytes(&[("[Content_Types].xml", b"<Types/>"), ("word/document.xml", b"<w:document/>")]);
         assert_eq!(fmt(&docx), Format::Docx);
@@ -705,7 +775,10 @@ mod tests {
         assert_eq!(fmt(&src), Format::ArxivSource);
         assert_eq!(fmt(&gz(&src)), Format::ArxivSource);
         // arXiv also serves a single gzipped .tex.
-        assert_eq!(fmt(&gz(b"\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}\n")), Format::ArxivSource);
+        assert_eq!(
+            fmt(&gz(b"\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}\n")),
+            Format::ArxivSource
+        );
         let d = detect(&gz(b"# Title\n\nSome *text* with [a link](http://x.y).\n"), None);
         assert_eq!(d.format, Format::Gzip);
         assert_eq!(d.inner, Some(Format::Markdown));
@@ -766,7 +839,8 @@ mod tests {
         let shape = "<article><front><journal-meta/><article-meta/></front><body/></article>";
         assert_eq!(fmt(shape.as_bytes()), Format::Jats);
         // A DocBook <article> is not JATS.
-        let docbook = r#"<?xml version="1.0"?><article xmlns="http://docbook.org/ns/docbook"><title>T</title></article>"#;
+        let docbook =
+            r#"<?xml version="1.0"?><article xmlns="http://docbook.org/ns/docbook"><title>T</title></article>"#;
         let d = detect(docbook.as_bytes(), Some("x.xml"));
         assert_eq!(d.format, Format::Xml);
         assert_eq!(d.xml_root.as_deref(), Some("article"));
@@ -774,7 +848,8 @@ mod tests {
 
     #[test]
     fn tei_root_and_namespace() {
-        let tei = r#"<?xml version="1.0" encoding="UTF-8"?><TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/></TEI>"#;
+        let tei =
+            r#"<?xml version="1.0" encoding="UTF-8"?><TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/></TEI>"#;
         assert_eq!(fmt(tei.as_bytes()), Format::Tei);
         let nested = r#"<tei:TEI xmlns:tei="http://www.tei-c.org/ns/1.0"><tei:teiHeader/></tei:TEI>"#;
         assert_eq!(fmt(nested.as_bytes()), Format::Tei);
@@ -796,7 +871,10 @@ mod tests {
         let d = detect(b"<?xml version=\"1.0\"?><feed><entry/></feed>", None);
         assert_eq!(d.format, Format::Xml);
         assert_eq!(d.xml_root.as_deref(), Some("feed"));
-        assert_eq!(fmt(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>"), Format::Binary(BinaryKind::Image));
+        assert_eq!(
+            fmt(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>"),
+            Format::Binary(BinaryKind::Image)
+        );
     }
 
     #[test]
@@ -836,7 +914,10 @@ mod tests {
         let d = detect(&u16le, None);
         assert_eq!(d.format, Format::PlainText);
         assert_eq!(d.bom, Some(TextBomName::Utf16Le));
-        assert_eq!(fmt(&[0x00, 0x9F, 0x01, 0x02, 0x03, 0x00, 0xFE, 0x10, 0x00, 0x00]), Format::Binary(BinaryKind::Unknown));
+        assert_eq!(
+            fmt(&[0x00, 0x9F, 0x01, 0x02, 0x03, 0x00, 0xFE, 0x10, 0x00, 0x00]),
+            Format::Binary(BinaryKind::Unknown)
+        );
     }
 
     #[test]

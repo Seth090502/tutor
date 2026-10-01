@@ -115,7 +115,13 @@ fn mojibake_sequences(chars: &[char]) -> Vec<(usize, usize, char)> {
                 continue;
             }
         };
-        let need = if lead >= 0xF0 { 3 } else if lead >= 0xE0 { 2 } else { 1 };
+        let need = if lead >= 0xF0 {
+            3
+        } else if lead >= 0xE0 {
+            2
+        } else {
+            1
+        };
         if i + need >= chars.len() {
             i += 1;
             continue;
@@ -133,11 +139,12 @@ fn mojibake_sequences(chars: &[char]) -> Vec<(usize, usize, char)> {
         }
         if ok
             && let Ok(s) = std::str::from_utf8(&bytes)
-                && let Some(c) = s.chars().next() {
-                    out.push((i, need + 1, c));
-                    i += need + 1;
-                    continue;
-                }
+            && let Some(c) = s.chars().next()
+        {
+            out.push((i, need + 1, c));
+            i += need + 1;
+            continue;
+        }
         i += 1;
     }
     out
@@ -156,7 +163,10 @@ pub fn garble_counts(text: &str) -> GarbleCounts {
         match c {
             '\u{FFFD}' => g.replacement += 1,
             '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}' | '\u{100000}'..='\u{10FFFD}' => g.private_use += 1,
-            _ if (0x80..=0x9F).contains(&u) || (u < 0x20 && !matches!(c, '\t' | '\n' | '\r' | '\u{c}')) || u == 0x7F => {
+            _ if (0x80..=0x9F).contains(&u)
+                || (u < 0x20 && !matches!(c, '\t' | '\n' | '\r' | '\u{c}'))
+                || u == 0x7F =>
+            {
                 g.control += 1
             }
             _ => {}
@@ -222,7 +232,12 @@ pub fn assess(ex: &Extracted, ctx: QualityContext) -> QualityReport {
     let mut page_chars: Vec<usize> = Vec::new();
     for (i, p) in ex.pages.iter().enumerate() {
         let start = (p.line as usize).saturating_sub(1).min(lines.len());
-        let end = ex.pages.get(i + 1).map(|n| (n.line as usize).saturating_sub(1)).unwrap_or(lines.len()).clamp(start, lines.len());
+        let end = ex
+            .pages
+            .get(i + 1)
+            .map(|n| (n.line as usize).saturating_sub(1))
+            .unwrap_or(lines.len())
+            .clamp(start, lines.len());
         page_chars.push(lines[start..end].iter().map(|l| l.chars().filter(|c| !c.is_whitespace()).count()).sum());
     }
     let headings: Vec<String> = ex.headings.iter().map(|h| h.text.to_lowercase()).collect();
@@ -292,7 +307,9 @@ fn assess_inner(text: &str, page_chars: &[usize], headings: &[String], ctx: Qual
     if words >= 100 && cjk < 0.2 {
         let toks: Vec<&str> = text.split_whitespace().collect();
         let avg_len = toks.iter().map(|t| t.chars().count()).sum::<usize>() as f32 / toks.len() as f32;
-        let single = toks.iter().filter(|t| t.chars().count() == 1 && t.chars().all(char::is_alphabetic)).count() as f32 / toks.len() as f32;
+        let single = toks.iter().filter(|t| t.chars().count() == 1 && t.chars().all(char::is_alphabetic)).count()
+            as f32
+            / toks.len() as f32;
         if avg_len > 14.0 {
             flag(&mut flags, "glued_words");
         }

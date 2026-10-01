@@ -13,26 +13,28 @@ mock = ["dep:regex"]
 
 [dependencies]
 vault-api = { workspace = true, features = ["schema"] }
-vault-client = { path = "../vault-client", features = ["server"] }
+vault-client = { workspace = true, features = ["server"] }
+vault-core.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-rmcp = { version = "=3.5.0", default-features = false, features = ["server", "macros", "transport-streamable-http-server"] }
-tonic = { version = "=0.14.6", default-features = false, features = ["transport", "codegen", "router", "gzip", "zstd"] }
-axum = { version = "=0.8.9", features = ["http2"] }
-tokio = { version = "1.53.1", features = ["full"] }
-tokio-stream = { version = "=0.1.19", features = ["net"] }
-tokio-util = "=0.7.19"
-futures = "=0.3.34"
-subtle = "=2.6.1"
-rand = "=0.10.3"
-toml = "=1.1.6"
-tracing = "0.1"
-tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
-regex = { version = "=1.13.1", optional = true }
-clap = { version = "=4.6.7", features = ["derive"] }
+rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server"] }
+tonic = { workspace = true, features = ["transport", "codegen", "router", "gzip", "zstd"] }
+axum = { workspace = true, features = ["http2"] }
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true, features = ["net"] }
+tokio-util.workspace = true
+futures.workspace = true
+subtle.workspace = true
+rand.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+regex = { workspace = true, optional = true }
+clap = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-tower = "=0.5.3"
-rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
+tempfile.workspace = true
+tower.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }

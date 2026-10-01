@@ -2,6 +2,7 @@
 //! bearer-token auth on both. See docs/phase1/SPEC.md section 11.
 
 pub mod auth;
+pub mod blocking;
 pub mod config;
 pub mod grpc;
 pub mod mcp;

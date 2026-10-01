@@ -32,7 +32,8 @@ fn sample_pdfs_convert_cleanly() {
         return;
     };
     vault_extract::pdf::init(Path::new(&dll)).expect("load PDFium");
-    let dir = std::env::var_os("VAULT_SAMPLE_PDFS").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("D:/Corpus-pilot2"));
+    let dir =
+        std::env::var_os("VAULT_SAMPLE_PDFS").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("D:/Corpus-pilot2"));
     let mut files = Vec::new();
     pdfs_under(&dir, &mut files);
     assert!(!files.is_empty(), "no PDFs under {}", dir.display());
@@ -41,7 +42,8 @@ fn sample_pdfs_convert_cleanly() {
     for f in &files {
         let bytes = std::fs::read(f).expect("read sample");
         let name = f.file_name().and_then(|n| n.to_str());
-        let e = extract(&bytes, name, &ConvertOptions::default(), &Limits::default()).unwrap_or_else(|err| panic!("{}: {err}", f.display()));
+        let e = extract(&bytes, name, &ConvertOptions::default(), &Limits::default())
+            .unwrap_or_else(|err| panic!("{}: {err}", f.display()));
         let converted = match &e.outcome {
             Outcome::Converted(c) => c.as_ref(),
             Outcome::WaitingGpu { native: Some(c), .. } => c.as_ref(),
@@ -49,10 +51,21 @@ fn sample_pdfs_convert_cleanly() {
         };
         let x = &converted.extracted;
         assert!(x.markdown.trim().len() > 200, "{}: almost no text", f.display());
-        assert!(converted.quality.score >= 0.8, "{}: quality {:.2} {:?}", f.display(), converted.quality.score, converted.quality.flags);
+        assert!(
+            converted.quality.score >= 0.8,
+            "{}: quality {:.2} {:?}",
+            f.display(),
+            converted.quality.score,
+            converted.quality.flags
+        );
         let lines: Vec<&str> = x.markdown.lines().collect();
         for h in &x.headings {
-            assert!(lines[h.line as usize - 1].trim_start_matches('#').trim() == h.text, "{}: heading line {}", f.display(), h.line);
+            assert!(
+                lines[h.line as usize - 1].trim_start_matches('#').trim() == h.text,
+                "{}: heading line {}",
+                f.display(),
+                h.line
+            );
         }
         for b in &x.blocks {
             assert!(b.start >= 1 && b.end as usize <= lines.len() && b.start <= b.end, "{}: block {b:?}", f.display());

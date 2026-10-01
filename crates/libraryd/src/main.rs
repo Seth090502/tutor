@@ -2,10 +2,12 @@
 
 use clap::Parser;
 use libraryd::auth::Token;
+use libraryd::blocking::Blocking;
 use libraryd::config::{Config, find_config};
 use libraryd::server::{ServerOptions, start};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::Arc;
 use vault_api::VaultApi;
 
@@ -15,7 +17,7 @@ struct Cli {
     /// Machine config (TOML). Default lookup: VAULT_CONFIG, %ProgramData%\vault\libraryd.toml, %APPDATA%\vault\libraryd.toml.
     #[arg(long)]
     config: Option<PathBuf>,
-    /// Serve fixture data instead of a vault. For trying the interfaces before the vault is wired in.
+    /// Serve fixture data instead of the vault in the config. For trying the interfaces without a vault.
     #[arg(long)]
     mock: bool,
     /// Create the token file named in [server].token_file (32 random bytes as hex), then exit. Never overwrites.
@@ -69,15 +71,37 @@ fn mock_api() -> Result<Arc<dyn VaultApi>, Box<dyn std::error::Error>> {
     Err("this build has no mock backend (the `mock` feature is off)".into())
 }
 
+/// Opens the vault that the machine config at `config_path` describes. vault-core reads the whole file (libraryd's
+/// own [`Config`] reads the same file, for `[server]`), so a typo anywhere in it is reported here.
+fn open_vault(config_path: &Path) -> Result<Arc<dyn VaultApi>, Box<dyn std::error::Error>> {
+    let vault = vault_core::VaultConfig::from_file(config_path)
+        .and_then(vault_core::Vault::open)
+        .map_err(|e| format!("cannot open the vault described by {}: {e}", config_path.display()))?;
+    // The vault's calls block on SQLite and file I/O, so they run on the blocking pool, not on a worker thread.
+    Ok(Arc::new(Blocking::new(Arc::new(vault))))
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> ExitCode {
     init_logging();
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            // Display, not the Debug form `fn main() -> Result` would print: the message is for the person
+            // starting the server.
+            let _ = writeln!(std::io::stderr(), "libraryd: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // `--mock` may run without any config file: defaults give the SPEC ports, but a token file is still needed.
-    let config = match find_config(cli.config.clone()) {
-        Ok(path) => Config::load(&path)?,
-        Err(_) if cli.mock => Config::default(),
+    let (config, config_path) = match find_config(cli.config.clone()) {
+        Ok(path) => (Config::load(&path)?, Some(path)),
+        Err(_) if cli.mock => (Config::default(), None),
         Err(e) => return Err(e.into()),
     };
 
@@ -90,15 +114,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let token = Token::load(token_path(&config)?)?;
 
-    let api: Arc<dyn VaultApi> = if cli.mock {
-        mock_api()?
-    } else {
-        // ===== WIRE-UP POINT =====
-        // The lead replaces this branch once vault-core has landed:
-        //     let vault = vault_core::Vault::open(&config)?;
-        //     Arc::new(vault) as Arc<dyn VaultApi>
-        // Nothing else in libraryd needs to change: both interfaces take any `Arc<dyn VaultApi>`.
-        return Err("no vault backend is wired in yet; run with --mock".into());
+    let api: Arc<dyn VaultApi> = match config_path {
+        _ if cli.mock => mock_api()?,
+        Some(path) => open_vault(&path)?,
+        // Only `--mock` carries on without a config file; every other case returned above.
+        None => return Err("no config file found".into()),
     };
 
     let vault_id =

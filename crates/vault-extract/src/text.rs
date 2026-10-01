@@ -72,7 +72,8 @@ pub fn sniff_text_head(head: &[u8]) -> Option<(TextBom, String)> {
         let enc = if guess == TextBom::Utf16Le { UTF_16LE } else { UTF_16BE };
         return Some((guess, enc.decode_without_bom_handling(head).0.into_owned()));
     }
-    let control = head.iter().filter(|&&c| (c < 0x20 && !matches!(c, b'\t' | b'\n' | b'\r' | 0x0C | 0x1B)) || c == 0x7F).count();
+    let control =
+        head.iter().filter(|&&c| (c < 0x20 && !matches!(c, b'\t' | b'\n' | b'\r' | 0x0C | 0x1B)) || c == 0x7F).count();
     if control * 20 > head.len() {
         return None;
     }
@@ -100,11 +101,12 @@ pub fn decode(bytes: &[u8]) -> Decoded {
     let head = &bytes[..bytes.len().min(4096)];
     // ASCII-range UTF-16 is also valid UTF-8 (every other byte is NUL), so look for it first.
     if head.contains(&0)
-        && let Some(guess) = utf16_without_bom(head) {
-            let (enc, name) = if guess == TextBom::Utf16Le { (UTF_16LE, "utf-16le") } else { (UTF_16BE, "utf-16be") };
-            let (t, had) = enc.decode_without_bom_handling(bytes);
-            return Decoded { text: t.into_owned(), encoding: name, lossy: had };
-        }
+        && let Some(guess) = utf16_without_bom(head)
+    {
+        let (enc, name) = if guess == TextBom::Utf16Le { (UTF_16LE, "utf-16le") } else { (UTF_16BE, "utf-16be") };
+        let (t, had) = enc.decode_without_bom_handling(bytes);
+        return Decoded { text: t.into_owned(), encoding: name, lossy: had };
+    }
     if let Ok(s) = std::str::from_utf8(bytes) {
         return Decoded { text: s.to_string(), encoding: "utf-8", lossy: false };
     }
@@ -159,10 +161,11 @@ pub(crate) fn decode_for_conversion(bytes: &[u8], opts: &ConvertOptions, warning
         warnings.push(format!("some bytes were not valid {} and became U+FFFD", d.encoding));
     }
     if opts.repair_mojibake
-        && let Some(fixed) = quality::repair_mojibake(&d.text) {
-            warnings.push("repaired UTF-8 text that had been decoded as Latin-1 (mojibake)".to_string());
-            d.text = fixed;
-        }
+        && let Some(fixed) = quality::repair_mojibake(&d.text)
+    {
+        warnings.push("repaired UTF-8 text that had been decoded as Latin-1 (mojibake)".to_string());
+        d.text = fixed;
+    }
     d
 }
 
@@ -234,17 +237,19 @@ pub(crate) fn analyze_markdown(md: &str) -> MarkdownAnalysis {
     let mut metadata = Metadata::default();
 
     if lines.first().is_some_and(|l| l.trim_end() == "---")
-        && let Some(end) = lines.iter().skip(1).take(200).position(|l| matches!(l.trim_end(), "---" | "...")) {
-            read_front_matter(&lines[1..=end], &mut metadata);
-            i = end + 2;
-        }
+        && let Some(end) = lines.iter().skip(1).take(200).position(|l| matches!(l.trim_end(), "---" | "..."))
+    {
+        read_front_matter(&lines[1..=end], &mut metadata);
+        i = end + 2;
+    }
 
     let mut table_start: Option<usize> = None;
     let flush_table = |start: &mut Option<usize>, end: usize, blocks: &mut Vec<BlockSpan>| {
         if let Some(s) = start.take()
-            && end - s >= 2 {
-                blocks.push(BlockSpan { kind: BlockKind::Table, start: s as u32 + 1, end: end as u32 });
-            }
+            && end - s >= 2
+        {
+            blocks.push(BlockSpan { kind: BlockKind::Table, start: s as u32 + 1, end: end as u32 });
+        }
     };
     while i < lines.len() {
         let line = lines[i];
@@ -374,10 +379,11 @@ fn read_front_matter(lines: &[&str], md: &mut Metadata) {
         if l.starts_with(' ') || l.starts_with('\t') || trimmed.is_empty() || trimmed.starts_with('#') {
             // Continuation of a folded or block scalar: append to the current value.
             if let (Some(_), false) = (&key, trimmed.is_empty() || trimmed.starts_with('#'))
-                && let Some(last) = items.last_mut() {
-                    last.push(' ');
-                    last.push_str(trimmed);
-                }
+                && let Some(last) = items.last_mut()
+            {
+                last.push(' ');
+                last.push_str(trimmed);
+            }
             continue;
         }
         flush(&mut key, &mut items, md);
@@ -401,7 +407,11 @@ fn read_front_matter(lines: &[&str], md: &mut Metadata) {
 
 fn unquote(s: &str) -> String {
     let s = s.trim();
-    let s = s.strip_prefix('"').and_then(|x| x.strip_suffix('"')).or_else(|| s.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))).unwrap_or(s);
+    let s = s
+        .strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .or_else(|| s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')))
+        .unwrap_or(s);
     s.trim().to_string()
 }
 
@@ -410,7 +420,14 @@ fn apply_front_matter(key: &str, items: Vec<String>, md: &mut Metadata) {
     let first = items.first().cloned();
     match key {
         "title" => md.title = first,
-        "author" | "authors" => md.authors = items.iter().flat_map(|a| a.split(" and ")).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+        "author" | "authors" => {
+            md.authors = items
+                .iter()
+                .flat_map(|a| a.split(" and "))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
         "date" | "year" | "published" | "created" => md.year = first.and_then(|d| crate::ids::year_in(&d)),
         "lang" | "language" => md.language = first,
         "keywords" | "tags" | "tag" => md.keywords = items,
@@ -450,7 +467,8 @@ mod tests {
         assert_eq!(decode(&nobom).text, "plain ascii text here");
 
         // Windows-1252: "Café “quoted” – ok" has bytes that are not valid UTF-8.
-        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode("Un café très chaud, “merci” – s'il vous plaît, mademoiselle. C'est déjà l'été.");
+        let (bytes, _, _) = encoding_rs::WINDOWS_1252
+            .encode("Un café très chaud, “merci” – s'il vous plaît, mademoiselle. C'est déjà l'été.");
         let d = decode(&bytes);
         assert!(d.text.contains("café") && d.text.contains("très"), "{} ({})", d.text, d.encoding);
         assert!(!d.lossy);
@@ -482,7 +500,8 @@ mod tests {
 
     #[test]
     fn mojibake_in_text_is_repaired_with_a_warning() {
-        let (garbled, _, _) = encoding_rs::WINDOWS_1252.decode("Café déjà vu — “quoted” naïve façade, über señor".as_bytes());
+        let (garbled, _, _) =
+            encoding_rs::WINDOWS_1252.decode("Café déjà vu — “quoted” naïve façade, über señor".as_bytes());
         let r = convert_text(garbled.as_bytes(), &opts()).unwrap();
         assert_eq!(r.markdown, "Café déjà vu — “quoted” naïve façade, über señor\n");
         assert!(r.warnings.iter().any(|w| w.contains("mojibake")));

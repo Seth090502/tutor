@@ -30,16 +30,24 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
     let mut zip = ZipDoc::open(bytes, "epub")?;
     check_drm(&mut zip)?;
 
-    let container = zip.read("META-INF/container.xml")?.ok_or_else(|| ExtractError::corrupt("epub", "META-INF/container.xml is missing"))?;
+    let container = zip
+        .read("META-INF/container.xml")?
+        .ok_or_else(|| ExtractError::corrupt("epub", "META-INF/container.xml is missing"))?;
     let opf_path = xmlutil::with_document(&container, "epub", |doc, _| {
         let root = doc.root_element();
-        let rf = root.descendants().find(|n| is(*n, "rootfile")).ok_or_else(|| ExtractError::corrupt("epub", "container.xml names no rootfile"))?;
+        let rf = root
+            .descendants()
+            .find(|n| is(*n, "rootfile"))
+            .ok_or_else(|| ExtractError::corrupt("epub", "container.xml names no rootfile"))?;
         Ok(attr(rf, "full-path").unwrap_or("").to_string())
     })?;
-    let opf_bytes = zip.read(&opf_path)?.ok_or_else(|| ExtractError::corrupt("epub", format!("package document {opf_path} is missing")))?;
+    let opf_bytes = zip
+        .read(&opf_path)?
+        .ok_or_else(|| ExtractError::corrupt("epub", format!("package document {opf_path} is missing")))?;
     let base = opf_path.rsplit_once('/').map(|(d, _)| format!("{d}/")).unwrap_or_default();
 
-    let (meta, manifest, spine) = xmlutil::with_document(&opf_bytes, "epub", |doc, _| Ok(read_package(doc.root_element())))?;
+    let (meta, manifest, spine) =
+        xmlutil::with_document(&opf_bytes, "epub", |doc, _| Ok(read_package(doc.root_element())))?;
     let mut warnings = Vec::new();
 
     // Page labels from the navigation document or the NCX: (document path, element id) -> label.
@@ -75,7 +83,10 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
             warnings.push(format!("spine item {idref} is not in the manifest"));
             continue;
         };
-        if !(item.media_type == "application/xhtml+xml" || item.media_type == "text/html" || item.media_type == "application/x-dtbook+xml") {
+        if !(item.media_type == "application/xhtml+xml"
+            || item.media_type == "text/html"
+            || item.media_type == "application/x-dtbook+xml")
+        {
             continue;
         }
         if item.properties.split_whitespace().any(|p| p == "nav") {
@@ -133,7 +144,10 @@ fn check_drm(zip: &mut ZipDoc) -> Result<()> {
     }
     if let Some(enc) = zip.read("META-INF/encryption.xml")? {
         let protected = xmlutil::with_document(&enc, "epub", |doc, _| {
-            Ok(doc.descendants().filter(|n| is(*n, "EncryptionMethod")).any(|m| !OBFUSCATION.contains(&attr(m, "Algorithm").unwrap_or(""))))
+            Ok(doc
+                .descendants()
+                .filter(|n| is(*n, "EncryptionMethod"))
+                .any(|m| !OBFUSCATION.contains(&attr(m, "Algorithm").unwrap_or(""))))
         })?;
         if protected {
             return Err(ExtractError::Protected("EPUB content is encrypted (DRM)".to_string()));
@@ -164,12 +178,14 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len()
-            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
         out.push(b[i]);
         i += 1;
     }
@@ -202,13 +218,21 @@ fn read_package(root: Node) -> (Metadata, HashMap<String, Item>, Vec<String>) {
                 "identifier" => {
                     let scheme = attr(e, "scheme").unwrap_or("").to_ascii_lowercase();
                     let lower = v.to_ascii_lowercase();
-                    if scheme == "doi" || lower.starts_with("doi:") || lower.contains("doi.org/") || lower.starts_with("urn:doi:") {
+                    if scheme == "doi"
+                        || lower.starts_with("doi:")
+                        || lower.contains("doi.org/")
+                        || lower.starts_with("urn:doi:")
+                    {
                         m.doi = m.doi.take().or_else(|| ids::find_doi(&v));
-                    } else if (scheme == "isbn" || lower.starts_with("urn:isbn:") || lower.starts_with("isbn") || ids::normalize_isbn(&v).is_some())
+                    } else if (scheme == "isbn"
+                        || lower.starts_with("urn:isbn:")
+                        || lower.starts_with("isbn")
+                        || ids::normalize_isbn(&v).is_some())
                         && let Some(i) = ids::normalize_isbn(&v).or_else(|| ids::find_isbns(&v).into_iter().next())
-                            && !m.isbn.contains(&i) {
-                                m.isbn.push(i);
-                            }
+                        && !m.isbn.contains(&i)
+                    {
+                        m.isbn.push(i);
+                    }
                 }
                 _ => {}
             }
@@ -220,13 +244,19 @@ fn read_package(root: Node) -> (Metadata, HashMap<String, Item>, Vec<String>) {
             if let (Some(id), Some(href)) = (attr(it, "id"), attr(it, "href")) {
                 manifest.insert(
                     id.to_string(),
-                    Item { href: href.to_string(), media_type: attr(it, "media-type").unwrap_or("").to_string(), properties: attr(it, "properties").unwrap_or("").to_string() },
+                    Item {
+                        href: href.to_string(),
+                        media_type: attr(it, "media-type").unwrap_or("").to_string(),
+                        properties: attr(it, "properties").unwrap_or("").to_string(),
+                    },
                 );
             }
         }
     }
     let sp = child(root, "spine");
-    let spine = sp.map(|s| children_named(s, "itemref").filter_map(|i| attr(i, "idref").map(str::to_string)).collect()).unwrap_or_default();
+    let spine = sp
+        .map(|s| children_named(s, "itemref").filter_map(|i| attr(i, "idref").map(str::to_string)).collect())
+        .unwrap_or_default();
     (m, manifest, spine)
 }
 
@@ -247,9 +277,11 @@ fn page_list_from_nav(data: &[u8], dir: &str, opts: &ConvertOptions) -> Vec<(Str
             let Some(href) = a.value().attr("href") else { continue };
             let label = collapse_ws(&a.text().collect::<String>());
             if let Some((file, id)) = href.split_once('#')
-                && !label.is_empty() && !id.is_empty() {
-                    out.push((resolve(dir, file), id.to_string(), label));
-                }
+                && !label.is_empty()
+                && !id.is_empty()
+            {
+                out.push((resolve(dir, file), id.to_string(), label));
+            }
         }
     }
     out
@@ -260,12 +292,16 @@ fn page_list_from_ncx(data: &[u8], dir: &str) -> Vec<(String, String, String)> {
     xmlutil::with_document(data, "epub", |doc, _| {
         let mut out = Vec::new();
         for pt in doc.descendants().filter(|n| is(*n, "pageTarget")) {
-            let label = child(pt, "navLabel").map(text_of).filter(|l| !l.is_empty()).or_else(|| attr(pt, "value").map(str::to_string));
+            let label = child(pt, "navLabel")
+                .map(text_of)
+                .filter(|l| !l.is_empty())
+                .or_else(|| attr(pt, "value").map(str::to_string));
             let src = child(pt, "content").and_then(|c| attr(c, "src"));
             if let (Some(label), Some(src)) = (label, src)
-                && let Some((file, id)) = src.split_once('#') {
-                    out.push((resolve(dir, file), id.to_string(), label));
-                }
+                && let Some((file, id)) = src.split_once('#')
+            {
+                out.push((resolve(dir, file), id.to_string(), label));
+            }
         }
         Ok(out)
     })
@@ -321,7 +357,13 @@ mod tests {
     const CH2: &str = r##"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h2>Chapter Two</h2><p><span id="pg_2"/>Second chapter text.</p><nav><a href="x">skip me</a></nav></body></html>"##;
 
     fn epub() -> Vec<u8> {
-        build(&[("META-INF/container.xml", CONTAINER), ("OEBPS/content.opf", OPF), ("OEBPS/nav.xhtml", NAV), ("OEBPS/text/ch 1.xhtml", CH1), ("OEBPS/text/ch2.xhtml", CH2)])
+        build(&[
+            ("META-INF/container.xml", CONTAINER),
+            ("OEBPS/content.opf", OPF),
+            ("OEBPS/nav.xhtml", NAV),
+            ("OEBPS/text/ch 1.xhtml", CH1),
+            ("OEBPS/text/ch2.xhtml", CH2),
+        ])
     }
 
     #[test]
@@ -360,8 +402,15 @@ mod tests {
     #[test]
     fn inline_pagebreak_markers_work_without_a_page_list() {
         let ch = r#"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><h1>T</h1><p>One.</p><span epub:type="pagebreak" title="7" id="p7"/><p>Two.</p></body></html>"#;
-        let opf = OPF.replace("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>", "").replace("<itemref idref=\"nav\"/>", "").replace("<itemref idref=\"c2\"/>", "");
-        let z = build(&[("META-INF/container.xml", CONTAINER), ("OEBPS/content.opf", &opf), ("OEBPS/text/ch 1.xhtml", ch)]);
+        let opf = OPF
+            .replace(
+                "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>",
+                "",
+            )
+            .replace("<itemref idref=\"nav\"/>", "")
+            .replace("<itemref idref=\"c2\"/>", "");
+        let z =
+            build(&[("META-INF/container.xml", CONTAINER), ("OEBPS/content.opf", &opf), ("OEBPS/text/ch 1.xhtml", ch)]);
         let r = convert(&z, &ConvertOptions::default()).unwrap();
         assert_eq!(r.pages.len(), 1);
         assert_eq!(r.pages[0].label.as_deref(), Some("7"));
@@ -369,8 +418,18 @@ mod tests {
 
     #[test]
     fn drm_is_protected_but_font_obfuscation_is_not() {
-        let enc = |alg: &str| format!(r#"<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:EncryptionMethod Algorithm="{alg}"/></enc:EncryptedData></encryption>"#);
-        let base: Vec<(&str, &str)> = vec![("META-INF/container.xml", CONTAINER), ("OEBPS/content.opf", OPF), ("OEBPS/nav.xhtml", NAV), ("OEBPS/text/ch 1.xhtml", CH1), ("OEBPS/text/ch2.xhtml", CH2)];
+        let enc = |alg: &str| {
+            format!(
+                r#"<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:EncryptionMethod Algorithm="{alg}"/></enc:EncryptedData></encryption>"#
+            )
+        };
+        let base: Vec<(&str, &str)> = vec![
+            ("META-INF/container.xml", CONTAINER),
+            ("OEBPS/content.opf", OPF),
+            ("OEBPS/nav.xhtml", NAV),
+            ("OEBPS/text/ch 1.xhtml", CH1),
+            ("OEBPS/text/ch2.xhtml", CH2),
+        ];
         let mut drm = base.clone();
         let e = enc("http://www.w3.org/2001/04/xmlenc#aes128-cbc");
         drm.push(("META-INF/encryption.xml", &e));

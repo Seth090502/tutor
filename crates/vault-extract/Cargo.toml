@@ -19,16 +19,16 @@ required-features = ["pdfium"]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tracing = "=0.1.44"
-roxmltree = "=0.21.1"
-scraper = "=0.27.0"
-ego-tree = "=0.11.0"
-zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-tar = "=0.4.46"
-flate2 = "=1.1.10"
-encoding_rs = "=0.8.42"
-chardetng = "=1.0.0"
-regex = "=1.13.1"
-pdfium-render = { version = "=0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"], optional = true }
+tracing.workspace = true
+roxmltree.workspace = true
+scraper.workspace = true
+ego-tree.workspace = true
+zip = { workspace = true, features = ["deflate-flate2-zlib-rs"] }
+tar.workspace = true
+flate2.workspace = true
+encoding_rs.workspace = true
+chardetng.workspace = true
+regex.workspace = true
+pdfium-render = { workspace = true, features = ["pdfium_latest", "thread_safe"], optional = true }
 
 [dev-dependencies]

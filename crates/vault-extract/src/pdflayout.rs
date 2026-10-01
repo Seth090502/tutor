@@ -78,7 +78,8 @@ const PIECE_GAP_EM: f32 = 1.4;
 const SPACE_EM: f32 = 0.18;
 
 pub(crate) fn layout_page(p: &PageInput) -> Vec<Line> {
-    let glyphs: Vec<&Glyph> = p.glyphs.iter().filter(|g| g.size > 0.5 && (g.r - g.l).is_finite() && (g.t - g.b).is_finite()).collect();
+    let glyphs: Vec<&Glyph> =
+        p.glyphs.iter().filter(|g| g.size > 0.5 && (g.r - g.l).is_finite() && (g.t - g.b).is_finite()).collect();
     if glyphs.is_empty() {
         return Vec::new();
     }
@@ -173,14 +174,22 @@ fn dominant_size(g: &[&Glyph]) -> f32 {
         let e = counts.entry((x.size * 4.0).round() as i32).or_insert((0, x.size));
         e.0 += 1;
     }
-    counts.into_values().max_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))).map(|(_, s)| s).unwrap_or_else(|| g.first().map(|x| x.size).unwrap_or(10.0))
+    counts
+        .into_values()
+        .max_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .map(|(_, s)| s)
+        .unwrap_or_else(|| g.first().map(|x| x.size).unwrap_or(10.0))
 }
 
 fn build_piece(g: &[&Glyph], line_size: f32) -> Piece {
     let mut text = String::new();
     let mut last_r = f32::MIN;
     let base_y: f32 = {
-        let dom: Vec<f32> = g.iter().filter(|x| (x.size - line_size).abs() < 0.3 && !x.ch.is_whitespace()).map(|x| (x.t + x.b) / 2.0).collect();
+        let dom: Vec<f32> = g
+            .iter()
+            .filter(|x| (x.size - line_size).abs() < 0.3 && !x.ch.is_whitespace())
+            .map(|x| (x.t + x.b) / 2.0)
+            .collect();
         if dom.is_empty() { (g[0].t + g[0].b) / 2.0 } else { dom.iter().sum::<f32>() / dom.len() as f32 }
     };
     let mut pending_script: Option<(char, String)> = None;
@@ -269,7 +278,11 @@ fn reading_order(pieces: &[Piece], page_width: f32) -> Vec<(Piece, usize)> {
     let _ = span;
 
     let mut sorted: Vec<&Piece> = pieces.clone();
-    sorted.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap_or(std::cmp::Ordering::Equal).then(a.l.partial_cmp(&b.l).unwrap_or(std::cmp::Ordering::Equal)));
+    sorted.sort_by(|a, b| {
+        b.y.partial_cmp(&a.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.l.partial_cmp(&b.l).unwrap_or(std::cmp::Ordering::Equal))
+    });
 
     let ncols = gutters.len() + 1;
     let mut out: Vec<(Piece, usize)> = Vec::new();
@@ -354,7 +367,8 @@ fn merge_into_lines(ordered: &[(Piece, usize)]) -> Vec<Line> {
     let mut last_y = f32::NAN;
     let mut last_col = usize::MAX;
     for (p, col) in ordered {
-        let joins = |l: &Line| !l.run_in && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(l.size) && p.l >= l.l;
+        let joins =
+            |l: &Line| !l.run_in && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(l.size) && p.l >= l.l;
         match lines.last_mut().filter(|l| joins(l)) {
             Some(l) => {
                 l.text.push(' ');
@@ -367,7 +381,18 @@ fn merge_into_lines(ordered: &[(Piece, usize)]) -> Vec<Line> {
                     l.size = p.size;
                 }
             }
-            None => lines.push(Line { text: p.text.clone(), l: p.l, r: p.r, top: p.top, bottom: p.bottom, size: p.size, bold: p.bold, column: *col, furniture: false, run_in: p.run_in }),
+            None => lines.push(Line {
+                text: p.text.clone(),
+                l: p.l,
+                r: p.r,
+                top: p.top,
+                bottom: p.bottom,
+                size: p.size,
+                bold: p.bold,
+                column: *col,
+                furniture: false,
+                run_in: p.run_in,
+            }),
         }
         last_y = p.y;
         last_col = *col;
@@ -398,11 +423,16 @@ pub(crate) struct PageLines {
     pub lines: Vec<Line>,
 }
 
-static NUMBERED_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+\p{Lu}").expect("static regex"));
-static SECTION_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?i)(abstract|introduction|references|bibliography|acknowledg\w*|conclusions?|appendix\b.*|contents|preface|summary|index|glossary)$").expect("static regex"));
-static BRACKET_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[(\d{1,4}|[A-Za-z][A-Za-z0-9+\-]{0,15}\d{2,4}[a-z]?)\]\s*").expect("static regex"));
+static NUMBERED_HEADING: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+\p{Lu}").expect("static regex"));
+static SECTION_WORD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?i)(abstract|introduction|references|bibliography|acknowledg\w*|conclusions?|appendix\b.*|contents|preface|summary|index|glossary)$").expect("static regex")
+});
+static BRACKET_REF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[(\d{1,4}|[A-Za-z][A-Za-z0-9+\-]{0,15}\d{2,4}[a-z]?)\]\s*").expect("static regex"));
 static DOT_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{1,4})\.\s+\p{Lu}").expect("static regex"));
-static PAGE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?i)(?:page\s+)?(\d{1,4}|[ivxlcdm]{1,7})$").expect("static regex"));
+static PAGE_NUMBER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?i)(?:page\s+)?(\d{1,4}|[ivxlcdm]{1,7})$").expect("static regex"));
 static BULLET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[•▪◦‣●■□–—]\s+").expect("static regex"));
 
 /// What the assembly step found out besides the text.
@@ -444,7 +474,11 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
     // is a heading, the authors, date and affiliations under it are text.
     let title_zone_end = pages
         .first()
-        .and_then(|p| p.lines.iter().position(|l| NUMBERED_HEADING.is_match(l.text.trim()) || SECTION_WORD.is_match(l.text.trim())))
+        .and_then(|p| {
+            p.lines
+                .iter()
+                .position(|l| NUMBERED_HEADING.is_match(l.text.trim()) || SECTION_WORD.is_match(l.text.trim()))
+        })
         .unwrap_or(0);
     let title_zone_max = pages
         .first()
@@ -501,7 +535,8 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
             let cl = col_l.get(&line.column).copied().unwrap_or(line.l);
             let cr = col_r.get(&line.column).copied().unwrap_or(line.r);
             let in_title_zone = pi == 0 && line_index < title_zone_end;
-            let is_heading = heading_level(line, body, &heading_sizes, prev, cl).is_some() && (!in_title_zone || (line.size - title_zone_max).abs() < 0.6);
+            let is_heading = heading_level(line, body, &heading_sizes, prev, cl).is_some()
+                && (!in_title_zone || (line.size - title_zone_max).abs() < 0.6);
 
             if is_heading {
                 carry = false;
@@ -567,18 +602,33 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
                     let gap = pl.bottom - line.top;
                     let pitch = p.pitch.max(line.size * 1.1);
                     let big_gap = gap > 0.55 * pitch;
-                    let indent = line.l > cl + 1.2 * line.size && line.l - pl.l > 0.8 * line.size && pl.r < cr - 2.0 * line.size;
+                    let indent =
+                        line.l > cl + 1.2 * line.size && line.l - pl.l > 0.8 * line.size && pl.r < cr - 2.0 * line.size;
                     // Only a clearly short line (under half the column) ends a paragraph by itself; ragged-right text has
                     // many lines that end early.
                     let short_before = pl.r < cl + 0.5 * (cr - cl).max(1.0) && ends_sentence(&p.text);
                     let col_changed = line.column != p.column;
-                    big_gap || indent || short_before || col_changed || (line.size - pl.size).abs() > 0.2 * pl.size.max(1.0)
+                    big_gap
+                        || indent
+                        || short_before
+                        || col_changed
+                        || (line.size - pl.size).abs() > 0.2 * pl.size.max(1.0)
                 }
                 (Some(_), None) => true,
             };
             if new_para {
                 flush_para!();
-                para = Some(Para { text: text.to_string(), last_bottom: line.bottom, last_l: line.l, last_r: line.r, col_l: cl, col_r: cr, pitch: line.top - line.bottom, column: line.column, cont: carry });
+                para = Some(Para {
+                    text: text.to_string(),
+                    last_bottom: line.bottom,
+                    last_l: line.l,
+                    last_r: line.r,
+                    col_l: cl,
+                    col_r: cr,
+                    pitch: line.top - line.bottom,
+                    column: line.column,
+                    cont: carry,
+                });
                 carry = false;
             } else if let Some(p) = para.as_mut() {
                 let pitch = prev.map(|pl| pl.top - line.top).unwrap_or(0.0);
@@ -629,7 +679,10 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
 fn is_refs_title(t: &str) -> bool {
     let l = t.trim().trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
     let l = l.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ');
-    matches!(l, "references" | "reference" | "bibliography" | "works cited" | "literature cited" | "references and notes")
+    matches!(
+        l,
+        "references" | "reference" | "bibliography" | "works cited" | "literature cited" | "references and notes"
+    )
 }
 
 fn ends_sentence(t: &str) -> bool {
@@ -681,7 +734,11 @@ fn body_size(pages: &[PageLines]) -> f32 {
         }
     }
     // Ties on count go to the larger size, so the result does not depend on hash order.
-    counts.into_values().max_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))).map(|(_, s)| s).unwrap_or(10.0)
+    counts
+        .into_values()
+        .max_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .map(|(_, s)| s)
+        .unwrap_or(10.0)
 }
 
 /// Distinct sizes of lines that look like headings, largest first (rounded to half points).
@@ -701,9 +758,13 @@ fn heading_size_classes(pages: &[PageLines], body: f32) -> Vec<f32> {
             }
         }
     }
-    let title_size = pages
-        .first()
-        .and_then(|p| p.lines.iter().filter(|l| looks_like_heading(l, body, None, l.l)).map(|l| rounded(l.size)).fold(None, |m: Option<f32>, s| Some(m.map_or(s, |x| x.max(s)))));
+    let title_size = pages.first().and_then(|p| {
+        p.lines
+            .iter()
+            .filter(|l| looks_like_heading(l, body, None, l.l))
+            .map(|l| rounded(l.size))
+            .fold(None, |m: Option<f32>, s| Some(m.map_or(s, |x| x.max(s))))
+    });
     let mut sizes: Vec<f32> = counts
         .into_iter()
         .filter(|(s, c)| *c >= 2 || title_size.is_some_and(|t| (t - s).abs() < 0.26 && *s >= body * 1.3))
@@ -730,7 +791,10 @@ fn looks_like_heading(l: &Line, body: f32, prev: Option<&Line>, col_left: f32) -
     // A bold, short, unpunctuated line at body size is a run-in or stand-alone heading.
     let bold_short = l.bold && l.size >= body * 0.95 && n <= 90 && !t.ends_with('.');
     let _ = (prev, col_left);
-    (bigger && n <= 120 && !t.ends_with('.')) || (numbered && (l.bold || bigger)) || (section_word && (l.bold || bigger)) || bold_short && (numbered || section_word || n <= 60)
+    (bigger && n <= 120 && !t.ends_with('.'))
+        || (numbered && (l.bold || bigger))
+        || (section_word && (l.bold || bigger))
+        || bold_short && (numbered || section_word || n <= 60)
 }
 
 fn heading_level(l: &Line, body: f32, classes: &[f32], prev: Option<&Line>, col_left: f32) -> Option<u8> {
@@ -754,7 +818,14 @@ fn heading_level(l: &Line, body: f32, classes: &[f32], prev: Option<&Line>, col_
 /// Remove running headers and footers and standalone page numbers. Returns the page number each page printed.
 fn strip_furniture(pages: &mut [PageLines]) -> Vec<Option<String>> {
     let n = pages.len();
-    let normalise = |t: &str| -> String { t.chars().map(|c| if c.is_ascii_digit() { '#' } else { c.to_ascii_lowercase() }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ") };
+    let normalise = |t: &str| -> String {
+        t.chars()
+            .map(|c| if c.is_ascii_digit() { '#' } else { c.to_ascii_lowercase() })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let mut counts: HashMap<String, usize> = HashMap::new();
     for p in pages.iter() {
         let mut seen = std::collections::HashSet::new();
@@ -777,7 +848,10 @@ fn strip_furniture(pages: &mut [PageLines]) -> Vec<Option<String>> {
                     continue;
                 }
                 // "Page 3 of 10", "- 3 -" and similar.
-                let digits_only: String = t.chars().filter(|c| !c.is_ascii_digit() && !c.is_whitespace() && !matches!(c, '-' | '–' | '|')).collect();
+                let digits_only: String = t
+                    .chars()
+                    .filter(|c| !c.is_ascii_digit() && !c.is_whitespace() && !matches!(c, '-' | '–' | '|'))
+                    .collect();
                 if digits_only.is_empty() {
                     printed[i] = t.chars().filter(|c| c.is_ascii_digit()).collect::<String>().into();
                     continue;
@@ -804,11 +878,7 @@ pub(crate) fn infer_labels(printed: &[Option<String>]) -> Vec<Option<String>> {
         .iter()
         .map(|p| {
             let p = p.as_deref()?;
-            if let Ok(v) = p.parse::<i64>() {
-                Some((v, false))
-            } else {
-                roman_value(p).map(|v| (v as i64, true))
-            }
+            if let Ok(v) = p.parse::<i64>() { Some((v, false)) } else { roman_value(p).map(|v| (v as i64, true)) }
         })
         .collect();
     let mut i = 0;
@@ -879,7 +949,21 @@ fn roman_value(s: &str) -> Option<usize> {
 }
 
 fn to_roman(mut n: usize) -> String {
-    let table = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")];
+    let table = [
+        (1000, "m"),
+        (900, "cm"),
+        (500, "d"),
+        (400, "cd"),
+        (100, "c"),
+        (90, "xc"),
+        (50, "l"),
+        (40, "xl"),
+        (10, "x"),
+        (9, "ix"),
+        (5, "v"),
+        (4, "iv"),
+        (1, "i"),
+    ];
     let mut s = String::new();
     for (v, r) in table {
         while n >= v {
@@ -900,14 +984,29 @@ pub(crate) mod testing {
         let mut cx = x;
         for ch in text.chars() {
             let adv = if ch == ' ' { 0.3 * size } else { 0.5 * size };
-            out.push(Glyph { ch, l: cx, r: cx + adv, b: baseline - 0.2 * size, t: baseline + 0.8 * size, size, bold, italic: false });
+            out.push(Glyph {
+                ch,
+                l: cx,
+                r: cx + adv,
+                b: baseline - 0.2 * size,
+                t: baseline + 0.8 * size,
+                size,
+                bold,
+                italic: false,
+            });
             cx += adv;
         }
         out
     }
 
     pub fn page(glyph_groups: Vec<Vec<Glyph>>) -> PageInput {
-        PageInput { width: 612.0, height: 792.0, glyphs: glyph_groups.into_iter().flatten().collect(), label: None, rotated_text: String::new() }
+        PageInput {
+            width: 612.0,
+            height: 792.0,
+            glyphs: glyph_groups.into_iter().flatten().collect(),
+            label: None,
+            rotated_text: String::new(),
+        }
     }
 }
 
@@ -956,7 +1055,13 @@ mod tests {
             groups.push(glyphs(&format!("left text {i} aaaaaaaaaaaaaaaaaaaa"), 72.0, y, 10.0, false));
             groups.push(glyphs(&format!("right text {i} bbbbbbbbbbbbbbbbbbbb"), 330.0, y, 10.0, false));
         }
-        groups.push(glyphs("Figure 1. A caption that runs across the whole width of the text block here", 72.0, 600.0, 9.0, false));
+        groups.push(glyphs(
+            "Figure 1. A caption that runs across the whole width of the text block here",
+            72.0,
+            600.0,
+            9.0,
+            false,
+        ));
         for i in 0..5 {
             let y = 580.0 - i as f32 * 14.0;
             groups.push(glyphs(&format!("left again {i} cccccccccccccccccc"), 72.0, y, 10.0, false));
@@ -990,29 +1095,52 @@ mod tests {
 
     #[test]
     fn tabular_gaps_split_pieces_but_stay_on_one_line() {
-        let g = vec![glyphs("Name", 72.0, 700.0, 10.0, false), glyphs("Value", 200.0, 700.0, 10.0, false), glyphs("Unit", 330.0, 700.0, 10.0, false)];
+        let g = vec![
+            glyphs("Name", 72.0, 700.0, 10.0, false),
+            glyphs("Value", 200.0, 700.0, 10.0, false),
+            glyphs("Unit", 330.0, 700.0, 10.0, false),
+        ];
         let lines = layout_page(&page(g));
         assert_eq!(texts(&lines), vec!["Name Value Unit"]);
     }
 
     #[test]
     fn page_furniture_is_marked() {
-        let g = vec![glyphs("Body text in the middle of the page", 72.0, 400.0, 10.0, false), glyphs("12", 300.0, 30.0, 10.0, false), glyphs("Journal Name Header", 72.0, 770.0, 9.0, false)];
+        let g = vec![
+            glyphs("Body text in the middle of the page", 72.0, 400.0, 10.0, false),
+            glyphs("12", 300.0, 30.0, 10.0, false),
+            glyphs("Journal Name Header", 72.0, 770.0, 9.0, false),
+        ];
         let lines = layout_page(&page(g));
         let f: Vec<_> = lines.iter().filter(|l| l.furniture).map(|l| l.text.as_str()).collect();
         assert_eq!(f.len(), 2, "{lines:?}");
     }
 
     fn line(text: &str, l: f32, top: f32, size: f32, bold: bool) -> Line {
-        Line { text: text.into(), l, r: l + text.chars().count() as f32 * size * 0.5, top, bottom: top - size, size, bold, column: 0, furniture: false, run_in: false }
+        Line {
+            text: text.into(),
+            l,
+            r: l + text.chars().count() as f32 * size * 0.5,
+            top,
+            bottom: top - size,
+            size,
+            bold,
+            column: 0,
+            furniture: false,
+            run_in: false,
+        }
     }
 
     fn body_lines(texts: &[&str], top: f32) -> Vec<Line> {
-        texts.iter().enumerate().map(|(i, t)| {
-            let mut l = line(t, 72.0, top - i as f32 * 12.0, 10.0, false);
-            l.r = 540.0;
-            l
-        }).collect()
+        texts
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let mut l = line(t, 72.0, top - i as f32 * 12.0, 10.0, false);
+                l.r = 540.0;
+                l
+            })
+            .collect()
     }
 
     fn meta() -> Metadata {
@@ -1021,8 +1149,12 @@ mod tests {
 
     #[test]
     fn headings_paragraphs_and_hyphenation() {
-        let mut lines = vec![line("A Study of Things", 72.0, 740.0, 18.0, true), line("1 Introduction", 72.0, 700.0, 12.0, true)];
-        lines.extend(body_lines(&["This paragraph has a hyphen-", "ated word and continues here.", "It ends with a sentence."], 680.0));
+        let mut lines =
+            vec![line("A Study of Things", 72.0, 740.0, 18.0, true), line("1 Introduction", 72.0, 700.0, 12.0, true)];
+        lines.extend(body_lines(
+            &["This paragraph has a hyphen-", "ated word and continues here.", "It ends with a sentence."],
+            680.0,
+        ));
         // A vertical gap starts a new paragraph.
         lines.extend(body_lines(&["A second paragraph starts after a gap."], 620.0));
         lines.push(line("2.1 Method", 72.0, 590.0, 11.0, true));
@@ -1066,7 +1198,10 @@ mod tests {
         // Roman front matter then arabic.
         let printed = p(&[Some("i"), Some("ii"), Some("iii"), Some("iv"), Some("1"), Some("2"), Some("3"), Some("4")]);
         let labels = infer_labels(&printed);
-        assert_eq!(labels.iter().map(|l| l.clone().unwrap_or_default()).collect::<Vec<_>>(), vec!["i", "ii", "iii", "iv", "1", "2", "3", "4"]);
+        assert_eq!(
+            labels.iter().map(|l| l.clone().unwrap_or_default()).collect::<Vec<_>>(),
+            vec!["i", "ii", "iii", "iv", "1", "2", "3", "4"]
+        );
         // Gaps (pages with no number) inside a run are filled.
         let printed = p(&[Some("21"), None, Some("23"), Some("24")]);
         assert_eq!(infer_labels(&printed)[1].as_deref(), Some("22"));
@@ -1089,7 +1224,10 @@ mod tests {
     #[test]
     fn references_are_split_by_number_and_hanging_indent() {
         let mut lines = vec![line("References", 72.0, 700.0, 12.0, true)];
-        let entries = [("[1] Smith J, Doe A. A study of things. J Stuff 5:1-10 (2019).", 72.0), ("[2] Vaswani A. Attention is all you need. arXiv:1706.03762 (2017).", 72.0)];
+        let entries = [
+            ("[1] Smith J, Doe A. A study of things. J Stuff 5:1-10 (2019).", 72.0),
+            ("[2] Vaswani A. Attention is all you need. arXiv:1706.03762 (2017).", 72.0),
+        ];
         for (i, (t, x)) in entries.iter().enumerate() {
             let mut l = line(t, *x, 680.0 - i as f32 * 12.0, 10.0, false);
             l.r = 540.0;
@@ -1124,14 +1262,19 @@ mod tests {
     #[test]
     fn large_bullet_lines_on_slides_are_list_items_not_headings() {
         let mut lines = vec![line("Arrays", 72.0, 700.0, 24.0, true)];
-        for (i, t) in ["• Arrays are a simple data structure", "• Arrays store a set of values"].iter().enumerate() {
+        for (i, t) in ["• Arrays are a simple data structure", "• Arrays store a set of values"].iter().enumerate()
+        {
             let mut l = line(t, 72.0, 660.0 - i as f32 * 30.0, 20.0, true);
             l.r = 400.0;
             lines.push(l);
         }
         lines.extend(body_lines(&["small print that sets the body size to ten points here"; 6], 500.0));
         let a = assemble(vec![PageLines { label: None, lines }], meta());
-        assert!(a.extracted.markdown.contains("- Arrays are a simple data structure\n- Arrays store a set of values"), "{}", a.extracted.markdown);
+        assert!(
+            a.extracted.markdown.contains("- Arrays are a simple data structure\n- Arrays store a set of values"),
+            "{}",
+            a.extracted.markdown
+        );
         assert!(a.extracted.headings.iter().all(|h| !h.text.starts_with('•')), "{:?}", a.extracted.headings);
     }
 
@@ -1148,18 +1291,25 @@ mod tests {
         lines.extend(body_lines(&["Closing remark that is body text for sizing purposes."; 3], 560.0));
         let a = assemble(vec![PageLines { label: None, lines }], meta());
         assert!(a.extracted.markdown.contains("- first point\n- second point"), "{}", a.extracted.markdown);
-        assert_eq!(a.extracted.metadata.abstract_text.as_deref(), Some("We study the thing and report the findings in this abstract text."));
+        assert_eq!(
+            a.extracted.metadata.abstract_text.as_deref(),
+            Some("We study the thing and report the findings in this abstract text.")
+        );
     }
 
     #[test]
     fn paragraph_continues_across_pages_when_unfinished() {
-        let p1 = PageLines { label: None, lines: body_lines(&["A sentence that has not ended and continues onto"], 700.0) };
+        let p1 =
+            PageLines { label: None, lines: body_lines(&["A sentence that has not ended and continues onto"], 700.0) };
         let p2 = PageLines { label: None, lines: body_lines(&["the next page before finishing."], 700.0) };
         let a = assemble(vec![p1, p2], meta());
         // One paragraph on two lines with no blank line between, so the second page's mark has its own line.
-        assert_eq!(a.extracted.markdown, "A sentence that has not ended and continues onto
+        assert_eq!(
+            a.extracted.markdown,
+            "A sentence that has not ended and continues onto
 the next page before finishing.
-");
+"
+        );
         assert_eq!(a.extracted.pages.iter().map(|p| p.line).collect::<Vec<_>>(), vec![1, 2]);
     }
 

@@ -1,6 +1,9 @@
 //! Shared test harness: a libraryd on ephemeral ports over a (possibly misbehaving) VaultApi, an rmcp client, a
-//! vault-client, raw HTTP, and a log capture.
+//! vault-client, raw HTTP, a log capture, and (in `real`) a temporary
+//! vault built through vault-core.
 #![allow(dead_code)]
+
+pub mod real;
 
 use libraryd::auth::Token;
 use libraryd::mock::MockVault;
