@@ -1,0 +1,378 @@
+// The vault's native gRPC interface. It mirrors vault-api one to one: every request and response type of the
+// nine tools, with the same field meanings, so libraryd returns identical results over MCP and gRPC.
+// Conversions both ways live in crates/vault-client/src/convert.rs and are round-trip tested.
+//
+// Compatibility: field numbers are never reused. Enums start with an UNSPECIFIED zero value that is always
+// rejected. Ids and addresses travel as their canonical strings (`3f9a1c07b2e4d55e-slug`,
+// `3f9a1c07b2e4d55e#L120-L148`) and are validated on both ends.
+syntax = "proto3";
+
+package vault.v1;
+
+service Vault {
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc FindDocs(FindDocsRequest) returns (FindDocsResponse);
+  rpc Workspace(WorkspaceRequest) returns (WorkspaceResponse);
+  rpc Grep(GrepRequest) returns (GrepResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc Outline(OutlineRequest) returns (OutlineResponse);
+  rpc Citations(CitationsRequest) returns (CitationsResponse);
+  rpc Define(DefineRequest) returns (DefineResponse);
+  rpc VaultInfo(VaultInfoRequest) returns (VaultInfo);
+
+  // Server streaming for large batches. The server splits the request into one item per chunk (one address,
+  // document, query, pattern or term), runs up to eight chunks at once and sends one response per chunk, in
+  // request order. Item indexes (`ItemError.index`, `GrepHit.pattern`, `Definition.term`) refer to the original
+  // request. Limits such as `max_tokens` and `max_hits` apply to each chunk, not to the whole stream. A failure
+  // of the whole call ends the stream with a gRPC error status.
+  rpc ReadStream(ReadRequest) returns (stream ReadResponse);
+  rpc OutlineStream(OutlineRequest) returns (stream OutlineResponse);
+  rpc GrepStream(GrepRequest) returns (stream GrepResponse);
+  rpc FindDocsStream(FindDocsRequest) returns (stream FindDocsResponse);
+  rpc SearchStream(SearchRequest) returns (stream SearchResponse);
+  rpc DefineStream(DefineRequest) returns (stream DefineResponse);
+}
+
+// ------------------------------------------------------------------------------------------------ shared
+
+enum DocKind {
+  DOC_KIND_UNSPECIFIED = 0;
+  DOC_KIND_PAPER = 1;
+  DOC_KIND_BOOK = 2;
+  DOC_KIND_CHAPTER = 3;
+  DOC_KIND_THESIS = 4;
+  DOC_KIND_REPORT = 5;
+  DOC_KIND_NOTES = 6;
+  DOC_KIND_CODE = 7;
+  DOC_KIND_REPOSITORY = 8;
+  DOC_KIND_OTHER = 9;
+}
+
+message Truncation {
+  string reason = 1;
+  string next = 2;
+}
+
+message ItemError {
+  uint32 index = 1;
+  string message = 2;
+}
+
+message Filters {
+  optional string category = 1;
+  optional string area = 2;
+  optional DocKind kind = 3;
+  optional string level = 4;
+  optional int32 year_from = 5;
+  optional int32 year_to = 6;
+  optional string language = 7;
+  optional string openalex_topic = 8;
+  optional string batch = 9;
+  optional string repo = 10;
+}
+
+message DocSummary {
+  string doc_id = 1;
+  optional string title = 2;
+  repeated string authors = 3;
+  optional int32 year = 4;
+  DocKind kind = 5;
+  optional string primary_category = 6;
+  optional string language = 7;
+  uint32 lines = 8;
+  optional float score = 9;
+  optional string superseded_by = 10;
+  optional string repo = 11;
+  optional string path = 12;
+}
+
+message Passage {
+  string address = 1;
+  optional string title = 2;
+  DocKind kind = 3;
+  optional string page = 4;
+  optional string section = 5;
+  string text = 6;
+  optional string superseded_by = 7;
+}
+
+// ------------------------------------------------------------------------------------------------- read
+
+message LinesExpand {
+  uint32 before = 1;
+  uint32 after = 2;
+}
+
+message SectionExpand {}
+
+message Expand {
+  oneof mode {
+    LinesExpand lines = 1;
+    SectionExpand section = 2;
+  }
+}
+
+message ReadRequest {
+  repeated string addresses = 1;
+  optional Expand expand = 2;
+  optional uint32 max_tokens = 3;
+}
+
+message ReadResponse {
+  repeated Passage passages = 1;
+  repeated ItemError errors = 2;
+  optional Truncation truncated = 3;
+}
+
+// ---------------------------------------------------------------------------------------------- outline
+
+message Heading {
+  uint32 level = 1;
+  string text = 2;
+  uint32 start = 3;
+  uint32 end = 4;
+  optional string page = 5;
+}
+
+message Symbol {
+  string kind = 1;
+  string name = 2;
+  uint32 start = 3;
+  uint32 end = 4;
+  optional string parent = 5;
+}
+
+message PageMark {
+  string label = 1;
+  uint32 index = 2;
+  uint32 line = 3;
+}
+
+message Outline {
+  DocSummary doc = 1;
+  repeated Heading headings = 2;
+  repeated PageMark pages = 3;
+  repeated Symbol symbols = 4;
+}
+
+message OutlineRequest {
+  repeated string doc_ids = 1;
+  optional uint32 max_depth = 2;
+  optional uint32 max_tokens = 3;
+}
+
+message OutlineResponse {
+  repeated Outline outlines = 1;
+  repeated ItemError errors = 2;
+  optional Truncation truncated = 3;
+}
+
+// ------------------------------------------------------------------------------------------------- grep
+
+message DocsScope {
+  repeated string doc_ids = 1;
+}
+
+message WorkspaceScope {
+  optional string workspace = 1;
+}
+
+message CategoryScope {
+  string category = 1;
+  optional string area = 2;
+}
+
+message VaultScope {}
+
+message Scope {
+  oneof kind {
+    DocsScope docs = 1;
+    WorkspaceScope workspace = 2;
+    CategoryScope category = 3;
+    VaultScope vault = 4;
+  }
+}
+
+message GrepRequest {
+  repeated string patterns = 1;
+  Scope scope = 2;
+  uint32 context_lines = 3;
+  optional uint32 max_hits = 4;
+  bool case_insensitive = 5;
+  optional uint32 max_tokens = 6;
+}
+
+message GrepHit {
+  uint32 pattern = 1;
+  string address = 2;
+  optional string title = 3;
+  optional string page = 4;
+  string line = 5;
+  repeated string before = 6;
+  repeated string after = 7;
+}
+
+message GrepResponse {
+  repeated GrepHit hits = 1;
+  uint64 candidates = 2;
+  uint64 in_scope = 3;
+  repeated ItemError errors = 4;
+  optional Truncation truncated = 5;
+}
+
+// ------------------------------------------------------------------------------------ find_docs, search
+
+message FindDocsRequest {
+  repeated string queries = 1;
+  Filters filters = 2;
+  optional uint32 k = 3;
+  optional uint32 max_tokens = 4;
+}
+
+message DocList {
+  repeated DocSummary docs = 1;
+}
+
+message FindDocsResponse {
+  // One ranked list per query, in request order.
+  repeated DocList results = 1;
+  repeated ItemError errors = 2;
+  optional Truncation truncated = 3;
+}
+
+message SearchRequest {
+  repeated string queries = 1;
+  Filters filters = 2;
+  optional uint32 k = 3;
+  optional uint32 max_tokens = 4;
+}
+
+message SearchHit {
+  Passage passage = 1;
+  float score = 2;
+  DocSummary doc = 3;
+}
+
+message SearchHitList {
+  repeated SearchHit hits = 1;
+}
+
+message SearchResponse {
+  repeated SearchHitList results = 1;
+  repeated string legs = 2;
+  repeated string degraded = 3;
+  repeated ItemError errors = 4;
+  optional Truncation truncated = 5;
+}
+
+// ------------------------------------------------------------------------- workspace, citations, define
+
+enum WorkspaceAction {
+  WORKSPACE_ACTION_UNSPECIFIED = 0;
+  WORKSPACE_ACTION_ADD = 1;
+  WORKSPACE_ACTION_REMOVE = 2;
+  WORKSPACE_ACTION_LIST = 3;
+  WORKSPACE_ACTION_CLEAR = 4;
+}
+
+message WorkspaceRequest {
+  WorkspaceAction action = 1;
+  repeated string doc_ids = 2;
+  optional string workspace = 3;
+}
+
+message WorkspaceResponse {
+  string workspace = 1;
+  repeated DocSummary docs = 2;
+  repeated ItemError errors = 3;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_CITES = 1;
+  DIRECTION_CITED_BY = 2;
+  DIRECTION_BOTH = 3;
+}
+
+message CitationsRequest {
+  repeated string doc_ids = 1;
+  Direction direction = 2;
+  optional uint32 k = 3;
+  optional uint32 max_tokens = 4;
+}
+
+message CitationEdge {
+  string from = 1;
+  optional DocSummary to = 2;
+  string as_written = 3;
+  optional string at = 4;
+  bool external = 5;
+  optional string external_id = 6;
+}
+
+message CitationsResponse {
+  repeated CitationEdge edges = 1;
+  repeated ItemError errors = 2;
+  optional Truncation truncated = 3;
+}
+
+message DefineRequest {
+  repeated string terms = 1;
+  Filters filters = 2;
+  optional uint32 k = 3;
+  optional uint32 max_tokens = 4;
+}
+
+message Definition {
+  uint32 term = 1;
+  string source = 2;
+  Passage passage = 3;
+}
+
+message DefineResponse {
+  repeated Definition definitions = 1;
+  repeated ItemError errors = 2;
+  optional Truncation truncated = 3;
+}
+
+// -------------------------------------------------------------------------------------------- vault_info
+
+message VaultInfoRequest {}
+
+message CategoryCoverage {
+  string category = 1;
+  string name = 2;
+  uint64 papers = 3;
+  uint64 books = 4;
+  uint64 code_files = 5;
+  uint64 target_papers = 6;
+  uint64 target_books = 7;
+}
+
+message TierDisk {
+  string tier = 1;
+  uint64 used_bytes = 2;
+  uint64 free_bytes = 3;
+  uint64 total_bytes = 4;
+  bool warning = 5;
+}
+
+message KindCount {
+  DocKind kind = 1;
+  uint64 count = 2;
+}
+
+message VaultInfo {
+  string vault_id = 1;
+  uint32 format_version = 2;
+  string stage = 3;
+  uint64 documents = 4;
+  repeated KindCount by_kind = 5;
+  uint64 quarantined = 6;
+  uint64 repositories = 7;
+  repeated CategoryCoverage coverage = 8;
+  string taxonomy_version = 9;
+  string index_version = 10;
+  repeated string tools_available = 11;
+  repeated TierDisk disk = 12;
+}

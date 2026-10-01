@@ -12,6 +12,7 @@ pub const DEFAULT_MAX_TOKENS: u32 = 8_000;
 pub const HARD_MAX_TOKENS: u32 = 20_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DocKind {
     Paper,
@@ -26,6 +27,7 @@ pub enum DocKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Truncation {
     /// Why the response stopped early, for example "token budget 8000 reached after 12 of 30 hits".
     pub reason: String,
@@ -34,6 +36,7 @@ pub struct Truncation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ItemError {
     /// Index of the failing item in the request's array.
     pub index: u32,
@@ -42,6 +45,7 @@ pub struct ItemError {
 
 /// Filters shared by search, find_docs, grep (category scope) and define. Every field is optional.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Filters {
     pub category: Option<String>,
@@ -59,6 +63,7 @@ pub struct Filters {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DocSummary {
     pub doc_id: DocId,
     pub title: Option<String>,
@@ -79,6 +84,7 @@ pub struct DocSummary {
 
 /// Exact text from the canonical store.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Passage {
     pub address: Address,
     pub title: Option<String>,
@@ -94,6 +100,7 @@ pub struct Passage {
 // ---------------------------------------------------------------------------------------------------- read
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "mode")]
 pub enum Expand {
     /// Add lines before and after each address.
@@ -103,6 +110,7 @@ pub enum Expand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReadRequest {
     pub addresses: Vec<String>,
     #[serde(default)]
@@ -112,6 +120,7 @@ pub struct ReadRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReadResponse {
     pub passages: Vec<Passage>,
     pub errors: Vec<ItemError>,
@@ -121,6 +130,7 @@ pub struct ReadResponse {
 // ------------------------------------------------------------------------------------------------- outline
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Heading {
     pub level: u8,
     pub text: String,
@@ -132,6 +142,7 @@ pub struct Heading {
 
 /// A code symbol (function, class, method, module...) with its line span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Symbol {
     pub kind: String,
     pub name: String,
@@ -141,6 +152,7 @@ pub struct Symbol {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PageMark {
     pub label: String,
     pub index: u32,
@@ -148,6 +160,7 @@ pub struct PageMark {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Outline {
     pub doc: DocSummary,
     pub headings: Vec<Heading>,
@@ -158,6 +171,7 @@ pub struct Outline {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OutlineRequest {
     pub doc_ids: Vec<String>,
     #[serde(default)]
@@ -167,6 +181,7 @@ pub struct OutlineRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OutlineResponse {
     pub outlines: Vec<Outline>,
     pub errors: Vec<ItemError>,
@@ -176,6 +191,7 @@ pub struct OutlineResponse {
 // ---------------------------------------------------------------------------------------------------- grep
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Scope {
     Docs { doc_ids: Vec<String> },
@@ -185,6 +201,7 @@ pub enum Scope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GrepRequest {
     /// Regular expressions (Rust `regex` syntax). Plain text is a valid pattern.
     pub patterns: Vec<String>,
@@ -200,6 +217,7 @@ pub struct GrepRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GrepHit {
     pub pattern: u32,
     pub address: Address,
@@ -211,6 +229,7 @@ pub struct GrepHit {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GrepResponse {
     pub hits: Vec<GrepHit>,
     /// Documents (or blocks) the trigram prefilter passed to regex verification, and documents in scope.
@@ -223,6 +242,7 @@ pub struct GrepResponse {
 // ----------------------------------------------------------------------------------------- find_docs, search
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FindDocsRequest {
     pub queries: Vec<String>,
     #[serde(default)]
@@ -234,6 +254,7 @@ pub struct FindDocsRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FindDocsResponse {
     /// One ranked list per query, in request order.
     pub results: Vec<Vec<DocSummary>>,
@@ -242,6 +263,7 @@ pub struct FindDocsResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SearchRequest {
     pub queries: Vec<String>,
     #[serde(default)]
@@ -253,6 +275,7 @@ pub struct SearchRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SearchHit {
     pub passage: Passage,
     pub score: f32,
@@ -260,6 +283,7 @@ pub struct SearchHit {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SearchResponse {
     pub results: Vec<Vec<SearchHit>>,
     /// Retrieval legs that ran (for example ["bm25", "dense", "rerank"]) and anything degraded.
@@ -272,6 +296,7 @@ pub struct SearchResponse {
 // ------------------------------------------------------------------------------- workspace, citations, define
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceAction {
     Add,
@@ -281,6 +306,7 @@ pub enum WorkspaceAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceRequest {
     pub action: WorkspaceAction,
     #[serde(default)]
@@ -291,6 +317,7 @@ pub struct WorkspaceRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceResponse {
     pub workspace: String,
     pub docs: Vec<DocSummary>,
@@ -298,6 +325,7 @@ pub struct WorkspaceResponse {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     /// What these documents cite (papers: reference lists; code: what it imports or calls).
@@ -308,6 +336,7 @@ pub enum Direction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CitationsRequest {
     pub doc_ids: Vec<String>,
     pub direction: Direction,
@@ -318,6 +347,7 @@ pub struct CitationsRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CitationEdge {
     pub from: DocId,
     pub to: Option<DocSummary>,
@@ -330,6 +360,7 @@ pub struct CitationEdge {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CitationsResponse {
     pub edges: Vec<CitationEdge>,
     pub errors: Vec<ItemError>,
@@ -337,6 +368,7 @@ pub struct CitationsResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DefineRequest {
     /// Terms, or for code, symbol names.
     pub terms: Vec<String>,
@@ -349,6 +381,7 @@ pub struct DefineRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Definition {
     pub term: u32,
     /// "index_entry", "definition_passage", "glossary" or "symbol_definition".
@@ -357,6 +390,7 @@ pub struct Definition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DefineResponse {
     pub definitions: Vec<Definition>,
     pub errors: Vec<ItemError>,
@@ -366,6 +400,7 @@ pub struct DefineResponse {
 // --------------------------------------------------------------------------------------------- vault_info
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CategoryCoverage {
     pub category: String,
     pub name: String,
@@ -377,6 +412,7 @@ pub struct CategoryCoverage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TierDisk {
     pub tier: String,
     pub used_bytes: u64,
@@ -387,6 +423,7 @@ pub struct TierDisk {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct VaultInfo {
     pub vault_id: String,
     pub format_version: u32,

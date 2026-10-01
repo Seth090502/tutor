@@ -175,6 +175,37 @@ impl From<Address> for String {
     }
 }
 
+// Both serialise as plain strings (`#[serde(into = "String")]`), so the schema is a string with the grammar.
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for DocId {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DocId".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "Document id: 16 lowercase hex characters, optionally followed by -slug.",
+            "pattern": "^[0-9a-f]{16}(-[a-z0-9]+(-[a-z0-9]+)*)?$"
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Address {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Address".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "Line address: <doc_id>#L<start> or <doc_id>#L<start>-L<end> (1-based, inclusive).",
+            "pattern": "^[0-9a-f]{16}(-[a-z0-9]+(-[a-z0-9]+)*)?#L[1-9][0-9]*(-L[1-9][0-9]*)?$"
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
