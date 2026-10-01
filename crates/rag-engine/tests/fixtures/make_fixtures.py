@@ -21,11 +21,11 @@ import shutil
 import zipfile
 
 from PIL import Image
+import reportlab
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-import reportlab
 from reportlab.pdfgen import canvas
 
 HERE = os.path.dirname(os.path.abspath(__file__))
