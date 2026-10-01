@@ -47,10 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tools="$RUNNER_TEMP/tools"; mkdir -p "$tools/pdfium"
+          tools="$(cygpath -u "$RUNNER_TEMP")/tools"; mkdir -p "$tools/pdfium"
           curl -sSfL -o "$tools/pdfium.tgz" https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8076/pdfium-win-x64.tgz
           echo "808d36da9bc5a3104315fb307c80998121f565ee53953633bf33e80d7429e5ac  $tools/pdfium.tgz" | sha256sum -c -
-          tar --force-local -xzf "$tools/pdfium.tgz" -C "$tools/pdfium"
+          tar -xzf "$tools/pdfium.tgz" -C "$tools/pdfium"
           echo "VAULT_PDFIUM_DLL=$(cygpath -w "$tools/pdfium/bin/pdfium.dll")" >> "$GITHUB_ENV"
       - name: rustfmt
         run: cargo fmt --all --check
@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tools="$RUNNER_TEMP/tools"; mkdir -p "$tools/gitleaks"
+          tools="$(cygpath -u "$RUNNER_TEMP")/tools"; mkdir -p "$tools/gitleaks"
           curl -sSfL -o "$tools/gitleaks.zip" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip
           echo "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e  $tools/gitleaks.zip" | sha256sum -c -
           unzip -q "$tools/gitleaks.zip" -d "$tools/gitleaks"
