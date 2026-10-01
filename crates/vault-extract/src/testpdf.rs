@@ -15,9 +15,10 @@ pub(crate) fn have_pdfium() -> bool {
     ONCE.call_once(|| {
         let path = std::env::var_os(LIBRARY_ENV).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(DEV_DLL));
         if path.exists()
-            && let Err(e) = init(&path) {
-                eprintln!("PDFium did not load: {e}");
-            }
+            && let Err(e) = init(&path)
+        {
+            eprintln!("PDFium did not load: {e}");
+        }
     });
     is_bound()
 }
@@ -101,7 +102,10 @@ pub(crate) fn build_pdf(pages: &[PageSpec], page_labels: Option<&str>, info_titl
     }
     let info_id = objs.len() + 1;
     if let Some(t) = info_title {
-        objs.push(format!("<< /Title ({}) /Author (Ann Lee; Bo Chen) /CreationDate (D:20190402101500Z) >>", escape(t)).into_bytes());
+        objs.push(
+            format!("<< /Title ({}) /Author (Ann Lee; Bo Chen) /CreationDate (D:20190402101500Z) >>", escape(t))
+                .into_bytes(),
+        );
     }
     let mut out = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();
@@ -117,7 +121,9 @@ pub(crate) fn build_pdf(pages: &[PageSpec], page_labels: Option<&str>, info_titl
         out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
     }
     let info = if info_title.is_some() { format!(" /Info {info_id} 0 R") } else { String::new() };
-    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R{info} >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    out.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R{info} >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes(),
+    );
     out
 }
 
@@ -128,4 +134,3 @@ pub(crate) fn convert_pdf(bytes: &[u8]) -> PdfConversion {
 pub(crate) fn body(lines: &[&str], y0: f32) -> Vec<Op> {
     lines.iter().enumerate().map(|(i, t)| op("F1", 10.0, 72.0, y0 - i as f32 * 12.0, t)).collect()
 }
-

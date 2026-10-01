@@ -20,7 +20,9 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<Extracted> {
         let root = doc.root_element();
         let tei = match name(root) {
             "TEI" | "tei" => root,
-            "teiCorpus" => child(root, "TEI").ok_or_else(|| ExtractError::convert("tei", "teiCorpus holds no <TEI>"))?,
+            "teiCorpus" => {
+                child(root, "TEI").ok_or_else(|| ExtractError::convert("tei", "teiCorpus holds no <TEI>"))?
+            }
             other => return Err(ExtractError::convert("tei", format!("unexpected root element <{other}>"))),
         };
         let mut c = Tei::default();
@@ -143,16 +145,24 @@ impl Tei {
                 .filter(|d| is(*d, "date"))
                 .find_map(|d| attr(d, "when").and_then(ids::year_in).or_else(|| ids::year_in(&text_of(d))))
         };
-        self.meta.year = date_in(monogr).or_else(|| date_in(file_desc.and_then(|f| child(f, "publicationStmt")))).or_else(|| date_in(bibl));
+        self.meta.year = date_in(monogr)
+            .or_else(|| date_in(file_desc.and_then(|f| child(f, "publicationStmt"))))
+            .or_else(|| date_in(bibl));
         self.meta.journal = monogr
-            .and_then(|m| children_named(m, "title").find(|t| attr(*t, "level") == Some("j")).or_else(|| child(m, "title")))
+            .and_then(|m| {
+                children_named(m, "title").find(|t| attr(*t, "level") == Some("j")).or_else(|| child(m, "title"))
+            })
             .map(text_of)
             .filter(|t| !t.is_empty() && Some(t) != self.meta.title.as_ref());
         let profile = child(h, "profileDesc");
-        if let Some(l) = profile.and_then(|p| child(p, "langUsage")).and_then(|l| child(l, "language")).and_then(|l| attr(l, "ident"))
-            && self.meta.language.is_none() {
-                self.meta.language = Some(l.to_string());
-            }
+        if let Some(l) = profile
+            .and_then(|p| child(p, "langUsage"))
+            .and_then(|l| child(l, "language"))
+            .and_then(|l| attr(l, "ident"))
+            && self.meta.language.is_none()
+        {
+            self.meta.language = Some(l.to_string());
+        }
         if let Some(tc) = profile.and_then(|p| child(p, "textClass")) {
             for kw in tc.descendants().filter(|d| is(*d, "term")) {
                 let t = text_of(kw);
@@ -162,7 +172,12 @@ impl Tei {
             }
         }
         if let Some(abs) = profile.and_then(|p| child(p, "abstract")) {
-            let t: Vec<String> = abs.descendants().filter(|d| is(*d, "p")).map(|p| self.inline_text(p)).filter(|t| !t.is_empty()).collect();
+            let t: Vec<String> = abs
+                .descendants()
+                .filter(|d| is(*d, "p"))
+                .map(|p| self.inline_text(p))
+                .filter(|t| !t.is_empty())
+                .collect();
             let joined = if t.is_empty() { text_of(abs) } else { t.join(" ") };
             if !joined.is_empty() {
                 self.meta.abstract_text = Some(joined);
@@ -174,13 +189,17 @@ impl Tei {
         let v = text_of(id);
         match attr(id, "type").unwrap_or("").to_ascii_lowercase().as_str() {
             "doi" => self.meta.doi = self.meta.doi.take().or_else(|| ids::find_doi(&v)),
-            "arxiv" => self.meta.arxiv_id = self.meta.arxiv_id.take().or_else(|| ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v))),
+            "arxiv" => {
+                self.meta.arxiv_id =
+                    self.meta.arxiv_id.take().or_else(|| ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v)))
+            }
             "pmc" | "pmcid" => self.meta.pmcid = self.meta.pmcid.take().or_else(|| ids::normalize_pmcid(&v)),
             "isbn" | "isbn-10" | "isbn-13" | "isbn10" | "isbn13" => {
                 if let Some(i) = ids::normalize_isbn(&v)
-                    && !self.meta.isbn.contains(&i) {
-                        self.meta.isbn.push(i);
-                    }
+                    && !self.meta.isbn.contains(&i)
+                {
+                    self.meta.isbn.push(i);
+                }
             }
             _ => {}
         }
@@ -221,8 +240,18 @@ impl Tei {
                 let t = self.inline_text(n);
                 self.b.heading((depth + 1) as u8, &t);
             }
-            "p" | "ab" | "trailer" | "byline" | "dateline" | "salute" | "signed" | "docDate" | "docAuthor" | "docEdition" | "docImprint" | "epigraph" | "argument" | "opener" | "closer" | "postscript" | "note" | "bibl" => {
-                if matches!(name(n), "epigraph" | "argument" | "opener" | "closer" | "postscript") && n.children().any(|c| c.is_element() && matches!(name(c), "p" | "quote" | "lg" | "l" | "bibl" | "cit" | "signed" | "dateline" | "salute")) {
+            "p" | "ab" | "trailer" | "byline" | "dateline" | "salute" | "signed" | "docDate" | "docAuthor"
+            | "docEdition" | "docImprint" | "epigraph" | "argument" | "opener" | "closer" | "postscript" | "note"
+            | "bibl" => {
+                if matches!(name(n), "epigraph" | "argument" | "opener" | "closer" | "postscript")
+                    && n.children().any(|c| {
+                        c.is_element()
+                            && matches!(
+                                name(c),
+                                "p" | "quote" | "lg" | "l" | "bibl" | "cit" | "signed" | "dateline" | "salute"
+                            )
+                    })
+                {
                     self.container(n, depth);
                 } else if name(n) == "note" {
                     let t = self.inline_text(n);
@@ -249,7 +278,10 @@ impl Tei {
                         self.b.quote(&t);
                     }
                 }
-                if !n.children().any(|c| c.is_element() && matches!(name(c), "p" | "l" | "lg" | "quote" | "bibl" | "ab")) {
+                if !n
+                    .children()
+                    .any(|c| c.is_element() && matches!(name(c), "p" | "l" | "lg" | "quote" | "bibl" | "ab"))
+                {
                     let t = self.inline_text(n);
                     self.b.quote(&t);
                 }
@@ -299,7 +331,10 @@ impl Tei {
         if let Some(h) = head {
             heading_text = self.inline_text(h);
             // GROBID writes flat divs whose number carries the depth: "2.1" is a level-3 heading.
-            if let Some(n) = attr(h, "n").map(str::trim).filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '.')) {
+            if let Some(n) = attr(h, "n")
+                .map(str::trim)
+                .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '.'))
+            {
                 let parts = n.trim_end_matches('.').split('.').filter(|p| !p.is_empty()).count();
                 if parts > 0 {
                     level = parts + 1;
@@ -418,13 +453,17 @@ impl Tei {
                 out.push(' ');
             }
             "lg" => {
-                let t = n.children().filter(|c| is(*c, "l")).map(|l| self.inline_text(l)).collect::<Vec<_>>().join(" / ");
+                let t =
+                    n.children().filter(|c| is(*c, "l")).map(|l| self.inline_text(l)).collect::<Vec<_>>().join(" / ");
                 out.push_str(&t);
             }
             "del" | "surplus" => {}
             "choice" => {
                 // Prefer the corrected or regularised reading.
-                let pick = ["corr", "reg", "expan", "ex"].iter().find_map(|t| child(n, t)).or_else(|| n.children().find(Node::is_element));
+                let pick = ["corr", "reg", "expan", "ex"]
+                    .iter()
+                    .find_map(|t| child(n, t))
+                    .or_else(|| n.children().find(Node::is_element));
                 if let Some(p) = pick {
                     self.inline(p, out);
                 }
@@ -450,7 +489,8 @@ impl Tei {
             }
             return;
         }
-        let lines: Vec<String> = lg.children().filter(|c| is(*c, "l")).map(|l| self.inline_text(l)).filter(|t| !t.is_empty()).collect();
+        let lines: Vec<String> =
+            lg.children().filter(|c| is(*c, "l")).map(|l| self.inline_text(l)).filter(|t| !t.is_empty()).collect();
         self.b.paragraph(&lines.join(" / "));
     }
 
@@ -477,7 +517,8 @@ impl Tei {
     }
 
     fn list(&mut self, l: Node, depth: usize) {
-        let ordered = matches!(attr(l, "type"), Some("ordered")) || attr(l, "rend").is_some_and(|r| r.contains("numbered"));
+        let ordered =
+            matches!(attr(l, "type"), Some("ordered")) || attr(l, "rend").is_some_and(|r| r.contains("numbered"));
         if depth == 0 {
             self.b.break_list();
         }
@@ -486,7 +527,10 @@ impl Tei {
             self.b.paragraph(&t);
         }
         let mut n = 0;
-        for item in l.children().filter(|c| is(*c, "item") || is(*c, "witness") || is(*c, "person") || is(*c, "place") || is(*c, "event")) {
+        for item in l
+            .children()
+            .filter(|c| is(*c, "item") || is(*c, "witness") || is(*c, "person") || is(*c, "place") || is(*c, "event"))
+        {
             n += 1;
             let label = child(item, "label").map(|x| self.inline_text(x)).unwrap_or_default();
             let mut text = String::new();
@@ -621,7 +665,11 @@ impl Tei {
 
         let title_of = |scope: Option<Node>| -> Option<String> {
             let s = scope?;
-            children_named(s, "title").find(|t| attr(*t, "type") == Some("main") || attr(*t, "level") == Some("a")).or_else(|| child(s, "title")).map(text_of).filter(|t| !t.is_empty())
+            children_named(s, "title")
+                .find(|t| attr(*t, "type") == Some("main") || attr(*t, "level") == Some("a"))
+                .or_else(|| child(s, "title"))
+                .map(text_of)
+                .filter(|t| !t.is_empty())
         };
         let art_title = title_of(analytic);
         let source = monogr.and_then(|m| child(m, "title")).map(text_of).filter(|t| !t.is_empty());
@@ -633,7 +681,9 @@ impl Tei {
             .flat_map(|s| children_named(s, "author").filter_map(|a| person_name_short(a)).collect::<Vec<_>>())
             .collect();
         let imprint = monogr.and_then(|m| child(m, "imprint"));
-        let year = imprint.and_then(|i| descendant(i, "date")).and_then(|d| attr(d, "when").and_then(ids::year_in).or_else(|| ids::year_in(&text_of(d))));
+        let year = imprint
+            .and_then(|i| descendant(i, "date"))
+            .and_then(|d| attr(d, "when").and_then(ids::year_in).or_else(|| ids::year_in(&text_of(d))));
         let scope = |unit: &str| -> Option<String> {
             imprint.and_then(|i| children_named(i, "biblScope").find(|b| attr(*b, "unit") == Some(unit))).map(|b| {
                 let from = attr(b, "from");
@@ -682,7 +732,12 @@ impl Tei {
                 s
             }
         };
-        let mut r = ids::reference_from_raw(&raw, attr(bs, "id").map(|i| i.trim_start_matches('b').to_string()).filter(|i| i.chars().all(|c| c.is_ascii_digit())));
+        let mut r = ids::reference_from_raw(
+            &raw,
+            attr(bs, "id")
+                .map(|i| i.trim_start_matches('b').to_string())
+                .filter(|i| i.chars().all(|c| c.is_ascii_digit())),
+        );
         for id in bs.descendants().filter(|d| is(*d, "idno")) {
             let v = text_of(id);
             match attr(id, "type").unwrap_or("").to_ascii_lowercase().as_str() {
@@ -709,7 +764,23 @@ impl Tei {
 }
 
 fn is_block(n: &str) -> bool {
-    matches!(n, "div" | "p" | "list" | "lg" | "l" | "table" | "figure" | "quote" | "sp" | "head" | "listBibl" | "formula" | "ab" | "titlePage")
+    matches!(
+        n,
+        "div"
+            | "p"
+            | "list"
+            | "lg"
+            | "l"
+            | "table"
+            | "figure"
+            | "quote"
+            | "sp"
+            | "head"
+            | "listBibl"
+            | "formula"
+            | "ab"
+            | "titlePage"
+    )
 }
 
 /// "Given Middle Surname" from a `persName` (or a plain `name`).
@@ -835,7 +906,10 @@ mod tests {
         assert!(md.contains("E = mc 2 (1)"), "{md}");
         assert!(!md.contains("$$"), "{md}");
         assert!(md.contains("Figure 1 1 The experimental layout."), "{md}");
-        assert!(md.contains("Table 1 Results by group.\n\n| Group | Mean |\n| --- | --- |\n| A | 1.5 |\n| B | 2.5 |"), "{md}");
+        assert!(
+            md.contains("Table 1 Results by group.\n\n| Group | Mean |\n| --- | --- |\n| A | 1.5 |\n| B | 2.5 |"),
+            "{md}"
+        );
         assert_eq!(r.blocks.iter().filter(|b| b.kind == BlockKind::Table).count(), 1);
     }
 

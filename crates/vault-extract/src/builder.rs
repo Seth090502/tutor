@@ -146,12 +146,8 @@ impl MdBuilder {
 
     /// Display maths: `$$`, the LaTeX, `$$`.
     pub fn display_math(&mut self, latex: &str) {
-        let body: Vec<String> = latex
-            .replace("$$", "")
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect();
+        let body: Vec<String> =
+            latex.replace("$$", "").lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
         if body.is_empty() {
             return;
         }
@@ -242,10 +238,8 @@ pub(crate) fn fenced(lang: &str, code: &str) -> Vec<String> {
         return Vec::new();
     }
     let fence = "`".repeat((longest_run(code, '`') + 1).max(3));
-    let lang: String = lang
-        .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, '+' | '-' | '_' | '#' | '.'))
-        .collect();
+    let lang: String =
+        lang.chars().filter(|c| c.is_alphanumeric() || matches!(c, '+' | '-' | '_' | '#' | '.')).collect();
     let mut lines = vec![format!("{fence}{lang}")];
     lines.extend(code.lines().map(|l| l.trim_end_matches('\r').to_string()));
     lines.push(fence);
@@ -369,11 +363,14 @@ mod tests {
         b.paragraph_cont("second half.");
         b.paragraph("Next paragraph.");
         let f = b.finish();
-        assert_eq!(f.markdown, "first half of a sentence
+        assert_eq!(
+            f.markdown,
+            "first half of a sentence
 second half.
 
 Next paragraph.
-");
+"
+        );
         assert_eq!(f.pages.iter().map(|p| p.line).collect::<Vec<_>>(), vec![1, 2]);
     }
 

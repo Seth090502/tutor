@@ -123,7 +123,8 @@ mod tests {
 
     #[test]
     fn colspan_in_header_is_expanded_into_a_pipe_table() {
-        let g = Grid { rows: vec![vec![Cell::new("Group", 2, 1), c("N")], vec![c("a"), c("b"), c("3")]], header_rows: 1 };
+        let g =
+            Grid { rows: vec![vec![Cell::new("Group", 2, 1), c("N")], vec![c("a"), c("b"), c("3")]], header_rows: 1 };
         let mut b = MdBuilder::new();
         g.emit(&mut b);
         assert_eq!(b.finish().markdown, "| Group |  | N |\n| --- | --- | --- |\n| a | b | 3 |\n");
@@ -140,7 +141,13 @@ mod tests {
         let mut b = MdBuilder::new();
         g.emit(&mut b);
         let f = b.finish();
-        assert!(f.markdown.starts_with("```html\n<table>\n<tr><th>h1</th><th>h2</th></tr>\n<tr><td rowspan=\"2\">x</td><td>1</td></tr>"), "{}", f.markdown);
+        assert!(
+            f.markdown.starts_with(
+                "```html\n<table>\n<tr><th>h1</th><th>h2</th></tr>\n<tr><td rowspan=\"2\">x</td><td>1</td></tr>"
+            ),
+            "{}",
+            f.markdown
+        );
         assert_eq!(f.blocks.len(), 1);
     }
 

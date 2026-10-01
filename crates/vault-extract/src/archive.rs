@@ -31,7 +31,13 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { max_total_bytes: 500 * 1024 * 1024, max_ratio: 100, ratio_floor_bytes: 1024 * 1024, max_entries: 10_000, max_depth: 4 }
+        Self {
+            max_total_bytes: 500 * 1024 * 1024,
+            max_ratio: 100,
+            ratio_floor_bytes: 1024 * 1024,
+            max_entries: 10_000,
+            max_depth: 4,
+        }
     }
 }
 
@@ -185,7 +191,9 @@ fn unpack_zip(bytes: &[u8], limits: &Limits, budget: &mut Budget) -> Result<Unpa
             continue;
         }
         let remaining = allowance(archive_len, limits, budget).saturating_sub(used);
-        let Some(content) = read_capped(&mut file, remaining).map_err(|e| ExtractError::corrupt("zip", format!("{path}: {e}")))? else {
+        let Some(content) =
+            read_capped(&mut file, remaining).map_err(|e| ExtractError::corrupt("zip", format!("{path}: {e}")))?
+        else {
             return Err(limit_error(limits, archive_len, budget));
         };
         used += content.len() as u64;
@@ -207,7 +215,11 @@ fn unpack_gzip(bytes: &[u8], limits: &Limits, budget: &mut Budget) -> Result<Unp
     if head.len() >= 512 && is_tar(&head) {
         // Bound everything the tar reader pulls through the decoder, including data of entries it skips.
         let tripped = Rc::new(Cell::new(false));
-        let capped = CapReader { inner: Cursor::new(head).chain(dec), left: allowed.saturating_add(1), tripped: Rc::clone(&tripped) };
+        let capped = CapReader {
+            inner: Cursor::new(head).chain(dec),
+            left: allowed.saturating_add(1),
+            tripped: Rc::clone(&tripped),
+        };
         return match unpack_tar(capped, archive_len, limits, budget) {
             Err(_) if tripped.get() => Err(limit_error(limits, archive_len, budget)),
             other => other,
@@ -224,7 +236,11 @@ fn unpack_gzip(bytes: &[u8], limits: &Limits, budget: &mut Budget) -> Result<Unp
     let path = name.and_then(|n| sanitize_path(&n)).unwrap_or_else(|| "content".to_string());
     let format = detect(&content, Some(&path)).format;
     // Gzipped LaTeX is reported by its member name so the caller sees a .tex file.
-    let path = if format == Format::Latex && !path.to_ascii_lowercase().ends_with(".tex") { format!("{path}.tex") } else { path };
+    let path = if format == Format::Latex && !path.to_ascii_lowercase().ends_with(".tex") {
+        format!("{path}.tex")
+    } else {
+        path
+    };
     Ok(Unpacked { members: vec![Member { path, bytes: content, format }], skipped: Vec::new() })
 }
 
@@ -278,8 +294,15 @@ fn unpack_tar<R: Read>(reader: R, archive_len: u64, limits: &Limits, budget: &mu
         }
         if !kind.is_file() {
             // Symlinks, hard links, devices, FIFOs and extension headers are never followed or unpacked.
-            if !(kind.is_pax_global_extensions() || kind.is_pax_local_extensions() || kind.is_gnu_longname() || kind.is_gnu_longlink()) {
-                out.skipped.push(Skipped { path: raw_path, reason: if kind.is_symlink() || kind.is_hard_link() { "link" } else { "special" } });
+            if !(kind.is_pax_global_extensions()
+                || kind.is_pax_local_extensions()
+                || kind.is_gnu_longname()
+                || kind.is_gnu_longlink())
+            {
+                out.skipped.push(Skipped {
+                    path: raw_path,
+                    reason: if kind.is_symlink() || kind.is_hard_link() { "link" } else { "special" },
+                });
             }
             continue;
         }
@@ -287,7 +310,9 @@ fn unpack_tar<R: Read>(reader: R, archive_len: u64, limits: &Limits, budget: &mu
             return Err(ExtractError::Limits(format!("path escapes the archive: {raw_path:?}")));
         };
         let remaining = allowed_total.saturating_sub(used);
-        let Some(content) = read_capped(&mut entry, remaining).map_err(|e| ExtractError::corrupt("tar", format!("{path}: {e}")))? else {
+        let Some(content) =
+            read_capped(&mut entry, remaining).map_err(|e| ExtractError::corrupt("tar", format!("{path}: {e}")))?
+        else {
             return Err(limit_error(limits, archive_len, budget));
         };
         used += content.len() as u64;
@@ -337,14 +362,18 @@ impl<'a> ZipDoc<'a> {
         let format = self.format;
         let mut f = match self.zip.by_name(&real) {
             Ok(f) => f,
-            Err(zip::result::ZipError::InvalidPassword) => return Err(ExtractError::Protected(format!("{format} entry {real} is encrypted"))),
+            Err(zip::result::ZipError::InvalidPassword) => {
+                return Err(ExtractError::Protected(format!("{format} entry {real} is encrypted")));
+            }
             Err(zip::result::ZipError::UnsupportedArchive(m)) if m == zip::result::ZipError::PASSWORD_REQUIRED => {
                 return Err(ExtractError::Protected(format!("{format} entry {real} is encrypted")));
             }
             Err(e) => return Err(ExtractError::corrupt(format, format!("{real}: {e}"))),
         };
         let remaining = self.allowance.saturating_sub(self.used);
-        let Some(content) = read_capped(&mut f, remaining).map_err(|e| ExtractError::corrupt(format, format!("{real}: {e}")))? else {
+        let Some(content) =
+            read_capped(&mut f, remaining).map_err(|e| ExtractError::corrupt(format, format!("{real}: {e}")))?
+        else {
             return Err(limit_error(&self.limits, self.archive_len, &Budget::default()));
         };
         self.used += content.len() as u64;
@@ -391,12 +420,25 @@ mod tests {
     }
 
     fn small() -> Limits {
-        Limits { max_total_bytes: 8 * 1024 * 1024, max_ratio: 100, ratio_floor_bytes: 64 * 1024, max_entries: 50, max_depth: 3 }
+        Limits {
+            max_total_bytes: 8 * 1024 * 1024,
+            max_ratio: 100,
+            ratio_floor_bytes: 64 * 1024,
+            max_entries: 50,
+            max_depth: 3,
+        }
     }
 
     #[test]
     fn zip_members_are_returned_with_detected_formats() {
-        let z = zip_with(&[("a/readme.md", b"# Title\n\nSome text with a [link](http://a.b).\n"), ("b.txt", b"plain words here\n"), ("dir/", b"")], true);
+        let z = zip_with(
+            &[
+                ("a/readme.md", b"# Title\n\nSome text with a [link](http://a.b).\n"),
+                ("b.txt", b"plain words here\n"),
+                ("dir/", b""),
+            ],
+            true,
+        );
         let u = unpack(&z, Format::Zip, &Limits::default()).unwrap();
         let got: Vec<_> = u.members.iter().map(|m| (m.path.as_str(), m.format)).collect();
         assert_eq!(got, vec![("a/readme.md", Format::Markdown), ("b.txt", Format::PlainText)]);
@@ -405,7 +447,10 @@ mod tests {
 
     #[test]
     fn tar_and_tar_gz_members() {
-        let t = tar_with(&[("src/main.tex", b"\\documentclass{article}\n\\begin{document}x\\end{document}\n"), ("notes.txt", b"hello\n")]);
+        let t = tar_with(&[
+            ("src/main.tex", b"\\documentclass{article}\n\\begin{document}x\\end{document}\n"),
+            ("notes.txt", b"hello\n"),
+        ]);
         let u = unpack(&t, Format::Tar, &Limits::default()).unwrap();
         assert_eq!(u.members.len(), 2);
         assert_eq!(u.members[0].format, Format::Latex);
@@ -421,7 +466,12 @@ mod tests {
         assert_eq!(u.members.len(), 1);
         assert_eq!(u.members[0].format, Format::Markdown);
         assert_eq!(u.members[0].path, "content");
-        let u = unpack(&gz(b"\\documentclass{article}\n\\begin{document}Hi\\end{document}\n"), Format::ArxivSource, &Limits::default()).unwrap();
+        let u = unpack(
+            &gz(b"\\documentclass{article}\n\\begin{document}Hi\\end{document}\n"),
+            Format::ArxivSource,
+            &Limits::default(),
+        )
+        .unwrap();
         assert_eq!(u.members[0].path, "content.tex");
         assert_eq!(u.members[0].format, Format::Latex);
     }
@@ -541,8 +591,14 @@ mod tests {
 
     #[test]
     fn corrupt_and_unsupported_inputs() {
-        assert!(matches!(unpack(b"PK\x03\x04garbage", Format::Zip, &Limits::default()), Err(ExtractError::Corrupt { .. })));
+        assert!(matches!(
+            unpack(b"PK\x03\x04garbage", Format::Zip, &Limits::default()),
+            Err(ExtractError::Corrupt { .. })
+        ));
         assert!(matches!(unpack(b"x", Format::Pdf, &Limits::default()), Err(ExtractError::Unsupported(_))));
-        assert!(matches!(unpack(&[0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3], Format::Gzip, &Limits::default()), Err(ExtractError::Corrupt { .. })));
+        assert!(matches!(
+            unpack(&[0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3], Format::Gzip, &Limits::default()),
+            Err(ExtractError::Corrupt { .. })
+        ));
     }
 }

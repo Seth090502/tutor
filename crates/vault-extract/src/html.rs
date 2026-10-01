@@ -49,10 +49,9 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
 
     let mut b = MdBuilder::new();
     let has_h1 = root.select(&SEL_H1).next().is_some();
-    if !has_h1
-        && let Some(t) = &meta.title {
-            b.heading(1, t);
-        }
+    if !has_h1 && let Some(t) = &meta.title {
+        b.heading(1, t);
+    }
     let mut w = Walker::new(&mut b, HtmlOptions::default());
     w.run(root);
     let (refs, mut warn, authors, abstract_text) = w.into_parts();
@@ -93,7 +92,10 @@ static SELF_CLOSING: LazyLock<regex::Regex> =
 /// XHTML that binds MathML to a prefix (`<m:math xmlns:m="...">`) loses its maths in an HTML parser, which does
 /// not know prefixes. Drop the prefix from the tags of every prefix bound to the MathML namespace.
 pub(crate) fn strip_mathml_prefix(src: &str) -> String {
-    static DECL: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"xmlns:([A-Za-z_][\w.\-]*)\s*=\s*["']http://www\.w3\.org/1998/Math/MathML["']"#).expect("static regex"));
+    static DECL: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"xmlns:([A-Za-z_][\w.\-]*)\s*=\s*["']http://www\.w3\.org/1998/Math/MathML["']"#)
+            .expect("static regex")
+    });
     let mut out = src.to_string();
     let prefixes: Vec<String> = DECL.captures_iter(src).map(|c| c[1].to_string()).collect();
     for p in prefixes {
@@ -109,7 +111,23 @@ pub(crate) fn expand_self_closing(src: &str) -> String {
         .replace_all(src, |c: &regex::Captures| {
             let name = &c[1];
             let attrs = c.get(2).map_or("", |m| m.as_str());
-            if matches!(name.to_ascii_lowercase().as_str(), "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr") {
+            if matches!(
+                name.to_ascii_lowercase().as_str(),
+                "area"
+                    | "base"
+                    | "br"
+                    | "col"
+                    | "embed"
+                    | "hr"
+                    | "img"
+                    | "input"
+                    | "link"
+                    | "meta"
+                    | "param"
+                    | "source"
+                    | "track"
+                    | "wbr"
+            ) {
                 c[0].to_string()
             } else {
                 format!("<{name}{attrs}></{name}>")
@@ -128,7 +146,9 @@ pub(crate) fn check_depth(src: &str) -> Result<()> {
     let depth = nesting_depth(src);
     if depth > MAX_HTML_DEPTH {
         tracing::warn!(depth, "refusing hostile HTML nesting");
-        return Err(ExtractError::Limits(format!("html element nesting is about {depth} levels deep (limit {MAX_HTML_DEPTH})")));
+        return Err(ExtractError::Limits(format!(
+            "html element nesting is about {depth} levels deep (limit {MAX_HTML_DEPTH})"
+        )));
     }
     Ok(())
 }
@@ -146,13 +166,52 @@ fn nesting_depth(src: &str) -> usize {
         }
         let closing = rest.first() == Some(&b'/');
         let name_start = if closing { i + 1 } else { i };
-        let name: String = src[name_start.min(src.len())..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase();
+        let name: String = src[name_start.min(src.len())..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
         if name.is_empty() {
             continue;
         }
         let nests = matches!(
             name.as_str(),
-            "div" | "span" | "section" | "article" | "aside" | "nav" | "header" | "footer" | "main" | "ul" | "ol" | "table" | "blockquote" | "a" | "b" | "i" | "em" | "strong" | "font" | "center" | "form" | "figure" | "pre" | "code" | "details" | "dl" | "fieldset" | "small" | "big" | "u" | "s" | "sub" | "sup" | "label" | "mark" | "cite"
+            "div"
+                | "span"
+                | "section"
+                | "article"
+                | "aside"
+                | "nav"
+                | "header"
+                | "footer"
+                | "main"
+                | "ul"
+                | "ol"
+                | "table"
+                | "blockquote"
+                | "a"
+                | "b"
+                | "i"
+                | "em"
+                | "strong"
+                | "font"
+                | "center"
+                | "form"
+                | "figure"
+                | "pre"
+                | "code"
+                | "details"
+                | "dl"
+                | "fieldset"
+                | "small"
+                | "big"
+                | "u"
+                | "s"
+                | "sub"
+                | "sup"
+                | "label"
+                | "mark"
+                | "cite"
         );
         if !nests {
             continue;
@@ -172,15 +231,18 @@ fn nesting_depth(src: &str) -> usize {
 
 /// Decode: valid UTF-8 first, then a `<meta charset>` declaration, then detection.
 pub(crate) fn decode_html(bytes: &[u8], opts: &ConvertOptions, warnings: &mut Vec<String>) -> (String, String) {
-    let bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]) || bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]);
-    if !bom && std::str::from_utf8(bytes).is_err()
-        && let Some(enc) = meta_charset(bytes) {
-            let (t, had) = enc.decode_without_bom_handling(bytes);
-            if had {
-                warnings.push(format!("some bytes were not valid {} and became U+FFFD", enc.name()));
-            }
-            return (t.into_owned(), enc.name().to_ascii_lowercase());
+    let bom =
+        bytes.starts_with(&[0xEF, 0xBB, 0xBF]) || bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]);
+    if !bom
+        && std::str::from_utf8(bytes).is_err()
+        && let Some(enc) = meta_charset(bytes)
+    {
+        let (t, had) = enc.decode_without_bom_handling(bytes);
+        if had {
+            warnings.push(format!("some bytes were not valid {} and became U+FFFD", enc.name()));
         }
+        return (t.into_owned(), enc.name().to_ascii_lowercase());
+    }
     let d = text::decode_for_conversion(bytes, opts, warnings);
     (d.text, d.encoding.to_string())
 }
@@ -189,7 +251,8 @@ fn meta_charset(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).to_ascii_lowercase();
     let i = head.find("charset")?;
     let rest = head[i + 7..].trim_start().strip_prefix('=')?.trim_start().trim_start_matches(['"', '\'']);
-    let label: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':')).collect();
+    let label: String =
+        rest.chars().take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':')).collect();
     encoding_rs::Encoding::for_label(label.as_bytes())
 }
 
@@ -207,16 +270,21 @@ fn content_root(doc: &Html) -> ElementRef<'_> {
     match best {
         // An article that holds most of the page text is the content; a small one is a teaser inside a larger page.
         Some((len, el)) if len * 2 >= body_len => el,
-        _ => doc.select(&SEL_BODY).next().or_else(|| doc.select(&SEL_HTML).next()).unwrap_or_else(|| doc.root_element()),
+        _ => {
+            doc.select(&SEL_BODY).next().or_else(|| doc.select(&SEL_HTML).next()).unwrap_or_else(|| doc.root_element())
+        }
     }
 }
 
 /// The smallest heading level used in `root`, if any.
 pub(crate) fn min_heading_level(root: ElementRef) -> Option<u8> {
-    root.descendants().filter_map(ElementRef::wrap).filter_map(|e| {
-        let n = tag(e).as_bytes();
-        (n.len() == 2 && n[0] == b'h' && (b'1'..=b'6').contains(&n[1])).then(|| n[1] - b'0')
-    }).min()
+    root.descendants()
+        .filter_map(ElementRef::wrap)
+        .filter_map(|e| {
+            let n = tag(e).as_bytes();
+            (n.len() == 2 && n[0] == b'h' && (b'1'..=b'6').contains(&n[1])).then(|| n[1] - b'0')
+        })
+        .min()
 }
 
 /// Parse one XHTML chapter: self-closing tags expanded, nesting checked.
@@ -258,14 +326,22 @@ fn read_metadata(doc: &Html) -> Metadata {
                     m.arxiv_id.get_or_insert(a);
                 }
             }
-            "citation_arxiv_id" => m.arxiv_id = ids::bare_arxiv(&content).or_else(|| ids::find_arxiv(&content)).or(m.arxiv_id.take()),
+            "citation_arxiv_id" => {
+                m.arxiv_id = ids::bare_arxiv(&content).or_else(|| ids::find_arxiv(&content)).or(m.arxiv_id.take())
+            }
             "citation_pmid" => {}
             "citation_isbn" | "dc.relation.ispartof" if name == "citation_isbn" => {
                 if let Some(i) = ids::normalize_isbn(&content) {
                     m.isbn.push(i);
                 }
             }
-            "citation_publication_date" | "citation_date" | "citation_online_date" | "dc.date" | "dcterms.date" | "article:published_time" | "prism.publicationdate" => {
+            "citation_publication_date"
+            | "citation_date"
+            | "citation_online_date"
+            | "dc.date"
+            | "dcterms.date"
+            | "article:published_time"
+            | "prism.publicationdate" => {
                 if m.year.is_none() {
                     m.year = ids::year_in(&content);
                 }
@@ -284,10 +360,17 @@ fn read_metadata(doc: &Html) -> Metadata {
         }
     }
     if m.title.is_none() {
-        m.title = dc_title.or(og_title).or_else(|| doc.select(&SEL_TITLE).next().map(|t| collapse_ws(&t.text().collect::<String>())).filter(|t| !t.is_empty()));
+        m.title = dc_title.or(og_title).or_else(|| {
+            doc.select(&SEL_TITLE).next().map(|t| collapse_ws(&t.text().collect::<String>())).filter(|t| !t.is_empty())
+        });
     }
     if m.language.is_none() {
-        m.language = doc.select(&SEL_HTML).next().and_then(|h| h.value().attr("lang").or_else(|| h.value().attr("xml:lang"))).map(str::to_string).filter(|l| !l.is_empty());
+        m.language = doc
+            .select(&SEL_HTML)
+            .next()
+            .and_then(|h| h.value().attr("lang").or_else(|| h.value().attr("xml:lang")))
+            .map(str::to_string)
+            .filter(|l| !l.is_empty());
     }
     m
 }
@@ -325,17 +408,18 @@ fn class_contains(el: ElementRef, frag: &str) -> bool {
 
 fn is_page_break(el: ElementRef) -> bool {
     let v = el.value();
-    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| x == "pagebreak")) || v.attr("role") == Some("doc-pagebreak")
+    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| x == "pagebreak"))
+        || v.attr("role") == Some("doc-pagebreak")
 }
 
 fn page_label(el: ElementRef) -> Option<String> {
     let v = el.value();
     let from_attr = v.attr("title").or_else(|| v.attr("aria-label")).map(collapse_ws).filter(|s| !s.is_empty());
-    from_attr
-        .or_else(|| Some(collapse_ws(&el.text().collect::<String>())).filter(|s| !s.is_empty()))
-        .or_else(|| {
-            v.attr("id").map(|i| i.trim_start_matches(|c: char| c.is_alphabetic() || c == '_' || c == '-').to_string()).filter(|s| !s.is_empty())
-        })
+    from_attr.or_else(|| Some(collapse_ws(&el.text().collect::<String>())).filter(|s| !s.is_empty())).or_else(|| {
+        v.attr("id")
+            .map(|i| i.trim_start_matches(|c: char| c.is_alphabetic() || c == '_' || c == '-').to_string())
+            .filter(|s| !s.is_empty())
+    })
 }
 
 fn is_skipped(el: ElementRef) -> bool {
@@ -343,12 +427,36 @@ fn is_skipped(el: ElementRef) -> bool {
     if t == "aside" {
         // Notes written as asides (EPUB 3 footnotes) are content; other asides are page furniture.
         let v = el.value();
-        let note = v.attr("epub:type").is_some_and(|t| t.contains("note")) || v.attr("role").is_some_and(|r| r.starts_with("doc-") && r.contains("note"));
+        let note = v.attr("epub:type").is_some_and(|t| t.contains("note"))
+            || v.attr("role").is_some_and(|r| r.starts_with("doc-") && r.contains("note"));
         return !note;
     }
     if matches!(
         t,
-        "script" | "style" | "noscript" | "template" | "head" | "meta" | "link" | "title" | "nav" | "footer" | "form" | "iframe" | "svg" | "canvas" | "object" | "embed" | "audio" | "video" | "select" | "button" | "input" | "textarea" | "dialog" | "base"
+        "script"
+            | "style"
+            | "noscript"
+            | "template"
+            | "head"
+            | "meta"
+            | "link"
+            | "title"
+            | "nav"
+            | "footer"
+            | "form"
+            | "iframe"
+            | "svg"
+            | "canvas"
+            | "object"
+            | "embed"
+            | "audio"
+            | "video"
+            | "select"
+            | "button"
+            | "input"
+            | "textarea"
+            | "dialog"
+            | "base"
     ) {
         return !(t == "script" && matches!(el.value().attr("type"), Some(ty) if ty.starts_with("math/tex")));
     }
@@ -379,13 +487,62 @@ fn is_skipped(el: ElementRef) -> bool {
 fn is_block_tag(t: &str) -> bool {
     matches!(
         t,
-        "address" | "article" | "blockquote" | "details" | "dd" | "div" | "dl" | "dt" | "fieldset" | "figcaption" | "figure" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "header" | "hgroup" | "hr" | "li" | "main" | "ol" | "p" | "pre" | "section" | "table" | "ul" | "summary" | "center" | "body" | "html" | "caption" | "menu" | "dir" | "tbody" | "thead" | "tfoot" | "tr"
+        "address"
+            | "article"
+            | "blockquote"
+            | "details"
+            | "dd"
+            | "div"
+            | "dl"
+            | "dt"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "header"
+            | "hgroup"
+            | "hr"
+            | "li"
+            | "main"
+            | "ol"
+            | "p"
+            | "pre"
+            | "section"
+            | "table"
+            | "ul"
+            | "summary"
+            | "center"
+            | "body"
+            | "html"
+            | "caption"
+            | "menu"
+            | "dir"
+            | "tbody"
+            | "thead"
+            | "tfoot"
+            | "tr"
     )
 }
 
 impl<'b> Walker<'b> {
     pub(crate) fn new(b: &'b mut MdBuilder, opts: HtmlOptions) -> Self {
-        Self { b, opts, refs: Vec::new(), warnings: Vec::new(), authors: Vec::new(), abstract_text: None, in_refs: None, pending_notes: Vec::new(), page_targets: HashMap::new(), noterefs: HashMap::new() }
+        Self {
+            b,
+            opts,
+            refs: Vec::new(),
+            warnings: Vec::new(),
+            authors: Vec::new(),
+            abstract_text: None,
+            in_refs: None,
+            pending_notes: Vec::new(),
+            page_targets: HashMap::new(),
+            noterefs: HashMap::new(),
+        }
     }
 
     pub(crate) fn with_page_targets(mut self, targets: HashMap<String, String>) -> Self {
@@ -439,12 +596,13 @@ impl<'b> Walker<'b> {
                     }
                     // A footnote body that a note reference points at: "[^label]: text".
                     if let Some(label) = ce.value().attr("id").and_then(|id| self.noterefs.get(id)).cloned()
-                        && is_note_body(ce) {
-                            self.flush(&mut buf);
-                            let t = self.inline_text(ce, depth + 1);
-                            self.b.paragraph(&format!("[^{label}]: {t}"));
-                            continue;
-                        }
+                        && is_note_body(ce)
+                    {
+                        self.flush(&mut buf);
+                        let t = self.inline_text(ce, depth + 1);
+                        self.b.paragraph(&format!("[^{label}]: {t}"));
+                        continue;
+                    }
                     let t = tag(ce);
                     if t == "br" {
                         if prev_br {
@@ -523,7 +681,9 @@ impl<'b> Walker<'b> {
             _ => {
                 if has_class(el, "ltx_abstract") {
                     self.abstract_block(el, depth);
-                } else if has_class(el, "ltx_authors") || has_class(el, "ltx_creator") && has_class(el, "ltx_role_author") {
+                } else if has_class(el, "ltx_authors")
+                    || has_class(el, "ltx_creator") && has_class(el, "ltx_role_author")
+                {
                     self.authors_block(el);
                 } else if class_contains(el, "ltx_equation") || has_class(el, "ltx_eqn_table") {
                     self.equation_container(el);
@@ -551,9 +711,10 @@ impl<'b> Walker<'b> {
         // A new heading at the same or a higher level ends a references section.
         let eff = self.level(level);
         if let Some(open) = self.in_refs
-            && eff <= open {
-                self.in_refs = None;
-            }
+            && eff <= open
+        {
+            self.in_refs = None;
+        }
         if is_references_title(&text) {
             self.in_refs = Some(eff);
         }
@@ -566,7 +727,9 @@ impl<'b> Walker<'b> {
             .into_iter()
             .chain(std::iter::once(el))
             .flat_map(|e| e.value().classes().collect::<Vec<_>>())
-            .find_map(|c| c.strip_prefix("language-").or_else(|| c.strip_prefix("lang-")).or_else(|| c.strip_prefix("brush:")))
+            .find_map(|c| {
+                c.strip_prefix("language-").or_else(|| c.strip_prefix("lang-")).or_else(|| c.strip_prefix("brush:"))
+            })
             .unwrap_or("")
             .to_string();
         let raw: String = el.text().collect();
@@ -651,7 +814,11 @@ impl<'b> Walker<'b> {
     }
 
     fn quote(&mut self, el: ElementRef, depth: usize) {
-        let blocks: Vec<ElementRef> = el.children().filter_map(ElementRef::wrap).filter(|c| matches!(tag(*c), "p" | "div" | "ul" | "ol")).collect();
+        let blocks: Vec<ElementRef> = el
+            .children()
+            .filter_map(ElementRef::wrap)
+            .filter(|c| matches!(tag(*c), "p" | "div" | "ul" | "ol"))
+            .collect();
         if blocks.is_empty() {
             let t = self.inline_text(el, depth + 1);
             self.b.quote(&t);
@@ -693,7 +860,8 @@ impl<'b> Walker<'b> {
 
     /// A LaTeXML equation table or group: every `math` becomes a display equation; equation numbers are dropped.
     fn equation_container(&mut self, el: ElementRef) {
-        let maths: Vec<ElementRef> = el.descendants().filter_map(ElementRef::wrap).filter(|e| tag(*e) == "math").collect();
+        let maths: Vec<ElementRef> =
+            el.descendants().filter_map(ElementRef::wrap).filter(|e| tag(*e) == "math").collect();
         if maths.is_empty() {
             self.flow(el, 1);
             return;
@@ -714,14 +882,17 @@ impl<'b> Walker<'b> {
         for c in el.children().filter_map(ElementRef::wrap) {
             match tag(c) {
                 "caption" => caption = Some(self.inline_text(c, depth + 1)),
-                "thead" => rows.extend(c.children().filter_map(ElementRef::wrap).filter(|r| tag(*r) == "tr").map(|r| (r, true))),
-                "tbody" | "tfoot" => rows.extend(c.children().filter_map(ElementRef::wrap).filter(|r| tag(*r) == "tr").map(|r| (r, false))),
+                "thead" => rows
+                    .extend(c.children().filter_map(ElementRef::wrap).filter(|r| tag(*r) == "tr").map(|r| (r, true))),
+                "tbody" | "tfoot" => rows
+                    .extend(c.children().filter_map(ElementRef::wrap).filter(|r| tag(*r) == "tr").map(|r| (r, false))),
                 "tr" => rows.push((c, false)),
                 _ => {}
             }
         }
         for (i, (tr, in_head)) in rows.iter().enumerate() {
-            let cells: Vec<ElementRef> = tr.children().filter_map(ElementRef::wrap).filter(|c| matches!(tag(*c), "td" | "th")).collect();
+            let cells: Vec<ElementRef> =
+                tr.children().filter_map(ElementRef::wrap).filter(|c| matches!(tag(*c), "td" | "th")).collect();
             let all_th = !cells.is_empty() && cells.iter().all(|c| tag(*c) == "th");
             if *in_head || (all_th && i == header_rows) {
                 header_rows += 1;
@@ -779,7 +950,11 @@ impl<'b> Walker<'b> {
 
     fn biblist(&mut self, el: ElementRef) {
         for li in el.children().filter_map(ElementRef::wrap).filter(|c| tag(*c) == "li") {
-            let label = li.descendants().filter_map(ElementRef::wrap).find(|e| class_contains(*e, "ltx_tag_bibitem")).map(|e| collapse_ws(&e.text().collect::<String>()));
+            let label = li
+                .descendants()
+                .filter_map(ElementRef::wrap)
+                .find(|e| class_contains(*e, "ltx_tag_bibitem"))
+                .map(|e| collapse_ws(&e.text().collect::<String>()));
             let mut parts: Vec<String> = Vec::new();
             for c in li.children().filter_map(ElementRef::wrap) {
                 if class_contains(c, "ltx_tag_bibitem") {
@@ -811,14 +986,15 @@ impl<'b> Walker<'b> {
             Node::Text(t) => out.push_str(t),
             Node::Element(_) => {
                 if let Some(ce) = ElementRef::wrap(c)
-                    && !is_skipped(ce) {
-                        if is_page_break(ce) {
-                            // Inline page break: keep position by splitting later; record immediately.
-                            self.b.page_break(page_label(ce));
-                        } else {
-                            self.inline(ce, out, depth + 1);
-                        }
+                    && !is_skipped(ce)
+                {
+                    if is_page_break(ce) {
+                        // Inline page break: keep position by splitting later; record immediately.
+                        self.b.page_break(page_label(ce));
+                    } else {
+                        self.inline(ce, out, depth + 1);
                     }
+                }
             }
             _ => {}
         }
@@ -885,17 +1061,22 @@ impl<'b> Walker<'b> {
                 }
             }
             "img" | "picture" | "source" | "map" | "area" => {}
-            "span" | "div" | "a" | "b" | "i" | "em" | "strong" | "u" | "small" | "mark" | "abbr" | "cite" | "q" | "dfn" | "label" | "time" | "bdi" | "bdo" | "font" | "s" | "strike" | "del" | "ins" | "big" | "var" | "data" | "wbr" | "ruby" | "rb" | "section" | "article" | "p" | "li" | "ul" | "ol" | "table" | "figure" | "blockquote" => {
+            "span" | "div" | "a" | "b" | "i" | "em" | "strong" | "u" | "small" | "mark" | "abbr" | "cite" | "q"
+            | "dfn" | "label" | "time" | "bdi" | "bdo" | "font" | "s" | "strike" | "del" | "ins" | "big" | "var"
+            | "data" | "wbr" | "ruby" | "rb" | "section" | "article" | "p" | "li" | "ul" | "ol" | "table"
+            | "figure" | "blockquote" => {
                 if class_contains(el, "ltx_note") && !class_contains(el, "ltx_note_") {
                     // LaTeXML footnote: the text goes after the paragraph, the mark stays out.
-                    let content = el.descendants().filter_map(ElementRef::wrap).find(|e| has_class(*e, "ltx_note_content"));
+                    let content =
+                        el.descendants().filter_map(ElementRef::wrap).find(|e| has_class(*e, "ltx_note_content"));
                     if let Some(c) = content {
                         let mut s = String::new();
                         for ch in c.children() {
                             if let Some(ce) = ElementRef::wrap(ch)
-                                && (class_contains(ce, "ltx_note_mark") || class_contains(ce, "ltx_tag_note")) {
-                                    continue;
-                                }
+                                && (class_contains(ce, "ltx_note_mark") || class_contains(ce, "ltx_tag_note"))
+                            {
+                                continue;
+                            }
                             self.inline_node(ch, &mut s, depth);
                         }
                         let s = collapse_ws(&s);
@@ -915,13 +1096,19 @@ impl<'b> Walker<'b> {
                     }
                     return;
                 }
-                if matches!(t, "p" | "li" | "div" | "section" | "article" | "blockquote" | "figure" | "ul" | "ol" | "table") {
+                if matches!(
+                    t,
+                    "p" | "li" | "div" | "section" | "article" | "blockquote" | "figure" | "ul" | "ol" | "table"
+                ) {
                     out.push(' ');
                 }
                 for ch in el.children() {
                     self.inline_node(ch, out, depth);
                 }
-                if matches!(t, "p" | "li" | "div" | "section" | "article" | "blockquote" | "figure" | "ul" | "ol" | "table") {
+                if matches!(
+                    t,
+                    "p" | "li" | "div" | "section" | "article" | "blockquote" | "figure" | "ul" | "ol" | "table"
+                ) {
                     out.push(' ');
                 }
             }
@@ -936,12 +1123,14 @@ impl<'b> Walker<'b> {
 
 fn is_noteref(el: ElementRef) -> bool {
     let v = el.value();
-    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| x == "noteref")) || v.attr("role") == Some("doc-noteref")
+    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| x == "noteref"))
+        || v.attr("role") == Some("doc-noteref")
 }
 
 fn is_note_body(el: ElementRef) -> bool {
     let v = el.value();
-    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| matches!(x, "footnote" | "endnote" | "rearnote" | "note")))
+    v.attr("epub:type")
+        .is_some_and(|t| t.split_whitespace().any(|x| matches!(x, "footnote" | "endnote" | "rearnote" | "note")))
         || v.attr("role").is_some_and(|r| matches!(r, "doc-footnote" | "doc-endnote"))
 }
 
@@ -952,9 +1141,10 @@ fn note_references(root: ElementRef) -> HashMap<String, String> {
         let label = collapse_ws(&a.text().collect::<String>());
         let label = label.trim_matches(['[', ']', '(', ')']).to_string();
         if let (Some(href), false) = (a.value().attr("href"), label.is_empty())
-            && let Some((_, id)) = href.split_once('#') {
-                m.entry(id.to_string()).or_insert(label);
-            }
+            && let Some((_, id)) = href.split_once('#')
+        {
+            m.entry(id.to_string()).or_insert(label);
+        }
     }
     m
 }
@@ -968,16 +1158,27 @@ fn is_references_title(t: &str) -> bool {
     let l = t.trim().trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
     // Drop a leading section number ("7 References") already handled by trim; compare the words.
     let l = l.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ');
-    matches!(l, "references" | "reference" | "bibliography" | "works cited" | "literature cited" | "references and notes" | "sources" | "citations")
+    matches!(
+        l,
+        "references"
+            | "reference"
+            | "bibliography"
+            | "works cited"
+            | "literature cited"
+            | "references and notes"
+            | "sources"
+            | "citations"
+    )
 }
 
 fn strip_label(raw: &str, label: Option<&str>) -> String {
     let Some(l) = label else { return raw.to_string() };
     for p in [format!("[{l}]"), format!("{l}."), l.to_string()] {
         if let Some(rest) = raw.strip_prefix(&p)
-            && (rest.starts_with(' ') || p.starts_with('[')) {
-                return rest.trim_start().to_string();
-            }
+            && (rest.starts_with(' ') || p.starts_with('['))
+        {
+            return rest.trim_start().to_string();
+        }
     }
     raw.to_string()
 }
@@ -993,8 +1194,7 @@ mod tests {
 
     #[test]
     fn plain_html_structure() {
-        let r = run(
-            r#"<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Page Title</title>
+        let r = run(r#"<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Page Title</title>
 <meta name="citation_author" content="Ann Lee"><meta name="citation_author" content="Bo Chen">
 <meta name="citation_doi" content="doi:10.1234/ABC.5"><meta name="citation_publication_date" content="2020/05/01">
 <meta name="keywords" content="alpha, beta"><script>var x = 1;</script><style>p{}</style></head>
@@ -1007,8 +1207,7 @@ mod tests {
 }</code></pre>
 <blockquote><p>Quoted words.</p></blockquote>
 <dl><dt>Term</dt><dd>Definition</dd></dl>
-<footer>Copyright</footer></body></html>"#,
-        );
+<footer>Copyright</footer></body></html>"#);
         let m = &r.metadata;
         assert_eq!(m.title.as_deref(), Some("Page Title"));
         assert_eq!(m.authors, vec!["Ann Lee", "Bo Chen"]);
@@ -1041,7 +1240,10 @@ mod tests {
 <table><tr><td rowspan="2">x</td><td>y</td></tr><tr><td>z</td></tr></table></body>"#,
         );
         let md = &r.markdown;
-        assert!(md.contains("Scores\n\n| Name | Score |  |\n| --- | --- | --- |\n| A | 1 | 2 |\n| B \\| C | 3 | 4 |\n"), "{md}");
+        assert!(
+            md.contains("Scores\n\n| Name | Score |  |\n| --- | --- | --- |\n| A | 1 | 2 |\n| B \\| C | 3 | 4 |\n"),
+            "{md}"
+        );
         assert!(md.contains("```html\n<table>\n<tr><td rowspan=\"2\">x</td><td>y</td></tr>"), "{md}");
         assert_eq!(r.blocks.iter().filter(|b| b.kind == BlockKind::Table).count(), 2);
     }
@@ -1054,10 +1256,8 @@ mod tests {
 
     #[test]
     fn mathjax_and_katex_sources() {
-        let r = run(
-            r#"<body><p>Euler: <script type="math/tex">e^{i\pi}+1=0</script> and
-<span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">x2 duplicated</span></span> done.</p></body>"#,
-        );
+        let r = run(r#"<body><p>Euler: <script type="math/tex">e^{i\pi}+1=0</script> and
+<span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">x2 duplicated</span></span> done.</p></body>"#);
         assert!(r.markdown.contains("Euler: $e^{i\\pi}+1=0$ and $x^2$ done."), "{}", r.markdown);
         assert!(!r.markdown.contains("duplicated"));
     }
@@ -1098,7 +1298,10 @@ mod tests {
         // The equation table is one display equation without the number.
         assert!(md.contains("$$\nE=mc^{2}\n$$"), "{md}");
         assert!(!md.contains("(1)"), "{md}");
-        assert!(md.contains("Table 1: Results by method.\n\n| Method | Score |\n| --- | --- |\n| Ours | 0.9 |"), "{md}");
+        assert!(
+            md.contains("Table 1: Results by method.\n\n| Method | Score |\n| --- | --- |\n| Ours | 0.9 |"),
+            "{md}"
+        );
         // Bibliography entries are structured and one per line.
         assert_eq!(r.references.len(), 2);
         assert_eq!(r.references[0].label.as_deref(), Some("1"));
@@ -1113,17 +1316,17 @@ mod tests {
 
     #[test]
     fn mathml_without_alttext_is_converted() {
-        let r = run(r#"<body><p>Sum <math><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>a</mi><mi>i</mi></msub></mrow></math>.</p><math display="block"><mfrac><mn>1</mn><mn>2</mn></mfrac></math></body>"#);
+        let r = run(
+            r#"<body><p>Sum <math><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>a</mi><mi>i</mi></msub></mrow></math>.</p><math display="block"><mfrac><mn>1</mn><mn>2</mn></mfrac></math></body>"#,
+        );
         assert!(r.markdown.contains("Sum $\\sum\\limits_{i = 1}^n a_i$."), "{}", r.markdown);
         assert!(r.markdown.contains("$$\n\\frac{1}{2}\n$$"), "{}", r.markdown);
     }
 
     #[test]
     fn generic_reference_lists_become_entries() {
-        let r = run(
-            r#"<body><h1>Paper</h1><h2>Intro</h2><p>Text.</p><h2>References</h2>
-<ol><li>Smith J. (2019) Things. doi:10.5555/xyz</li><li>Doe A. (2018) More things.</li></ol><h2>Appendix</h2><ol><li>item</li></ol></body>"#,
-        );
+        let r = run(r#"<body><h1>Paper</h1><h2>Intro</h2><p>Text.</p><h2>References</h2>
+<ol><li>Smith J. (2019) Things. doi:10.5555/xyz</li><li>Doe A. (2018) More things.</li></ol><h2>Appendix</h2><ol><li>item</li></ol></body>"#);
         assert_eq!(r.references.len(), 2);
         assert_eq!(r.references[0].doi.as_deref(), Some("10.5555/xyz"));
         assert!(r.markdown.contains("[1] Smith J. (2019) Things."), "{}", r.markdown);
@@ -1145,7 +1348,9 @@ mod tests {
 
     #[test]
     fn xhtml_and_declared_charset() {
-        let r = run(r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Titre</h1><p>Caf&#233; et cr&egrave;me.<br/>Fin.</p></body></html>"#);
+        let r = run(
+            r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Titre</h1><p>Caf&#233; et cr&egrave;me.<br/>Fin.</p></body></html>"#,
+        );
         assert!(r.markdown.contains("Café et crème. Fin."), "{}", r.markdown);
         let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode("<html><head><meta charset=\"windows-1252\"></head><body><p>Un café très chaud, “merci” – s'il vous plaît.</p></body></html>");
         let r = convert(&bytes, &ConvertOptions::default()).unwrap();
@@ -1168,7 +1373,9 @@ mod tests {
 
     #[test]
     fn article_is_preferred_over_page_chrome() {
-        let r = run("<body><div>menu junk here</div><article><h1>Real</h1><p>Real article text that is long enough to be the main content of the page.</p></article></body>");
+        let r = run(
+            "<body><div>menu junk here</div><article><h1>Real</h1><p>Real article text that is long enough to be the main content of the page.</p></article></body>",
+        );
         assert!(r.markdown.contains("Real article text"), "{}", r.markdown);
         assert!(!r.markdown.contains("menu junk"), "{}", r.markdown);
     }

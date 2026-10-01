@@ -84,7 +84,10 @@ fn route(bytes: &[u8], d: &Detected, opts: &ConvertOptions, limits: &Limits) -> 
         Format::ArxivSource | Format::Latex => Ok(Outcome::WaitingTool { tool: "pandoc", format: d.format }),
         Format::Rtf => Ok(Outcome::WaitingTool { tool: "pandoc", format: d.format }),
         Format::Pdf => route_pdf(bytes, opts),
-        Format::Xml => Err(ExtractError::Unsupported(format!("XML with root <{}> has no converter", d.xml_root.as_deref().unwrap_or("?")))),
+        Format::Xml => Err(ExtractError::Unsupported(format!(
+            "XML with root <{}> has no converter",
+            d.xml_root.as_deref().unwrap_or("?")
+        ))),
         Format::Binary(kind) => {
             if d.encrypted {
                 return Err(ExtractError::Protected("an encrypted Office document".into()));
@@ -99,7 +102,8 @@ fn route_pdf(bytes: &[u8], opts: &ConvertOptions) -> Result<Outcome> {
     use crate::pdfclass::{PdfKind, PdfRoute};
     let c = crate::pdf::convert(bytes, opts)?;
     let papers = c.classification.kind == PdfKind::Paper;
-    let quality = assess(&c.extracted, QualityContext { expect_paper_sections: papers, source_pages: Some(c.signals.pages) });
+    let quality =
+        assess(&c.extracted, QualityContext { expect_paper_sections: papers, source_pages: Some(c.signals.pages) });
     let converted = Converted { extracted: c.extracted, quality, path: "pdf-pdfium".to_string() };
     Ok(match c.classification.route {
         PdfRoute::Native => Outcome::Converted(Box::new(converted)),
@@ -133,12 +137,18 @@ mod tests {
 
     #[test]
     fn text_formats_route_to_their_converters() {
-        let md = run(b"# Title\n\nSome text with a [link](http://a.b) and enough words to count here.\n", Some("note.txt")).unwrap();
+        let md =
+            run(b"# Title\n\nSome text with a [link](http://a.b) and enough words to count here.\n", Some("note.txt"))
+                .unwrap();
         assert_eq!(md.detected.format, Format::Markdown);
         assert_eq!(converted(&md).path, "markdown");
         let txt = run(b"Just plain words in a plain text file for the test.\n", None).unwrap();
         assert_eq!(converted(&txt).path, "text");
-        let html = run(b"<!doctype html><html><body><h1>Hi</h1><p>Body words here for the test.</p></body></html>", Some("page.md")).unwrap();
+        let html = run(
+            b"<!doctype html><html><body><h1>Hi</h1><p>Body words here for the test.</p></body></html>",
+            Some("page.md"),
+        )
+        .unwrap();
         assert_eq!(html.detected.format, Format::Html);
         assert_eq!(converted(&html).extracted.headings.len(), 1);
         let json = run(br#"{"a": 1}"#, None).unwrap();
@@ -152,7 +162,11 @@ mod tests {
         assert_eq!(converted(&jats).path, "jats");
         let tei = run(br#"<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body><div><head>H</head><p>Words.</p></div></body></text></TEI>"#, None).unwrap();
         assert_eq!(converted(&tei).path, "tei");
-        let nb = run(br##"{"cells":[{"cell_type":"markdown","source":["# Nb"]}],"metadata":{},"nbformat":4}"##, Some("x.json")).unwrap();
+        let nb = run(
+            br##"{"cells":[{"cell_type":"markdown","source":["# Nb"]}],"metadata":{},"nbformat":4}"##,
+            Some("x.json"),
+        )
+        .unwrap();
         assert_eq!(nb.detected.format, Format::Notebook);
         assert_eq!(converted(&nb).extracted.metadata.title.as_deref(), Some("Nb"));
         let other = run(b"<?xml version=\"1.0\"?><feed><entry/></feed>", None).unwrap_err();
@@ -171,7 +185,8 @@ mod tests {
 
     #[test]
     fn archives_return_members_and_office_zips_convert() {
-        let z = zip(&[("a.md", b"# A\n\nSome words [here](http://x.y) again.\n"), ("b.txt", b"hello there my friend\n")]);
+        let z =
+            zip(&[("a.md", b"# A\n\nSome words [here](http://x.y) again.\n"), ("b.txt", b"hello there my friend\n")]);
         let e = run(&z, Some("batch.zip")).unwrap();
         match &e.outcome {
             Outcome::Members(u) => assert_eq!(u.members.len(), 2),
@@ -197,7 +212,10 @@ mod tests {
     #[test]
     fn binaries_and_empty_files_are_refused_with_reason_codes() {
         assert_eq!(run(b"", None).unwrap_err().reason_code(), "empty_file");
-        assert_eq!(run(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR", Some("a.pdf")).unwrap_err().reason_code(), "unsupported_format");
+        assert_eq!(
+            run(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR", Some("a.pdf")).unwrap_err().reason_code(),
+            "unsupported_format"
+        );
         assert_eq!(run(b"MZ\x90\0\x03\0\0\0", None).unwrap_err().reason_code(), "unsupported_format");
         let mut ole = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
         ole.extend(std::iter::repeat_n(0u8, 300));
@@ -208,7 +226,10 @@ mod tests {
 
     #[test]
     fn corrupt_files_report_corruption() {
-        assert_eq!(run(b"<article article-type=\"research-article\"><front></article>", None).unwrap_err().reason_code(), "corrupt_file");
+        assert_eq!(
+            run(b"<article article-type=\"research-article\"><front></article>", None).unwrap_err().reason_code(),
+            "corrupt_file"
+        );
         assert_eq!(run(b"PK\x03\x04 not really a zip", None).unwrap_err().reason_code(), "corrupt_file");
     }
 
@@ -220,7 +241,11 @@ mod tests {
         #[test]
         fn born_digital_pdf_converts_and_scans_wait_for_the_gpu() {
             need_pdfium!();
-            let pdf = build_pdf(&[page(body(&["Plenty of ordinary words on this page to count as a text layer for sure."], 700.0))], None, None);
+            let pdf = build_pdf(
+                &[page(body(&["Plenty of ordinary words on this page to count as a text layer for sure."], 700.0))],
+                None,
+                None,
+            );
             let e = run(&pdf, Some("paper.pdf")).unwrap();
             assert_eq!(e.detected.format, Format::Pdf);
             let c = converted(&e);

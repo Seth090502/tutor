@@ -12,7 +12,7 @@ use pdfium_render::prelude::*;
 use crate::ConvertOptions;
 use crate::error::{ExtractError, Result};
 use crate::ids;
-use crate::pdfclass::{PageSignals, PdfClassification, PdfSignals, classify, cjk_char_count, math_char_count};
+use crate::pdfclass::{PageSignals, PdfClassification, PdfSignals, cjk_char_count, classify, math_char_count};
 use crate::pdflayout::{Glyph, PageInput, PageLines, assemble, infer_labels, layout_page};
 use crate::pdfscan;
 use crate::types::{Extracted, Metadata, tool_string};
@@ -24,7 +24,11 @@ static PDFIUM: OnceLock<std::result::Result<Pdfium, String>> = OnceLock::new();
 
 /// Bind PDFium from `path`. The first call decides: later calls with another path succeed without rebinding.
 pub fn init(path: &Path) -> Result<()> {
-    let r = PDFIUM.get_or_init(|| Pdfium::bind_to_library(path).map(Pdfium::new).map_err(|e| format!("could not load PDFium from {}: {e:?}", path.display())));
+    let r = PDFIUM.get_or_init(|| {
+        Pdfium::bind_to_library(path)
+            .map(Pdfium::new)
+            .map_err(|e| format!("could not load PDFium from {}: {e:?}", path.display()))
+    });
     match r {
         Ok(_) => Ok(()),
         Err(e) => Err(ExtractError::ToolUnavailable(e.clone())),
@@ -67,10 +71,13 @@ fn pdfium() -> Result<&'static Pdfium> {
 
 fn open_error(e: PdfiumError) -> ExtractError {
     match e {
-        PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) | PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::SecurityError) => {
+        PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError)
+        | PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::SecurityError) => {
             ExtractError::Protected("the PDF needs a password".to_string())
         }
-        PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::FormatError) => ExtractError::corrupt("pdf", "PDFium could not parse the file"),
+        PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::FormatError) => {
+            ExtractError::corrupt("pdf", "PDFium could not parse the file")
+        }
         other => ExtractError::convert("pdf", format!("{other:?}")),
     }
 }
@@ -111,11 +118,17 @@ fn page_signals(page: &PdfPage, text: &str) -> PageSignals {
     let mut covered = 0.0f32;
     for obj in page.objects().iter() {
         if obj.object_type() == PdfPageObjectType::Image
-            && let Ok(b) = obj.bounds() {
-                covered += (b.width().value * b.height().value).abs();
-            }
+            && let Ok(b) = obj.bounds()
+        {
+            covered += (b.width().value * b.height().value).abs();
+        }
     }
-    PageSignals { chars, image_coverage: (covered / area).min(1.0), math_chars: math_char_count(text), cjk_chars: cjk_char_count(text) }
+    PageSignals {
+        chars,
+        image_coverage: (covered / area).min(1.0),
+        math_chars: math_char_count(text),
+        cjk_chars: cjk_char_count(text),
+    }
 }
 
 pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<PdfConversion> {
@@ -162,7 +175,8 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<PdfConversion> {
     }
 
     let has_labels = inputs.iter().any(|p| p.label.is_some());
-    let page_lines: Vec<PageLines> = inputs.iter().map(|p| PageLines { label: p.label.clone(), lines: layout_page(p) }).collect();
+    let page_lines: Vec<PageLines> =
+        inputs.iter().map(|p| PageLines { label: p.label.clone(), lines: layout_page(p) }).collect();
     let mut assembled = assemble(page_lines, meta);
 
     // No /PageLabels: look for printed page numbers in the headers and footers.
@@ -180,7 +194,8 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<PdfConversion> {
     signals.page_signals = psigs;
     signals.has_page_labels = has_labels;
     signals.has_isbn = has_isbn;
-    signals.has_paper_id = assembled.extracted.metadata.arxiv_id.is_some() || assembled.extracted.metadata.doi.is_some();
+    signals.has_paper_id =
+        assembled.extracted.metadata.arxiv_id.is_some() || assembled.extracted.metadata.doi.is_some();
     let classification = classify(&signals);
 
     let mut ex = assembled.extracted;
@@ -202,14 +217,20 @@ pub fn layout_lines_debug(bytes: &[u8], index: usize) -> Result<Vec<String>> {
     let input = glyphs_of(&page, &text);
     Ok(layout_page(&input)
         .iter()
-        .map(|l| format!("x {:6.1}..{:6.1} y {:6.1}..{:6.1} size {:4.1} bold {} col {} furn {} | {}", l.l, l.r, l.bottom, l.top, l.size, l.bold as u8, l.column, l.furniture as u8, l.text))
+        .map(|l| {
+            format!(
+                "x {:6.1}..{:6.1} y {:6.1}..{:6.1} size {:4.1} bold {} col {} furn {} | {}",
+                l.l, l.r, l.bottom, l.top, l.size, l.bold as u8, l.column, l.furniture as u8, l.text
+            )
+        })
         .collect())
 }
 
 fn read_metadata(doc: &PdfDocument) -> Metadata {
     let mut m = Metadata::default();
     let md = doc.metadata();
-    let get = |t: PdfDocumentMetadataTagType| md.get(t).map(|tag| tag.value().trim().to_string()).filter(|v| !v.is_empty());
+    let get =
+        |t: PdfDocumentMetadataTagType| md.get(t).map(|tag| tag.value().trim().to_string()).filter(|v| !v.is_empty());
     m.title = get(PdfDocumentMetadataTagType::Title).filter(|t| plausible_title(t));
     if let Some(a) = get(PdfDocumentMetadataTagType::Author) {
         m.authors = a.split([';', '\n']).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect();
@@ -220,7 +241,11 @@ fn read_metadata(doc: &PdfDocument) -> Metadata {
     m.abstract_text = None;
     if let Some(d) = get(PdfDocumentMetadataTagType::CreationDate) {
         // "D:20190402101000+00'00'"
-        m.year = d.trim_start_matches("D:").get(..4).and_then(|y| y.parse::<i32>().ok()).filter(|y| (1900..=2100).contains(y));
+        m.year = d
+            .trim_start_matches("D:")
+            .get(..4)
+            .and_then(|y| y.parse::<i32>().ok())
+            .filter(|y| (1900..=2100).contains(y));
     }
     m
 }
@@ -242,7 +267,13 @@ pub(crate) fn font_style(raw: &str) -> (bool, bool) {
         || name.starts_with("cmssbx")
         || name.starts_with("cmbsy")
         || name.starts_with("cmmib");
-    let italic = (name.contains("italic") || name.contains("oblique") || name.starts_with("cmti") || name.starts_with("cmsl") || name.ends_with("-ital") || name.ends_with("-it")) && !name.starts_with("cmmi");
+    let italic = (name.contains("italic")
+        || name.contains("oblique")
+        || name.starts_with("cmti")
+        || name.starts_with("cmsl")
+        || name.ends_with("-ital")
+        || name.ends_with("-it"))
+        && !name.starts_with("cmmi");
     (bold, italic)
 }
 
@@ -274,9 +305,10 @@ fn glyphs_of(page: &PdfPage, text: &PdfPageText) -> PageInput {
         // geometry decide only where PDFium did not.
         if c.is_generated().unwrap_or(false) {
             if ch == ' '
-                && let Some((r, b, t, size, _)) = last {
-                    input.glyphs.push(Glyph { ch: ' ', l: r, r, b, t, size, bold: false, italic: false });
-                }
+                && let Some((r, b, t, size, _)) = last
+            {
+                input.glyphs.push(Glyph { ch: ' ', l: r, r, b, t, size, bold: false, italic: false });
+            }
             continue;
         }
         if matches!(ch, '\r' | '\n' | '\u{fffe}' | '\u{ffff}') {
@@ -317,11 +349,21 @@ mod tests {
     #[test]
     fn page_labels_headings_paragraphs_and_metadata() {
         need_pdfium!();
-        let mut ops = vec![op("F2", 18.0, 72.0, 740.0, "A Study of Synthetic Things"), op("F2", 12.0, 72.0, 700.0, "1 Introduction")];
-        ops.extend(body(&["This paragraph has a hyphen-", "ated word and runs to the end.", "It has two sentences."], 680.0));
+        let mut ops = vec![
+            op("F2", 18.0, 72.0, 740.0, "A Study of Synthetic Things"),
+            op("F2", 12.0, 72.0, 700.0, "1 Introduction"),
+        ];
+        ops.extend(body(
+            &["This paragraph has a hyphen-", "ated word and runs to the end.", "It has two sentences."],
+            680.0,
+        ));
         ops.extend(body(&["A second paragraph starts after a gap."], 620.0));
         let p2 = body(&["Second page text continues here with more words."], 700.0);
-        let pdf = build_pdf(&[page(ops), page(p2)], Some("0 << /S /r >> 1 << /S /D /St 214 /P (A-) >>"), Some("Real Paper Title"));
+        let pdf = build_pdf(
+            &[page(ops), page(p2)],
+            Some("0 << /S /r >> 1 << /S /D /St 214 /P (A-) >>"),
+            Some("Real Paper Title"),
+        );
         let r = convert_pdf(&pdf);
         let ex = &r.extracted;
         assert!(ex.markdown.contains("# A Study of Synthetic Things\n\n## 1 Introduction\n\nThis paragraph has a hyphenated word and runs to the end. It has two sentences.\n\nA second paragraph starts after a gap.\n"), "{}", ex.markdown);
@@ -361,14 +403,29 @@ mod tests {
         need_pdfium!();
         let mut ops = Vec::new();
         for i in 0..6 {
-            ops.push(op("F1", 10.0, 72.0, 700.0 - i as f32 * 12.0, &format!("left column sentence number {i} with words")));
+            ops.push(op(
+                "F1",
+                10.0,
+                72.0,
+                700.0 - i as f32 * 12.0,
+                &format!("left column sentence number {i} with words"),
+            ));
         }
         for i in 0..6 {
-            ops.push(op("F1", 10.0, 320.0, 700.0 - i as f32 * 12.0, &format!("right column sentence number {i} with words")));
+            ops.push(op(
+                "F1",
+                10.0,
+                320.0,
+                700.0 - i as f32 * 12.0,
+                &format!("right column sentence number {i} with words"),
+            ));
         }
         let r = convert_pdf(&build_pdf(&[page(ops)], None, None));
         let md = &r.extracted.markdown;
-        assert!(md.find("left column sentence number 5").unwrap() < md.find("right column sentence number 0").unwrap(), "{md}");
+        assert!(
+            md.find("left column sentence number 5").unwrap() < md.find("right column sentence number 0").unwrap(),
+            "{md}"
+        );
     }
 
     #[test]
@@ -376,7 +433,10 @@ mod tests {
         need_pdfium!();
         let mut pages = Vec::new();
         for i in 0..8 {
-            let mut ops = vec![op("F1", 9.0, 72.0, 765.0, "Journal of Synthetic Results"), op("F1", 9.0, 300.0, 30.0, &format!("{}", 100 + i))];
+            let mut ops = vec![
+                op("F1", 9.0, 72.0, 765.0, "Journal of Synthetic Results"),
+                op("F1", 9.0, 300.0, 30.0, &format!("{}", 100 + i)),
+            ];
             // The exponent is part of the same text run, raised with a text rise.
             ops.push(op("RAW", 0.0, 0.0, 0.0, &format!("BT /F1 10 Tf 72 600 Td (Page {i} body text about energy E = m c) Tj /F1 6 Tf 4 Ts (2) Tj 0 Ts /F1 10 Tf ( holds.) Tj ET")));
             pages.push(page(ops));
@@ -393,7 +453,8 @@ mod tests {
     #[test]
     fn conversion_is_deterministic() {
         need_pdfium!();
-        let mut ops = vec![op("F2", 16.0, 72.0, 740.0, "Title Of The Test Paper"), op("F2", 12.0, 72.0, 700.0, "1 Introduction")];
+        let mut ops =
+            vec![op("F2", 16.0, 72.0, 740.0, "Title Of The Test Paper"), op("F2", 12.0, 72.0, 700.0, "1 Introduction")];
         ops.extend(body(&["Some body text that fills the page.", "A second line of the paragraph."], 680.0));
         let pdf = build_pdf(&[page(ops)], Some("0 << /S /D >>"), Some("A Test Paper"));
         let a = convert_pdf(&pdf).extracted;
@@ -404,7 +465,10 @@ mod tests {
     #[test]
     fn rotated_pages_are_read_upright() {
         need_pdfium!();
-        let ops = [op("F1", 10.0, 72.0, 700.0, "First line on a landscape page"), op("F1", 10.0, 72.0, 686.0, "Second line on a landscape page")];
+        let ops = [
+            op("F1", 10.0, 72.0, 700.0, "First line on a landscape page"),
+            op("F1", 10.0, 72.0, 686.0, "Second line on a landscape page"),
+        ];
         for rotate in [90, 180, 270] {
             let mut p = page(ops.iter().map(|o| op(o.font, o.size, o.x, o.y, &o.text)).collect());
             p.rotate = rotate;
@@ -429,7 +493,11 @@ mod tests {
         let r = convert_pdf(&pdf);
         assert!(r.extracted.warnings.iter().any(|w| w.contains("no extractable text")));
         // The same file with text on the pages is native.
-        let text_pdf = build_pdf(&[page(body(&["Plenty of ordinary words on this page to count as a text layer for sure."], 700.0))], None, None);
+        let text_pdf = build_pdf(
+            &[page(body(&["Plenty of ordinary words on this page to count as a text layer for sure."], 700.0))],
+            None,
+            None,
+        );
         assert_eq!(analyze(&text_pdf).unwrap().1.route, PdfRoute::Native);
     }
 
@@ -437,15 +505,28 @@ mod tests {
     fn broken_input_is_reported_not_crashed() {
         need_pdfium!();
         assert!(matches!(convert(b"", &ConvertOptions::default()), Err(ExtractError::Empty)));
-        assert_eq!(convert(b"%PDF-1.4\nnot really a pdf", &ConvertOptions::default()).unwrap_err().reason_code(), "corrupt_file");
+        assert_eq!(
+            convert(b"%PDF-1.4\nnot really a pdf", &ConvertOptions::default()).unwrap_err().reason_code(),
+            "corrupt_file"
+        );
         let good = build_pdf(&[page(body(&["Some text here."], 700.0))], None, None);
         let truncated = &good[..good.len() / 2];
-        assert!(convert(truncated, &ConvertOptions::default()).is_err() || convert(truncated, &ConvertOptions::default()).is_ok());
+        assert!(
+            convert(truncated, &ConvertOptions::default()).is_err()
+                || convert(truncated, &ConvertOptions::default()).is_ok()
+        );
     }
 
     #[test]
     fn font_names_give_bold_and_italic() {
-        for n in ["ABCDEF+TimesNewRomanPS-BoldMT", "CMBX12", "Helvetica-Bold", "MyriadPro-Semibold", "NimbusRomNo9L-Medi", "Times-BoldItalic"] {
+        for n in [
+            "ABCDEF+TimesNewRomanPS-BoldMT",
+            "CMBX12",
+            "Helvetica-Bold",
+            "MyriadPro-Semibold",
+            "NimbusRomNo9L-Medi",
+            "Times-BoldItalic",
+        ] {
             assert!(font_style(n).0, "{n}");
         }
         for n in ["CMR10", "Times-Roman", "CMMI10", "Calibri", "Cambria"] {

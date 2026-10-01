@@ -45,11 +45,17 @@ fn read_styles(root: Node, out: &mut Styles) {
         let Some(nm) = attr(s, "name") else { continue };
         let mono = s.children().filter(|c| is(*c, "text-properties")).any(|tp| {
             let f = attr(tp, "font-name").or_else(|| attr(tp, "font-family")).unwrap_or("").to_lowercase();
-            ["courier", "consolas", "monaco", "menlo", "mono", "lucida console", "source code"].iter().any(|m| f.contains(m))
+            ["courier", "consolas", "monaco", "menlo", "mono", "lucida console", "source code"]
+                .iter()
+                .any(|m| f.contains(m))
         });
         out.paragraph.insert(
             nm.to_string(),
-            PStyle { display: attr(s, "display-name").map(str::to_lowercase).unwrap_or_else(|| decode_style_name(nm)), parent: attr(s, "parent-style-name").map(str::to_string), mono },
+            PStyle {
+                display: attr(s, "display-name").map(str::to_lowercase).unwrap_or_else(|| decode_style_name(nm)),
+                parent: attr(s, "parent-style-name").map(str::to_string),
+                mono,
+            },
         );
     }
     for ls in root.descendants().filter(|n| is(*n, "list-style")) {
@@ -111,7 +117,15 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<Extracted> {
         meta = xmlutil::with_document(x, "odt", |d, _| Ok(read_meta(d.root_element())))?;
     }
 
-    let mut o = Odt { b: MdBuilder::new(), styles, zip: &mut zip, notes: Vec::new(), code: Vec::new(), title_offset: 0, warnings: Vec::new() };
+    let mut o = Odt {
+        b: MdBuilder::new(),
+        styles,
+        zip: &mut zip,
+        notes: Vec::new(),
+        code: Vec::new(),
+        title_offset: 0,
+        warnings: Vec::new(),
+    };
     xmlutil::with_document(&content, "odt", |doc, _| {
         let root = doc.root_element();
         read_styles(root, &mut o.styles);
@@ -234,7 +248,8 @@ impl Odt<'_, '_> {
                     self.table(n, depth);
                 }
                 "section" | "text-box" | "index-body" => self.flow(n, depth + 1),
-                "table-of-content" | "illustration-index" | "table-index" | "object-index" | "alphabetical-index" | "user-index" | "tracked-changes" | "sequence-decls" | "variable-decls" | "user-field-decls" => {}
+                "table-of-content" | "illustration-index" | "table-index" | "object-index" | "alphabetical-index"
+                | "user-index" | "tracked-changes" | "sequence-decls" | "variable-decls" | "user-field-decls" => {}
                 "bibliography" => self.flow(n, depth + 1),
                 _ => {}
             }
@@ -277,7 +292,12 @@ impl Odt<'_, '_> {
         if depth > MAX_DEPTH {
             return;
         }
-        let ordered = style.as_ref().and_then(|s| self.styles.lists.get(s)).and_then(|lv| lv.get(&level)).copied().unwrap_or(false);
+        let ordered = style
+            .as_ref()
+            .and_then(|s| self.styles.lists.get(s))
+            .and_then(|lv| lv.get(&level))
+            .copied()
+            .unwrap_or(false);
         let start = attr(l, "start-value").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1);
         for (offset, item) in l.children().filter(|c| is(*c, "list-item") || is(*c, "list-header")).enumerate() {
             let n = start + offset;
@@ -400,7 +420,16 @@ impl Odt<'_, '_> {
                 "line-break" => out.push('\n'),
                 "note" => {
                     let body = child(c, "note-body");
-                    let t = body.map(|b| b.children().filter(Node::is_element).map(|p| self.inline(p, depth + 1)).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
+                    let t = body
+                        .map(|b| {
+                            b.children()
+                                .filter(Node::is_element)
+                                .map(|p| self.inline(p, depth + 1))
+                                .filter(|s| !s.is_empty())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
                     if !t.is_empty() {
                         let num = self.notes.len() + 1;
                         self.notes.push((num, t));
@@ -409,16 +438,24 @@ impl Odt<'_, '_> {
                 }
                 "frame" => {
                     if let Some(obj) = descendant(c, "object")
-                        && let Some(l) = self.formula(obj) {
-                            out.push('$');
-                            out.push_str(&l);
-                            out.push('$');
-                            formulas.push(l);
-                        }
+                        && let Some(l) = self.formula(obj)
+                    {
+                        out.push('$');
+                        out.push_str(&l);
+                        out.push('$');
+                        formulas.push(l);
+                    }
                     // Text boxes are written after the paragraph by the caller.
                 }
-                "annotation" | "annotation-end" | "tracked-changes" | "change" | "change-start" | "change-end" | "soft-page-break" | "bookmark" | "bookmark-start" | "bookmark-end" | "image" | "text-box" | "ruby-text" | "object" => {}
-                "sequence" | "span" | "a" | "ruby" | "ruby-base" | "number" | "date" | "page-number" | "title" | "subject" | "author-name" | "bookmark-ref" | "reference-ref" | "sequence-ref" | "user-defined" | "user-field-get" | "variable-get" | "text-input" | "meta" | "meta-field" | "hidden-text" | "conditional-text" | "initial-creator" | "creator" | "file-name" | "page-count" | "word-count" | "paragraph-count" | "character-count" | "table-count" | "image-count" | "object-count" | "description" | "keywords" | "time" | "chapter" | "name" => {
+                "annotation" | "annotation-end" | "tracked-changes" | "change" | "change-start" | "change-end"
+                | "soft-page-break" | "bookmark" | "bookmark-start" | "bookmark-end" | "image" | "text-box"
+                | "ruby-text" | "object" => {}
+                "sequence" | "span" | "a" | "ruby" | "ruby-base" | "number" | "date" | "page-number" | "title"
+                | "subject" | "author-name" | "bookmark-ref" | "reference-ref" | "sequence-ref" | "user-defined"
+                | "user-field-get" | "variable-get" | "text-input" | "meta" | "meta-field" | "hidden-text"
+                | "conditional-text" | "initial-creator" | "creator" | "file-name" | "page-count" | "word-count"
+                | "paragraph-count" | "character-count" | "table-count" | "image-count" | "object-count"
+                | "description" | "keywords" | "time" | "chapter" | "name" => {
                     self.inline_into(c, out, depth + 1, formulas)
                 }
                 _ => self.inline_into(c, out, depth + 1, formulas),
@@ -450,7 +487,13 @@ fn classify(display: &str, mono: bool) -> Role {
         Role::Title
     } else if d == "quotations" || d == "quote" || d == "block quote" || d == "block quotation" {
         Role::Quote
-    } else if mono || d.contains("preformatted") || d.contains("source text") || d.contains("source code") || d == "code" || d.contains("verbatim") {
+    } else if mono
+        || d.contains("preformatted")
+        || d.contains("source text")
+        || d.contains("source code")
+        || d == "code"
+        || d.contains("verbatim")
+    {
         Role::Code
     } else {
         Role::Normal
@@ -465,7 +508,9 @@ fn raw_code_text(p: Node) -> String {
             s.push_str(d.text().unwrap_or(""));
         } else if d.is_element() {
             match name(d) {
-                "s" => s.push_str(&" ".repeat(attr(d, "c").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).min(200))),
+                "s" => {
+                    s.push_str(&" ".repeat(attr(d, "c").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).min(200)))
+                }
                 "tab" => s.push('\t'),
                 "line-break" => s.push('\n'),
                 _ => {}
@@ -517,7 +562,11 @@ mod tests {
     #[test]
     fn title_style_pushes_headings_down() {
         let auto = r#"<style:style style:name="P1" style:family="paragraph" style:parent-style-name="Title"/>"#;
-        let r = run(r#"<text:p text:style-name="P1">Doc Title</text:p><text:h text:outline-level="1">Chapter</text:h>"#, auto, &[]);
+        let r = run(
+            r#"<text:p text:style-name="P1">Doc Title</text:p><text:h text:outline-level="1">Chapter</text:h>"#,
+            auto,
+            &[],
+        );
         let hs: Vec<(u8, &str)> = r.headings.iter().map(|h| (h.level, h.text.as_str())).collect();
         assert_eq!(hs, vec![(1, "Doc Title"), (2, "Chapter")]);
     }
@@ -548,7 +597,10 @@ mod tests {
         let body = r#"<text:p>Claim<text:note text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body><text:p>Source text.</text:p></text:note-body></text:note> made.</text:p>
 <text:p text:style-name="Q">A quotation.</text:p><text:p text:style-name="C">if x:<text:s text:c="4"/>run()</text:p><text:p text:style-name="C">done</text:p><text:p>After.</text:p>"#;
         let r = run(body, auto, &[]);
-        assert_eq!(r.markdown, "Claim[^1] made.\n\n> A quotation.\n\n```\nif x:    run()\ndone\n```\n\nAfter.\n\n## Notes\n\n[^1]: Source text.\n");
+        assert_eq!(
+            r.markdown,
+            "Claim[^1] made.\n\n> A quotation.\n\n```\nif x:    run()\ndone\n```\n\nAfter.\n\n## Notes\n\n[^1]: Source text.\n"
+        );
     }
 
     #[test]
@@ -571,7 +623,9 @@ mod tests {
 
     #[test]
     fn metadata_from_meta_xml() {
-        let meta = format!(r#"<office:document-meta {NS}><office:meta><dc:title>ODT Title</dc:title><dc:creator>Ann Lee</dc:creator><dc:language>de-DE</dc:language><meta:keyword>a</meta:keyword><meta:keyword>b</meta:keyword><meta:creation-date>2018-03-01T10:00:00</meta:creation-date></office:meta></office:document-meta>"#);
+        let meta = format!(
+            r#"<office:document-meta {NS}><office:meta><dc:title>ODT Title</dc:title><dc:creator>Ann Lee</dc:creator><dc:language>de-DE</dc:language><meta:keyword>a</meta:keyword><meta:keyword>b</meta:keyword><meta:creation-date>2018-03-01T10:00:00</meta:creation-date></office:meta></office:document-meta>"#
+        );
         let r = run("<text:p>Text.</text:p>", "", &[("meta.xml", meta)]);
         assert_eq!(r.metadata.title.as_deref(), Some("ODT Title"));
         assert_eq!(r.metadata.authors, vec!["Ann Lee"]);
@@ -588,6 +642,9 @@ mod tests {
         w.start_file("x.txt", zip::write::SimpleFileOptions::default()).unwrap();
         let z = w.finish().unwrap().into_inner();
         assert_eq!(convert(&z, &ConvertOptions::default()).unwrap_err().reason_code(), "corrupt_file");
-        assert_eq!(convert(&odt("<text:p/>", "", &[]), &ConvertOptions::default()).unwrap_err().reason_code(), "extraction_failed");
+        assert_eq!(
+            convert(&odt("<text:p/>", "", &[]), &ConvertOptions::default()).unwrap_err().reason_code(),
+            "extraction_failed"
+        );
     }
 }

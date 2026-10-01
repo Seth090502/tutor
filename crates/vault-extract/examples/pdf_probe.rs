@@ -27,7 +27,13 @@ fn main() {
     match r {
         Ok(c) => {
             let ex = &c.extracted;
-            let q = vault_extract::quality::assess(ex, vault_extract::quality::QualityContext { expect_paper_sections: true, source_pages: Some(c.signals.pages) });
+            let q = vault_extract::quality::assess(
+                ex,
+                vault_extract::quality::QualityContext {
+                    expect_paper_sections: true,
+                    source_pages: Some(c.signals.pages),
+                },
+            );
             println!(
                 "{}",
                 serde_json::json!({

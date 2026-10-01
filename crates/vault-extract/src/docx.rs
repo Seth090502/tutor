@@ -141,7 +141,21 @@ fn format_number(fmt: &str, n: usize) -> String {
         String::from_utf8_lossy(&s).into_owned()
     };
     let roman = |mut n: usize| -> String {
-        let table = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")];
+        let table = [
+            (1000, "m"),
+            (900, "cm"),
+            (500, "d"),
+            (400, "cd"),
+            (100, "c"),
+            (90, "xc"),
+            (50, "l"),
+            (40, "xl"),
+            (10, "x"),
+            (9, "ix"),
+            (5, "v"),
+            (4, "iv"),
+            (1, "i"),
+        ];
         let mut s = String::new();
         for (v, r) in table {
             while n >= v {
@@ -249,7 +263,10 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<Extracted> {
 
     xmlutil::with_document(&doc_bytes, "docx", |doc, enc| {
         let root = doc.root_element();
-        let body = root.children().find(|n| w(*n, "body")).ok_or_else(|| ExtractError::corrupt("docx", "document.xml has no <w:body>"))?;
+        let body = root
+            .children()
+            .find(|n| w(*n, "body"))
+            .ok_or_else(|| ExtractError::corrupt("docx", "document.xml has no <w:body>"))?;
         // A Title paragraph pushes the headings one level down so the outline has a single root.
         c.title_offset = u8::from(body.descendants().any(|p| w(p, "p") && c.role_of(p) == Role::Title));
         c.blocks(body, 0);
@@ -297,15 +314,19 @@ fn main_part(zip: &mut ZipDoc) -> Result<String> {
 
 /// Relationship type suffix (`styles`, `footnotes`, `numbering`...) to target, for the main part.
 fn relationships(zip: &mut ZipDoc, main: &str) -> Result<HashMap<String, String>> {
-    let (dir, file) = main.rsplit_once('/').map(|(d, f)| (format!("{d}/"), f.to_string())).unwrap_or((String::new(), main.to_string()));
+    let (dir, file) = main
+        .rsplit_once('/')
+        .map(|(d, f)| (format!("{d}/"), f.to_string()))
+        .unwrap_or((String::new(), main.to_string()));
     let Some(data) = zip.read(&format!("{dir}_rels/{file}.rels"))? else { return Ok(HashMap::new()) };
     xmlutil::with_document(&data, "docx", |d, _| {
         let mut out = HashMap::new();
         for r in d.descendants().filter(|n| n.is_element() && n.tag_name().name() == "Relationship") {
             if let (Some(t), Some(target)) = (attr(r, "Type"), attr(r, "Target"))
-                && attr(r, "TargetMode") != Some("External") {
-                    out.insert(t.rsplit('/').next().unwrap_or(t).to_string(), target.to_string());
-                }
+                && attr(r, "TargetMode") != Some("External")
+            {
+                out.insert(t.rsplit('/').next().unwrap_or(t).to_string(), target.to_string());
+            }
         }
         Ok(out)
     })
@@ -338,7 +359,9 @@ fn read_core(root: Node) -> Metadata {
         match e.tag_name().name() {
             "title" => m.title = Some(v).filter(|t| !t.to_lowercase().starts_with("microsoft word -")),
             "creator" => m.authors = v.split(';').map(|a| a.trim().to_string()).filter(|a| !a.is_empty()).collect(),
-            "keywords" => m.keywords = v.split([',', ';']).map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect(),
+            "keywords" => {
+                m.keywords = v.split([',', ';']).map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect()
+            }
             "language" => m.language = Some(v),
             "created" => m.year = ids::year_in(&v),
             "description" => m.abstract_text = Some(v),
@@ -433,12 +456,17 @@ impl Docx {
             }
             if let Some(rest) = t.strip_prefix("heading")
                 && let Ok(l) = rest.trim().parse::<u8>()
-                    && (1..=9).contains(&l) {
-                        return Role::Heading(l);
-                    }
+                && (1..=9).contains(&l)
+            {
+                return Role::Heading(l);
+            }
         }
         // Outline level on the paragraph or its style.
-        let outline = ppr.and_then(|pp| w_val(pp, "outlineLvl")).and_then(|v| v.parse::<u8>().ok()).filter(|l| *l < 9).or_else(|| chain.iter().find_map(|s| s.outline));
+        let outline = ppr
+            .and_then(|pp| w_val(pp, "outlineLvl"))
+            .and_then(|v| v.parse::<u8>().ok())
+            .filter(|l| *l < 9)
+            .or_else(|| chain.iter().find_map(|s| s.outline));
         if let Some(l) = outline {
             return Role::Heading(l + 1);
         }
@@ -446,7 +474,11 @@ impl Docx {
         if first == "quote" || first == "intense quote" || first == "block text" || first == "block quote" {
             return Role::Quote;
         }
-        if names.iter().any(|n| n.contains("code") || n.contains("preformatted") || n.contains("verbatim") || n.contains("source")) && !names.iter().any(|n| n.contains("source of") || n.contains("bibliography")) {
+        if names
+            .iter()
+            .any(|n| n.contains("code") || n.contains("preformatted") || n.contains("verbatim") || n.contains("source"))
+            && !names.iter().any(|n| n.contains("source of") || n.contains("bibliography"))
+        {
             return Role::Code;
         }
         Role::Normal
@@ -472,7 +504,11 @@ impl Docx {
     /// Advance the counters for a numbered paragraph and return its label (`1.`, `a)`, `2.1`) or `None` for bullets.
     fn number_label(&mut self, num_id: &str, ilvl: u8) -> Option<String> {
         let abs = self.numbering.num_to_abs.get(num_id)?.clone();
-        let lvl = self.numbering.levels.get(&(abs.clone(), ilvl)).cloned().unwrap_or(Level { fmt: "decimal".into(), text: "%1.".into(), start: 1 });
+        let lvl = self.numbering.levels.get(&(abs.clone(), ilvl)).cloned().unwrap_or(Level {
+            fmt: "decimal".into(),
+            text: "%1.".into(),
+            start: 1,
+        });
         let counters = self.counters.entry(num_id.to_string()).or_default();
         let il = ilvl as usize;
         if counters.len() <= il {
@@ -488,12 +524,22 @@ impl Docx {
         }
         let mut label = lvl.text.clone();
         for i in 0..=il {
-            let level_fmt = self.numbering.levels.get(&(abs.clone(), i as u8)).map(|l| l.fmt.clone()).unwrap_or_else(|| "decimal".into());
+            let level_fmt = self
+                .numbering
+                .levels
+                .get(&(abs.clone(), i as u8))
+                .map(|l| l.fmt.clone())
+                .unwrap_or_else(|| "decimal".into());
             let counters = self.counters.get(num_id).map(|c| c.as_slice()).unwrap_or(&[]);
-            label = label.replace(&format!("%{}", i + 1), &format_number(&level_fmt, counters.get(i).copied().unwrap_or(1)));
+            label = label
+                .replace(&format!("%{}", i + 1), &format_number(&level_fmt, counters.get(i).copied().unwrap_or(1)));
         }
         let label = label.trim().to_string();
-        if label.is_empty() || label.contains('%') { Some(format_number(&lvl.fmt, self.counters.get(num_id).and_then(|c| c.get(il)).copied().unwrap_or(1)) + ".") } else { Some(label) }
+        if label.is_empty() || label.contains('%') {
+            Some(format_number(&lvl.fmt, self.counters.get(num_id).and_then(|c| c.get(il)).copied().unwrap_or(1)) + ".")
+        } else {
+            Some(label)
+        }
     }
 
     fn paragraph(&mut self, p: Node) {
@@ -503,7 +549,8 @@ impl Docx {
         let code_by_font = c.runs > 0 && c.mono_runs == c.runs && role == Role::Normal && numbering.is_none();
         if role == Role::Code || code_by_font {
             // Keep the raw text, tabs and indentation included.
-            let raw: String = c.segments.iter().filter_map(|s| if let Seg::Text(t) = s { Some(t.as_str()) } else { None }).collect();
+            let raw: String =
+                c.segments.iter().filter_map(|s| if let Seg::Text(t) = s { Some(t.as_str()) } else { None }).collect();
             self.code.push(raw.replace('\u{a0}', " "));
             return;
         }
@@ -529,10 +576,13 @@ impl Docx {
                         (Role::Heading(l), num) => {
                             let label = num.as_ref().and_then(|(id, lvl)| self.number_label(id, *lvl));
                             let level = (*l + self.title_offset).min(6);
-                            self.b.heading(level, &match label {
-                                Some(lab) if !text.starts_with(&lab) => format!("{lab} {text}"),
-                                _ => text,
-                            });
+                            self.b.heading(
+                                level,
+                                &match label {
+                                    Some(lab) if !text.starts_with(&lab) => format!("{lab} {text}"),
+                                    _ => text,
+                                },
+                            );
                         }
                         (_, Some((id, lvl))) => {
                             if self.current_list.as_deref() != Some(id.as_str()) {
@@ -543,7 +593,9 @@ impl Docx {
                             match label {
                                 None => self.b.list_item(*lvl as usize, "-", &text),
                                 Some(l) => {
-                                    let numeric = l.trim_end_matches(['.', ')']).chars().all(|c| c.is_ascii_digit()) && !l.trim_end_matches(['.', ')']).is_empty() && !l.trim_end_matches(['.', ')']).contains('.');
+                                    let numeric = l.trim_end_matches(['.', ')']).chars().all(|c| c.is_ascii_digit())
+                                        && !l.trim_end_matches(['.', ')']).is_empty()
+                                        && !l.trim_end_matches(['.', ')']).contains('.');
                                     if numeric {
                                         self.b.list_item(*lvl as usize, &l, &text);
                                     } else {
@@ -582,18 +634,34 @@ impl Docx {
         if !cur.is_empty() {
             c.segments.push(Seg::Text(std::mem::take(&mut cur)));
         }
-        c.text = c.segments.iter().filter_map(|s| if let Seg::Text(t) = s { Some(t.as_str()) } else { None }).collect::<Vec<_>>().join(" ");
+        c.text = c
+            .segments
+            .iter()
+            .filter_map(|s| if let Seg::Text(t) = s { Some(t.as_str()) } else { None })
+            .collect::<Vec<_>>()
+            .join(" ");
         // A paragraph holding one equation and no other text is a display equation.
-        if maths == 1 && display_in_text == 0 && c.segments.len() == 1
+        if maths == 1
+            && display_in_text == 0
+            && c.segments.len() == 1
             && let Seg::Text(t) = &c.segments[0]
-                && let Some(inner) = t.trim().strip_prefix('$').and_then(|x| x.strip_suffix('$'))
-                    && !inner.contains('$') {
-                        c.math_only = Some(inner.to_string());
-                    }
+            && let Some(inner) = t.trim().strip_prefix('$').and_then(|x| x.strip_suffix('$'))
+            && !inner.contains('$')
+        {
+            c.math_only = Some(inner.to_string());
+        }
         c
     }
 
-    fn runs(&mut self, parent: Node, c: &mut ParaContent, cur: &mut String, depth: usize, maths: &mut usize, display_in_text: &mut usize) {
+    fn runs(
+        &mut self,
+        parent: Node,
+        c: &mut ParaContent,
+        cur: &mut String,
+        depth: usize,
+        maths: &mut usize,
+        display_in_text: &mut usize,
+    ) {
         if depth > MAX_DEPTH {
             return;
         }
@@ -604,7 +672,15 @@ impl Docx {
                     c.mono_runs += 1;
                 }
                 self.run(n, c, cur, depth);
-            } else if w(n, "hyperlink") || w(n, "smartTag") || w(n, "ins") || w(n, "moveTo") || w(n, "fldSimple") || w(n, "customXml") || w(n, "bdo") || w(n, "dir") {
+            } else if w(n, "hyperlink")
+                || w(n, "smartTag")
+                || w(n, "ins")
+                || w(n, "moveTo")
+                || w(n, "fldSimple")
+                || w(n, "customXml")
+                || w(n, "bdo")
+                || w(n, "dir")
+            {
                 self.runs(n, c, cur, depth + 1, maths, display_in_text);
             } else if w(n, "sdt") {
                 if let Some(content) = w_child(n, "sdtContent") {
@@ -627,7 +703,10 @@ impl Docx {
                 }
             } else if n.tag_name().name() == "AlternateContent" {
                 // The Choice branch holds the modern markup; the Fallback repeats it for old readers.
-                let branch = n.children().find(|b| b.is_element() && b.tag_name().name() == "Choice").or_else(|| n.children().find(|b| b.is_element() && b.tag_name().name() == "Fallback"));
+                let branch = n
+                    .children()
+                    .find(|b| b.is_element() && b.tag_name().name() == "Choice")
+                    .or_else(|| n.children().find(|b| b.is_element() && b.tag_name().name() == "Fallback"));
                 if let Some(b) = branch {
                     self.runs(b, c, cur, depth + 1, maths, display_in_text);
                 }
@@ -637,11 +716,10 @@ impl Docx {
 
     fn run(&mut self, r: Node, c: &mut ParaContent, cur: &mut String, depth: usize) {
         for n in r.children().filter(Node::is_element) {
-            if !ns_is_w(n) && n.tag_name().name() != "AlternateContent"
-                && m(n, "oMath") {
-                    continue;
-                }
-                // Drawing and picture containers (wps, v, mc) may hold text boxes.
+            if !ns_is_w(n) && n.tag_name().name() != "AlternateContent" && m(n, "oMath") {
+                continue;
+            }
+            // Drawing and picture containers (wps, v, mc) may hold text boxes.
             match n.tag_name().name() {
                 "t" if ns_is_w(n) => cur.push_str(&xmlutil::raw_text(n)),
                 "tab" | "ptab" if ns_is_w(n) => cur.push('\t'),
@@ -653,7 +731,10 @@ impl Docx {
                 "noBreakHyphen" if ns_is_w(n) => cur.push('-'),
                 "softHyphen" if ns_is_w(n) => {}
                 "sym" if ns_is_w(n) => {
-                    if let Some(ch) = attr(n, "char").and_then(|h| u32::from_str_radix(h.trim_start_matches("F0"), 16).ok()).and_then(char::from_u32) {
+                    if let Some(ch) = attr(n, "char")
+                        .and_then(|h| u32::from_str_radix(h.trim_start_matches("F0"), 16).ok())
+                        .and_then(char::from_u32)
+                    {
                         // Symbol-font code points are private use; keep only printable ASCII-range stand-ins.
                         if ch.is_ascii_graphic() {
                             cur.push(ch);
@@ -662,19 +743,21 @@ impl Docx {
                 }
                 "footnoteReference" if ns_is_w(n) => {
                     if let Some(id) = attr(n, "id")
-                        && let Some(text) = self.footnotes.get(id).cloned() {
-                            let num = self.used_notes.len() + 1;
-                            self.used_notes.push((num, text));
-                            cur.push_str(&format!("[^{num}]"));
-                        }
+                        && let Some(text) = self.footnotes.get(id).cloned()
+                    {
+                        let num = self.used_notes.len() + 1;
+                        self.used_notes.push((num, text));
+                        cur.push_str(&format!("[^{num}]"));
+                    }
                 }
                 "endnoteReference" if ns_is_w(n) => {
                     if let Some(id) = attr(n, "id")
-                        && let Some(text) = self.endnotes.get(id).cloned() {
-                            let num = self.used_notes.len() + 1;
-                            self.used_notes.push((num, text));
-                            cur.push_str(&format!("[^{num}]"));
-                        }
+                        && let Some(text) = self.endnotes.get(id).cloned()
+                    {
+                        let num = self.used_notes.len() + 1;
+                        self.used_notes.push((num, text));
+                        cur.push_str(&format!("[^{num}]"));
+                    }
                 }
                 "txbxContent" => {
                     for p in n.children().filter(|x| w(*x, "p")) {
@@ -686,15 +769,20 @@ impl Docx {
                     }
                 }
                 "AlternateContent" => {
-                    let branch = n.children().find(|b| b.is_element() && b.tag_name().name() == "Choice").or_else(|| n.children().find(|b| b.is_element() && b.tag_name().name() == "Fallback"));
+                    let branch = n
+                        .children()
+                        .find(|b| b.is_element() && b.tag_name().name() == "Choice")
+                        .or_else(|| n.children().find(|b| b.is_element() && b.tag_name().name() == "Fallback"));
                     if let Some(b) = branch {
                         self.run(b, c, cur, depth + 1);
                     }
                 }
-                "drawing" | "pict" | "object" | "Choice" | "Fallback" | "inline" | "anchor" | "graphic" | "graphicData" | "wsp" | "txbx" | "textbox" | "sdtContent"
-                    if depth < MAX_DEPTH => {
-                        self.run(n, c, cur, depth + 1);
-                    }
+                "drawing" | "pict" | "object" | "Choice" | "Fallback" | "inline" | "anchor" | "graphic"
+                | "graphicData" | "wsp" | "txbx" | "textbox" | "sdtContent"
+                    if depth < MAX_DEPTH =>
+                {
+                    self.run(n, c, cur, depth + 1);
+                }
                 _ => {}
             }
         }
@@ -720,14 +808,17 @@ impl Docx {
             let mut col = 0usize;
             for tc in tr.children().filter(|c| w(*c, "tc")) {
                 let pr = w_child(tc, "tcPr");
-                let span = pr.and_then(|p| w_val(p, "gridSpan")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).max(1);
-                let vmerge = pr.and_then(|p| w_child(p, "vMerge")).map(|v| attr(v, "val").unwrap_or("continue").to_string());
+                let span =
+                    pr.and_then(|p| w_val(p, "gridSpan")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).max(1);
+                let vmerge =
+                    pr.and_then(|p| w_child(p, "vMerge")).map(|v| attr(v, "val").unwrap_or("continue").to_string());
                 match vmerge.as_deref() {
                     Some("continue") => {
                         if let Some(&(r, ci)) = open.get(&col)
-                            && let Some(cell) = g.rows.get_mut(r).and_then(|rw| rw.get_mut(ci)) {
-                                cell.rowspan += 1;
-                            }
+                            && let Some(cell) = g.rows.get_mut(r).and_then(|rw| rw.get_mut(ci))
+                        {
+                            cell.rowspan += 1;
+                        }
                     }
                     _ => {
                         let mut parts = Vec::new();
@@ -758,7 +849,22 @@ fn run_is_monospace(r: Node) -> bool {
     let Some(rpr) = w_child(r, "rPr") else { return false };
     let Some(f) = w_child(rpr, "rFonts") else { return false };
     let font = attr(f, "ascii").or_else(|| attr(f, "hAnsi")).unwrap_or("").to_lowercase();
-    ["courier", "consolas", "monaco", "menlo", "lucida console", "source code", "fira code", "dejavu sans mono", "cascadia", "monospace", "liberation mono", "andale mono"].iter().any(|m| font.contains(m))
+    [
+        "courier",
+        "consolas",
+        "monaco",
+        "menlo",
+        "lucida console",
+        "source code",
+        "fira code",
+        "dejavu sans mono",
+        "cascadia",
+        "monospace",
+        "liberation mono",
+        "andale mono",
+    ]
+    .iter()
+    .any(|m| font.contains(m))
 }
 
 // ---------------------------------------------------------------------------------------------------- OMML
@@ -788,7 +894,12 @@ fn omml(n: Node, depth: usize) -> String {
     }
     let d = depth + 1;
     let kids = |n: Node| -> String {
-        n.children().filter(|c| c.is_element() && ns_is_m(*c)).map(|c| omml(c, d)).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
+        n.children()
+            .filter(|c| c.is_element() && ns_is_m(*c))
+            .map(|c| omml(c, d))
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     let name = n.tag_name().name();
     match name {
@@ -800,7 +911,11 @@ fn omml(n: Node, depth: usize) -> String {
                 format!("\\text{{{}}}", mathml::escape_text(text.trim()))
             } else {
                 let l = mathml::latex_text(&text);
-                if plain && l.chars().all(|c| c.is_ascii_alphabetic()) && l.chars().count() > 1 { format!("\\mathrm{{{l}}}") } else { l }
+                if plain && l.chars().all(|c| c.is_ascii_alphabetic()) && l.chars().count() > 1 {
+                    format!("\\mathrm{{{l}}}")
+                } else {
+                    l
+                }
             }
         }
         "f" => {
@@ -815,11 +930,20 @@ fn omml(n: Node, depth: usize) -> String {
         "rad" => {
             let e = mchild_latex(n, "e", d);
             let deg = mchild_latex(n, "deg", d);
-            if deg.is_empty() || flag(m_prop(n, "radPr", "degHide")) { format!("\\sqrt{{{e}}}") } else { format!("\\sqrt[{deg}]{{{e}}}") }
+            if deg.is_empty() || flag(m_prop(n, "radPr", "degHide")) {
+                format!("\\sqrt{{{e}}}")
+            } else {
+                format!("\\sqrt[{deg}]{{{e}}}")
+            }
         }
         "sSup" => format!("{}^{}", script_base(n, d), mathml::group(&mchild_latex(n, "sup", d))),
         "sSub" => format!("{}_{}", script_base(n, d), mathml::group(&mchild_latex(n, "sub", d))),
-        "sSubSup" => format!("{}_{}^{}", script_base(n, d), mathml::group(&mchild_latex(n, "sub", d)), mathml::group(&mchild_latex(n, "sup", d))),
+        "sSubSup" => format!(
+            "{}_{}^{}",
+            script_base(n, d),
+            mathml::group(&mchild_latex(n, "sub", d)),
+            mathml::group(&mchild_latex(n, "sup", d))
+        ),
         "sPre" => {
             let sub = mchild_latex(n, "sub", d);
             let sup = mchild_latex(n, "sup", d);
@@ -827,7 +951,8 @@ fn omml(n: Node, depth: usize) -> String {
         }
         "nary" => {
             let chr = m_prop(n, "naryPr", "chr").unwrap_or("∫");
-            let sym = chr.chars().next().and_then(mathml::symbol).map(str::to_string).unwrap_or_else(|| mathml::op(chr));
+            let sym =
+                chr.chars().next().and_then(mathml::symbol).map(str::to_string).unwrap_or_else(|| mathml::op(chr));
             let sub = if flag(m_prop(n, "naryPr", "subHide")) { String::new() } else { mchild_latex(n, "sub", d) };
             let sup = if flag(m_prop(n, "naryPr", "supHide")) { String::new() } else { mchild_latex(n, "sup", d) };
             let mut s = sym;
@@ -843,14 +968,43 @@ fn omml(n: Node, depth: usize) -> String {
             let beg = m_prop(n, "dPr", "begChr").unwrap_or("(");
             let end = m_prop(n, "dPr", "endChr").unwrap_or(")");
             let sep = m_prop(n, "dPr", "sepChr").unwrap_or("|");
-            let inner = n.children().filter(|c| m(*c, "e")).map(|e| omml(e, d)).collect::<Vec<_>>().join(&format!(" {} ", mathml::op(sep)));
+            let inner = n
+                .children()
+                .filter(|c| m(*c, "e"))
+                .map(|e| omml(e, d))
+                .collect::<Vec<_>>()
+                .join(&format!(" {} ", mathml::op(sep)));
             let delim = |s: &str| if s.is_empty() { ".".to_string() } else { mathml::op(s) };
             format!("\\left{} {inner} \\right{}", delim(beg), delim(end))
         }
         "func" => {
             let name = collapse_ws(&mchild_latex(n, "fName", d));
             let bare = name.trim_start_matches("\\mathrm{").trim_end_matches('}');
-            let f = if matches!(bare, "sin" | "cos" | "tan" | "cot" | "sec" | "csc" | "sinh" | "cosh" | "tanh" | "log" | "ln" | "lg" | "exp" | "lim" | "max" | "min" | "det" | "dim" | "ker" | "arg" | "sup" | "inf") {
+            let f = if matches!(
+                bare,
+                "sin"
+                    | "cos"
+                    | "tan"
+                    | "cot"
+                    | "sec"
+                    | "csc"
+                    | "sinh"
+                    | "cosh"
+                    | "tanh"
+                    | "log"
+                    | "ln"
+                    | "lg"
+                    | "exp"
+                    | "lim"
+                    | "max"
+                    | "min"
+                    | "det"
+                    | "dim"
+                    | "ker"
+                    | "arg"
+                    | "sup"
+                    | "inf"
+            ) {
                 format!("\\{bare}")
             } else {
                 name
@@ -867,12 +1021,17 @@ fn omml(n: Node, depth: usize) -> String {
         }
         "bar" => {
             let e = mchild_latex(n, "e", d);
-            if m_prop(n, "barPr", "pos") == Some("bot") { format!("\\underline{{{e}}}") } else { format!("\\overline{{{e}}}") }
+            if m_prop(n, "barPr", "pos") == Some("bot") {
+                format!("\\underline{{{e}}}")
+            } else {
+                format!("\\overline{{{e}}}")
+            }
         }
         "limLow" => {
             let e = mchild_latex(n, "e", d);
             let lim = mchild_latex(n, "lim", d);
-            if matches!(e.trim_start_matches("\\mathrm{").trim_end_matches('}'), "lim" | "max" | "min" | "sup" | "inf") {
+            if matches!(e.trim_start_matches("\\mathrm{").trim_end_matches('}'), "lim" | "max" | "min" | "sup" | "inf")
+            {
                 format!("\\{}_{}", e.trim_start_matches("\\mathrm{").trim_end_matches('}'), mathml::group(&lim))
             } else {
                 format!("\\underset{{{lim}}}{{{e}}}")
@@ -880,14 +1039,20 @@ fn omml(n: Node, depth: usize) -> String {
         }
         "limUpp" => format!("\\overset{{{}}}{{{}}}", mchild_latex(n, "lim", d), mchild_latex(n, "e", d)),
         "m" => {
-            let rows: Vec<String> = n.children().filter(|c| m(*c, "mr")).map(|r| r.children().filter(|e| m(*e, "e")).map(|e| omml(e, d)).collect::<Vec<_>>().join(" & ")).collect();
+            let rows: Vec<String> = n
+                .children()
+                .filter(|c| m(*c, "mr"))
+                .map(|r| r.children().filter(|e| m(*e, "e")).map(|e| omml(e, d)).collect::<Vec<_>>().join(" & "))
+                .collect();
             format!("\\begin{{matrix}} {} \\end{{matrix}}", rows.join(" \\\\ "))
         }
         "eqArr" => {
             let rows: Vec<String> = n.children().filter(|c| m(*c, "e")).map(|e| omml(e, d)).collect();
             format!("\\begin{{aligned}} {} \\end{{aligned}}", rows.join(" \\\\ "))
         }
-        "rPr" | "ctrlPr" | "fPr" | "radPr" | "naryPr" | "dPr" | "accPr" | "barPr" | "limLowPr" | "limUppPr" | "mPr" | "eqArrPr" | "sSupPr" | "sSubPr" | "sSubSupPr" | "sPrePr" | "funcPr" | "boxPr" | "borderBoxPr" | "phantPr" | "groupChrPr" | "oMathParaPr" | "t" => String::new(),
+        "rPr" | "ctrlPr" | "fPr" | "radPr" | "naryPr" | "dPr" | "accPr" | "barPr" | "limLowPr" | "limUppPr" | "mPr"
+        | "eqArrPr" | "sSupPr" | "sSubPr" | "sSubSupPr" | "sPrePr" | "funcPr" | "boxPr" | "borderBoxPr" | "phantPr"
+        | "groupChrPr" | "oMathParaPr" | "t" => String::new(),
         _ => kids(n),
     }
 }
@@ -914,7 +1079,12 @@ mod tests {
             w.write_all(c.as_bytes()).unwrap();
         };
         put("[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>");
-        put("word/document.xml", &format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document {W}><w:body>{document}</w:body></w:document>"));
+        put(
+            "word/document.xml",
+            &format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document {W}><w:body>{document}</w:body></w:document>"
+            ),
+        );
         for (n, c) in extra {
             put(n.as_str(), c.as_str());
         }
@@ -957,15 +1127,34 @@ mod tests {
     }
 
     fn li(num: u32, lvl: u32, text: &str) -> String {
-        format!("<w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"{lvl}\"/><w:numId w:val=\"{num}\"/></w:numPr></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>")
+        format!(
+            "<w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"{lvl}\"/><w:numId w:val=\"{num}\"/></w:numPr></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"
+        )
     }
 
     #[test]
     fn headings_titles_numbering_and_outline_levels() {
-        let doc = format!("{}{}{}{}{}{}", p("Title", "The Document"), p("Heading1", "Introduction"), p("Heading2", "Background"), p("Heading1", "Methods"), p("Odd", "Odd chapter"), p("", "Plain paragraph."));
+        let doc = format!(
+            "{}{}{}{}{}{}",
+            p("Title", "The Document"),
+            p("Heading1", "Introduction"),
+            p("Heading2", "Background"),
+            p("Heading1", "Methods"),
+            p("Odd", "Odd chapter"),
+            p("", "Plain paragraph.")
+        );
         let r = run(&doc, &[styles(), numbering()]);
         let hs: Vec<(u8, &str)> = r.headings.iter().map(|h| (h.level, h.text.as_str())).collect();
-        assert_eq!(hs, vec![(1, "The Document"), (2, "1 Introduction"), (3, "1.1 Background"), (2, "2 Methods"), (4, "Odd chapter")]);
+        assert_eq!(
+            hs,
+            vec![
+                (1, "The Document"),
+                (2, "1 Introduction"),
+                (3, "1.1 Background"),
+                (2, "2 Methods"),
+                (4, "Odd chapter")
+            ]
+        );
         assert!(r.markdown.ends_with("Plain paragraph.\n"));
         let lines: Vec<&str> = r.markdown.lines().collect();
         for h in &r.headings {
@@ -976,9 +1165,20 @@ mod tests {
 
     #[test]
     fn lists_bullets_and_numbers() {
-        let doc = format!("{}{}{}{}{}{}", li(2, 0, "bullet one"), li(2, 1, "sub bullet"), li(3, 0, "first"), li(3, 1, "child a"), li(3, 1, "child b"), li(3, 0, "second"));
+        let doc = format!(
+            "{}{}{}{}{}{}",
+            li(2, 0, "bullet one"),
+            li(2, 1, "sub bullet"),
+            li(3, 0, "first"),
+            li(3, 1, "child a"),
+            li(3, 1, "child b"),
+            li(3, 0, "second")
+        );
         let r = run(&doc, &[styles(), numbering()]);
-        assert_eq!(r.markdown, "- bullet one\n  - sub bullet\n\n1. first\n  - (a) child a\n  - (b) child b\n2. second\n");
+        assert_eq!(
+            r.markdown,
+            "- bullet one\n  - sub bullet\n\n1. first\n  - (a) child a\n  - (b) child b\n2. second\n"
+        );
     }
 
     #[test]
@@ -1017,10 +1217,25 @@ mod tests {
 
     #[test]
     fn quote_and_code_styles_and_monospace_runs() {
-        let mono = |t: &str| format!("<w:p><w:r><w:rPr><w:rFonts w:ascii=\"Consolas\"/></w:rPr><w:t xml:space=\"preserve\">{t}</w:t></w:r></w:p>");
-        let doc = format!("{}{}{}{}{}{}", p("Quote", "Quoted words."), p("SourceCode", "fn main() {"), p("SourceCode", "    run();"), p("SourceCode", "}"), p("", "After."), mono("x = 1"));
+        let mono = |t: &str| {
+            format!(
+                "<w:p><w:r><w:rPr><w:rFonts w:ascii=\"Consolas\"/></w:rPr><w:t xml:space=\"preserve\">{t}</w:t></w:r></w:p>"
+            )
+        };
+        let doc = format!(
+            "{}{}{}{}{}{}",
+            p("Quote", "Quoted words."),
+            p("SourceCode", "fn main() {"),
+            p("SourceCode", "    run();"),
+            p("SourceCode", "}"),
+            p("", "After."),
+            mono("x = 1")
+        );
         let r = run(&doc, &[styles()]);
-        assert_eq!(r.markdown, "> Quoted words.\n\n```\nfn main() {\n    run();\n}\n```\n\nAfter.\n\n```\nx = 1\n```\n");
+        assert_eq!(
+            r.markdown,
+            "> Quoted words.\n\n```\nfn main() {\n    run();\n}\n```\n\nAfter.\n\n```\nx = 1\n```\n"
+        );
         assert_eq!(r.blocks.iter().filter(|b| b.kind == BlockKind::Code).count(), 2);
     }
 

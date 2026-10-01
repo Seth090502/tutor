@@ -58,7 +58,11 @@ pub(crate) fn from_xml(n: roxmltree::Node) -> MNode {
                     m.kids.push(MKid::El(go(c, depth + 1)));
                 } else {
                     let flat: String = c.descendants().filter(|d| d.is_text()).filter_map(|d| d.text()).collect();
-                    m.kids.push(MKid::El(MNode { name: "mtext".into(), attrs: Vec::new(), kids: vec![MKid::Text(flat)] }));
+                    m.kids.push(MKid::El(MNode {
+                        name: "mtext".into(),
+                        attrs: Vec::new(),
+                        kids: vec![MKid::Text(flat)],
+                    }));
                 }
             } else if c.is_text() {
                 m.kids.push(MKid::Text(c.text().unwrap_or("").to_string()));
@@ -82,7 +86,11 @@ pub(crate) fn from_scraper(e: scraper::ElementRef) -> MNode {
                     m.kids.push(MKid::El(go(ce, depth + 1)));
                 } else {
                     let flat: String = ce.text().collect();
-                    m.kids.push(MKid::El(MNode { name: "mtext".into(), attrs: Vec::new(), kids: vec![MKid::Text(flat)] }));
+                    m.kids.push(MKid::El(MNode {
+                        name: "mtext".into(),
+                        attrs: Vec::new(),
+                        kids: vec![MKid::Text(flat)],
+                    }));
                 }
             } else if let Some(t) = c.value().as_text() {
                 m.kids.push(MKid::Text(t.to_string()));
@@ -124,9 +132,10 @@ fn find_tex_annotation(m: &MNode) -> Option<String> {
             }
         }
         if e.name == "semantics"
-            && let Some(t) = find_tex_annotation(e) {
-                return Some(t);
-            }
+            && let Some(t) = find_tex_annotation(e)
+        {
+            return Some(t);
+        }
     }
     None
 }
@@ -179,7 +188,11 @@ fn conv(n: &MNode, depth: usize) -> String {
     match n.name.as_str() {
         "math" | "mstyle" | "mpadded" | "merror" | "mrow" | "none" => row(&kids, d),
         "mphantom" => String::new(),
-        "semantics" => kids.iter().find(|k| !matches!(k.name.as_str(), "annotation" | "annotation-xml")).map(|k| conv(k, d)).unwrap_or_default(),
+        "semantics" => kids
+            .iter()
+            .find(|k| !matches!(k.name.as_str(), "annotation" | "annotation-xml"))
+            .map(|k| conv(k, d))
+            .unwrap_or_default(),
         "annotation" | "annotation-xml" | "mglyph" | "mprescripts" => String::new(),
         "maction" => kids.first().map(|k| conv(k, d)).unwrap_or_default(),
         "mi" => ident(n),
@@ -190,18 +203,18 @@ fn conv(n: &MNode, depth: usize) -> String {
         "mspace" => space(n),
         "mfrac" if kids.len() >= 2 => {
             let (a, b) = (conv(kids[0], d), conv(kids[1], d));
-            let no_rule = n.attr("linethickness").is_some_and(|t| t.trim().trim_end_matches(|c: char| c.is_alphabetic()).parse::<f32>() == Ok(0.0));
-            if no_rule {
-                format!("\\binom{{{a}}}{{{b}}}")
-            } else {
-                format!("\\frac{{{a}}}{{{b}}}")
-            }
+            let no_rule = n
+                .attr("linethickness")
+                .is_some_and(|t| t.trim().trim_end_matches(|c: char| c.is_alphabetic()).parse::<f32>() == Ok(0.0));
+            if no_rule { format!("\\binom{{{a}}}{{{b}}}") } else { format!("\\frac{{{a}}}{{{b}}}") }
         }
         "msqrt" => format!("\\sqrt{{{}}}", row(&kids, d)),
         "mroot" if kids.len() >= 2 => format!("\\sqrt[{}]{{{}}}", conv(kids[1], d), conv(kids[0], d)),
         "msub" if kids.len() >= 2 => format!("{}_{}", base(kids[0], d), group(&conv(kids[1], d))),
         "msup" if kids.len() >= 2 => format!("{}^{}", base(kids[0], d), group(&conv(kids[1], d))),
-        "msubsup" if kids.len() >= 3 => format!("{}_{}^{}", base(kids[0], d), group(&conv(kids[1], d)), group(&conv(kids[2], d))),
+        "msubsup" if kids.len() >= 3 => {
+            format!("{}_{}^{}", base(kids[0], d), group(&conv(kids[1], d)), group(&conv(kids[2], d)))
+        }
         "mover" if kids.len() >= 2 => over(kids[0], kids[1], d),
         "munder" if kids.len() >= 2 => under(kids[0], kids[1], d),
         "munderover" if kids.len() >= 3 => {
@@ -222,7 +235,11 @@ fn conv(n: &MNode, depth: usize) -> String {
             if n.attr("notation").is_some_and(|x| x.contains("box")) { format!("\\boxed{{{inner}}}") } else { inner }
         }
         _ => {
-            if kids.is_empty() { escape_text(n.text().trim()) } else { row(&kids, d) }
+            if kids.is_empty() {
+                escape_text(n.text().trim())
+            } else {
+                row(&kids, d)
+            }
         }
     }
 }
@@ -304,7 +321,39 @@ fn ident(n: &MNode) -> String {
     }
     if matches!(
         t,
-        "sin" | "cos" | "tan" | "cot" | "sec" | "csc" | "sinh" | "cosh" | "tanh" | "coth" | "arcsin" | "arccos" | "arctan" | "log" | "ln" | "lg" | "exp" | "lim" | "limsup" | "liminf" | "max" | "min" | "sup" | "inf" | "det" | "dim" | "ker" | "deg" | "gcd" | "arg" | "Pr" | "hom" | "mod"
+        "sin"
+            | "cos"
+            | "tan"
+            | "cot"
+            | "sec"
+            | "csc"
+            | "sinh"
+            | "cosh"
+            | "tanh"
+            | "coth"
+            | "arcsin"
+            | "arccos"
+            | "arctan"
+            | "log"
+            | "ln"
+            | "lg"
+            | "exp"
+            | "lim"
+            | "limsup"
+            | "liminf"
+            | "max"
+            | "min"
+            | "sup"
+            | "inf"
+            | "det"
+            | "dim"
+            | "ker"
+            | "deg"
+            | "gcd"
+            | "arg"
+            | "Pr"
+            | "hom"
+            | "mod"
     ) {
         return match t {
             "limsup" => "\\limsup".into(),
@@ -324,7 +373,12 @@ fn ident(n: &MNode) -> String {
     }
     chars
         .iter()
-        .map(|&c| symbol(c).map(str::to_string).or_else(|| math_alnum(c).map(|(s, b)| styled(s, &b.to_string()))).unwrap_or_else(|| escape_char(c)))
+        .map(|&c| {
+            symbol(c)
+                .map(str::to_string)
+                .or_else(|| math_alnum(c).map(|(s, b)| styled(s, &b.to_string())))
+                .unwrap_or_else(|| escape_char(c))
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -352,7 +406,11 @@ pub(crate) fn op(raw: &str) -> String {
         ">=" => "\\geq".into(),
         "!=" => "\\neq".into(),
         "->" => "\\to".into(),
-        _ => t.chars().map(|c| symbol(c).map(str::to_string).unwrap_or_else(|| escape_char(c))).collect::<Vec<_>>().join(" "),
+        _ => t
+            .chars()
+            .map(|c| symbol(c).map(str::to_string).unwrap_or_else(|| escape_char(c)))
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 
@@ -425,8 +483,27 @@ fn base(n: &MNode, d: usize) -> String {
 fn is_big_operator(n: &MNode) -> bool {
     let t = n.text();
     let t = t.trim();
-    matches!(t, "∑" | "∏" | "∐" | "⋃" | "⋂" | "⋁" | "⋀" | "⨁" | "⨂" | "⨀" | "lim" | "max" | "min" | "sup" | "inf" | "limsup" | "liminf" | "argmax" | "argmin")
-        || (n.name == "mo" && matches!(n.attr("largeop"), Some("true")))
+    matches!(
+        t,
+        "∑" | "∏"
+            | "∐"
+            | "⋃"
+            | "⋂"
+            | "⋁"
+            | "⋀"
+            | "⨁"
+            | "⨂"
+            | "⨀"
+            | "lim"
+            | "max"
+            | "min"
+            | "sup"
+            | "inf"
+            | "limsup"
+            | "liminf"
+            | "argmax"
+            | "argmin"
+    ) || (n.name == "mo" && matches!(n.attr("largeop"), Some("true")))
 }
 
 pub(crate) fn accent_command(accent: &str, single_letter_base: bool) -> Option<&'static str> {
@@ -509,10 +586,11 @@ fn fenced(n: &MNode, kids: &[&MNode], d: usize) -> String {
     let mut inner = String::new();
     for (i, k) in kids.iter().enumerate() {
         if i > 0
-            && let Some(s) = seps.get(i - 1).or(seps.last()) {
-                inner.push_str(&escape_char(*s));
-                inner.push(' ');
-            }
+            && let Some(s) = seps.get(i - 1).or(seps.last())
+        {
+            inner.push_str(&escape_char(*s));
+            inner.push(' ');
+        }
         inner.push_str(&conv(k, d));
     }
     let delim = |s: &str| if s.is_empty() { ".".to_string() } else { op(s) };
@@ -802,9 +880,14 @@ mod tests {
 
     #[test]
     fn big_operators_with_limits() {
-        let s = m("<math><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>a</mi><mi>i</mi></msub></math>");
+        let s = m(
+            "<math><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>a</mi><mi>i</mi></msub></math>",
+        );
         assert_eq!(s, "\\sum\\limits_{i = 1}^n a_i");
-        assert_eq!(m("<math><munder><mi>lim</mi><mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow></munder><mi>f</mi></math>"), "\\lim\\limits_{n \\to \\infty} f");
+        assert_eq!(
+            m("<math><munder><mi>lim</mi><mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow></munder><mi>f</mi></math>"),
+            "\\lim\\limits_{n \\to \\infty} f"
+        );
     }
 
     #[test]
@@ -865,7 +948,8 @@ mod tests {
 
     #[test]
     fn clean_tex_strips_wrappers() {
-        let pmc = "\\documentclass[12pt]{minimal}\n\\usepackage{amsmath}\n\\begin{document}$$\\alpha+\\beta$$\\end{document}";
+        let pmc =
+            "\\documentclass[12pt]{minimal}\n\\usepackage{amsmath}\n\\begin{document}$$\\alpha+\\beta$$\\end{document}";
         assert_eq!(clean_tex(pmc), "\\alpha+\\beta");
         assert_eq!(clean_tex("$x^2$"), "x^2");
         assert_eq!(clean_tex("\\[ a \n =\n b \\]"), "a = b");

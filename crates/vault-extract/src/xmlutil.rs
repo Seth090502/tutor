@@ -14,20 +14,27 @@ pub(crate) const NODES_LIMIT: u32 = 8_000_000;
 /// Decode XML bytes, honouring a BOM or the declared encoding, then falling back to detection.
 pub(crate) fn decode_xml(bytes: &[u8]) -> (String, &'static str) {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(256)]).to_ascii_lowercase();
-    if !bytes.starts_with(&[0xEF, 0xBB, 0xBF]) && !bytes.starts_with(&[0xFF, 0xFE]) && !bytes.starts_with(&[0xFE, 0xFF])
-        && let Some(i) = head.find("encoding=") {
-            let rest = &head[i + 9..];
-            let q = rest.chars().next();
-            if let Some(q) = q.filter(|c| *c == '"' || *c == '\'')
-                && let Some(end) = rest[1..].find(q) {
-                    let label = &rest[1..1 + end];
-                    if let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes())
-                        && enc != encoding_rs::UTF_8 && enc != encoding_rs::UTF_16LE && enc != encoding_rs::UTF_16BE {
-                            let (t, _) = enc.decode_without_bom_handling(bytes);
-                            return (t.into_owned(), enc.name());
-                        }
-                }
+    if !bytes.starts_with(&[0xEF, 0xBB, 0xBF])
+        && !bytes.starts_with(&[0xFF, 0xFE])
+        && !bytes.starts_with(&[0xFE, 0xFF])
+        && let Some(i) = head.find("encoding=")
+    {
+        let rest = &head[i + 9..];
+        let q = rest.chars().next();
+        if let Some(q) = q.filter(|c| *c == '"' || *c == '\'')
+            && let Some(end) = rest[1..].find(q)
+        {
+            let label = &rest[1..1 + end];
+            if let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes())
+                && enc != encoding_rs::UTF_8
+                && enc != encoding_rs::UTF_16LE
+                && enc != encoding_rs::UTF_16BE
+            {
+                let (t, _) = enc.decode_without_bom_handling(bytes);
+                return (t.into_owned(), enc.name());
+            }
         }
+    }
     let d = text::decode(bytes);
     (d.text, d.encoding)
 }
@@ -132,13 +139,16 @@ pub(crate) fn with_document<T>(
     let depth = max_depth(&src);
     if depth > MAX_XML_DEPTH {
         tracing::warn!(depth, format, "refusing hostile XML nesting");
-        return Err(ExtractError::Limits(format!("{format} element nesting is {depth} levels deep (limit {MAX_XML_DEPTH})")));
+        return Err(ExtractError::Limits(format!(
+            "{format} element nesting is {depth} levels deep (limit {MAX_XML_DEPTH})"
+        )));
     }
     match Document::parse_with_options(&src, parse_options()) {
         Ok(doc) => f(&doc, encoding),
         Err(roxmltree::Error::UnknownEntityReference(..)) => {
             let fixed = expand_named_entities(&src);
-            let doc = Document::parse_with_options(&fixed, parse_options()).map_err(|e| ExtractError::corrupt(format, e.to_string()))?;
+            let doc = Document::parse_with_options(&fixed, parse_options())
+                .map_err(|e| ExtractError::corrupt(format, e.to_string()))?;
             f(&doc, encoding)
         }
         Err(e) => Err(ExtractError::corrupt(format, e.to_string())),
@@ -470,7 +480,12 @@ mod tests {
 
     #[test]
     fn nesting_depth_is_measured_and_limited() {
-        assert_eq!(max_depth("<?xml version='1.0'?><!DOCTYPE a [<!ENTITY x '<b>'>]><a><b/><c><d>t</d><!-- <e><f> --></c><![CDATA[<g><h>]]></a>"), 3);
+        assert_eq!(
+            max_depth(
+                "<?xml version='1.0'?><!DOCTYPE a [<!ENTITY x '<b>'>]><a><b/><c><d>t</d><!-- <e><f> --></c><![CDATA[<g><h>]]></a>"
+            ),
+            3
+        );
         assert_eq!(max_depth("<a x=\"1>2\"><b y='<z>'/></a>"), 1);
         let deep = format!("{}x{}", "<a>".repeat(5000), "</a>".repeat(5000));
         let err = with_document(deep.as_bytes(), "jats", |_, _| Ok(())).unwrap_err();
@@ -485,7 +500,8 @@ mod tests {
 
     #[test]
     fn declared_encoding_is_honoured() {
-        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\u{e9}</a>");
+        let (bytes, _, _) =
+            encoding_rs::WINDOWS_1252.encode("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\u{e9}</a>");
         let (s, enc) = decode_xml(&bytes);
         assert!(s.contains("café"), "{s} {enc}");
         let (s, enc) = decode_xml("<?xml version=\"1.0\" encoding=\"UTF-8\"?><a>café</a>".as_bytes());
@@ -494,7 +510,9 @@ mod tests {
 
     #[test]
     fn attribute_lookup_ignores_namespaces() {
-        let doc = Document::parse(r#"<a xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="u" xml:lang="fr"><b/></a>"#).unwrap();
+        let doc =
+            Document::parse(r#"<a xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="u" xml:lang="fr"><b/></a>"#)
+                .unwrap();
         let a = doc.root_element();
         assert_eq!(attr(a, "href"), Some("u"));
     }

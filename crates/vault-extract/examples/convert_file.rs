@@ -12,9 +12,10 @@ fn main() {
     };
     #[cfg(feature = "pdfium")]
     if let Some(i) = args.iter().position(|a| a == "--pdfium")
-        && let Err(e) = vault_extract::pdf::init(std::path::Path::new(&args[i + 1])) {
-            eprintln!("{e}");
-        }
+        && let Err(e) = vault_extract::pdf::init(std::path::Path::new(&args[i + 1]))
+    {
+        eprintln!("{e}");
+    }
     let bytes = std::fs::read(path).expect("read file");
     let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str());
     let started = std::time::Instant::now();
@@ -25,7 +26,15 @@ fn main() {
                 Outcome::Converted(c) => {
                     let x = &c.extracted;
                     println!("path: {}  tool: {}", c.path, x.tool);
-                    println!("lines: {}  headings: {}  pages: {}  blocks: {}  refs: {}  warnings: {:?}", x.line_count(), x.headings.len(), x.pages.len(), x.blocks.len(), x.references.len(), x.warnings);
+                    println!(
+                        "lines: {}  headings: {}  pages: {}  blocks: {}  refs: {}  warnings: {:?}",
+                        x.line_count(),
+                        x.headings.len(),
+                        x.pages.len(),
+                        x.blocks.len(),
+                        x.references.len(),
+                        x.warnings
+                    );
                     println!("quality: {:.2} {:?}", c.quality.score, c.quality.flags);
                     println!("metadata: {}", serde_json::to_string(&x.metadata).unwrap_or_default());
                     if args.iter().any(|a| a == "--md") {
@@ -38,7 +47,9 @@ fn main() {
                         println!("  {} ({}, {} bytes)", m.path, m.format.name(), m.bytes.len());
                     }
                 }
-                Outcome::WaitingGpu { reason, classification, .. } => println!("waiting_gpu: {reason:?} ({classification:?})"),
+                Outcome::WaitingGpu { reason, classification, .. } => {
+                    println!("waiting_gpu: {reason:?} ({classification:?})")
+                }
                 Outcome::WaitingTool { tool, format } => println!("waiting_tool: {tool} for {}", format.name()),
             }
         }

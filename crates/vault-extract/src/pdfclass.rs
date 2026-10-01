@@ -115,7 +115,16 @@ pub struct Thresholds {
 
 impl Default for Thresholds {
     fn default() -> Self {
-        Self { min_chars_per_page: 40, scan_image_coverage: 0.5, scanned_ratio: 0.5, partial_scan_ratio: 0.1, math_ratio: 0.03, math_fonts_min: 2, book_pages: 120, cjk_ratio: 0.3 }
+        Self {
+            min_chars_per_page: 40,
+            scan_image_coverage: 0.5,
+            scanned_ratio: 0.5,
+            partial_scan_ratio: 0.1,
+            math_ratio: 0.03,
+            math_fonts_min: 2,
+            book_pages: 120,
+            cjk_ratio: 0.3,
+        }
     }
 }
 
@@ -134,7 +143,11 @@ pub fn classify_with(s: &PdfSignals, t: &Thresholds) -> PdfClassification {
         let scanned = if s.fonts.is_empty() && s.image_objects > 0 { pages } else { 0 };
         (scanned, 0u64, 0u64, 0u64)
     } else {
-        let scanned = s.page_signals.iter().filter(|p| p.chars < t.min_chars_per_page && p.image_coverage >= t.scan_image_coverage).count() as u32;
+        let scanned = s
+            .page_signals
+            .iter()
+            .filter(|p| p.chars < t.min_chars_per_page && p.image_coverage >= t.scan_image_coverage)
+            .count() as u32;
         (
             scanned,
             s.page_signals.iter().map(|p| p.chars as u64).sum(),
@@ -173,7 +186,11 @@ pub fn classify_with(s: &PdfSignals, t: &Thresholds) -> PdfClassification {
         PdfRoute::Native
     };
 
-    let kind = if pages > t.book_pages || (s.has_isbn && pages > t.book_pages / 2 && !s.has_paper_id) { PdfKind::Book } else { PdfKind::Paper };
+    let kind = if pages > t.book_pages || (s.has_isbn && pages > t.book_pages / 2 && !s.has_paper_id) {
+        PdfKind::Book
+    } else {
+        PdfKind::Paper
+    };
     PdfClassification { kind, route, scanned_page_ratio: scanned_ratio, math_ratio, cjk_ratio, chars_per_page, flags }
 }
 
@@ -295,7 +312,8 @@ mod tests {
         let scan = PdfScan { pages: Some(10), fonts: vec![], image_objects: 10, ..Default::default() };
         let c = classify(&PdfSignals::from_scan(&scan));
         assert_eq!(c.route, PdfRoute::WaitingGpu(GpuReason::Scanned));
-        let scan = PdfScan { pages: Some(10), fonts: vec!["Times-Roman".into()], image_objects: 3, ..Default::default() };
+        let scan =
+            PdfScan { pages: Some(10), fonts: vec!["Times-Roman".into()], image_objects: 3, ..Default::default() };
         assert_eq!(classify(&PdfSignals::from_scan(&scan)).route, PdfRoute::Native);
     }
 
