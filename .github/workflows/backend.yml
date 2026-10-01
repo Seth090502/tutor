@@ -1,0 +1,116 @@
+name: Backend
+
+# The Python backend (DeepTutor fork): import checks and the full pytest suite on Linux, the lowest and the
+# newest supported Python, with every optional language segmenter. A weekly run covers all four versions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deeptutor/**"
+      - "deeptutor_cli/**"
+      - "tests/**"
+      - "evals/**"
+      - "requirements/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "deeptutor/**"
+      - "deeptutor_cli/**"
+      - "tests/**"
+      - "evals/**"
+      - "requirements/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend.yml"
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  import-check:
+    name: Imports (Python ${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.11" }
+          - { os: windows-latest, python: "3.14" }
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements/server.txt
+      - name: Install server dependencies
+        run: |
+          python -m pip install -r requirements/server.txt
+          python -m pip install -e . --no-deps
+      - name: Core modules import
+        run: |
+          python -c "from deeptutor.runtime.orchestrator import ChatOrchestrator"
+          python -c "from deeptutor.runtime.registry.tool_registry import get_tool_registry"
+          python -c "from deeptutor.runtime.registry.capability_registry import get_capability_registry"
+          python -c "from deeptutor.services.config.runtime_settings import RuntimeSettingsService"
+          python -c "from deeptutor.api.routers.unified_ws import unified_websocket"
+          python -c "from deeptutor.services.prompt.manager import PromptManager"
+          python -c "from deeptutor.logging import configure_logging, bind_log_context, capture_process_logs, ProcessLogEvent"
+      - name: Lazy startup and the isolated worker protocol
+        run: |
+          python -c "import sys; import deeptutor.runtime.registry.tool_registry; assert 'deeptutor.agents.chat.agentic_pipeline' not in sys.modules"
+          python -c "from deeptutor.runtime.isolated_worker import run_in_isolated_process_sync; assert run_in_isolated_process_sync('operator:add', 20, 22, timeout=15) == 42"
+
+  tests:
+    name: Pytest (Python ${{ matrix.python }})
+    needs: import-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(github.event_name == 'schedule' && '["3.11","3.12","3.13","3.14"]' || '["3.11","3.14"]') }}
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DEEPTUTOR_TEST_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements/server.txt
+            requirements/partners.txt
+            pyproject.toml
+      - name: Install dependencies, including the language segmenters
+        run: |
+          python -m pip install -r requirements/server.txt -r requirements/partners.txt pytest pytest-asyncio
+          python -m pip install -e ".[languages]"
+      - name: Minimal runtime config
+        run: |
+          mkdir -p data/user/settings
+          printf 'system:\n  language: en\nlogging:\n  level: WARNING\n' > data/user/settings/main.yaml
+          cp tests/fixtures/ci_model_catalog.json data/user/settings/model_catalog.json
+      - name: Pytest
+        run: python -m pytest -q -rfE tests deeptutor/learning/tests evals/tests

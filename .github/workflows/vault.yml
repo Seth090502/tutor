@@ -1,0 +1,84 @@
+name: Vault
+
+# The knowledge vault (vault/): its Cargo workspace with PDFium present so the PDF tests run, the standalone
+# vault-stage delivery tool, and the model-bench harness's unit tests. Windows, the platform it runs on.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vault/**"
+      - ".github/workflows/vault.yml"
+  pull_request:
+    paths:
+      - "vault/**"
+      - ".github/workflows/vault.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  workspace:
+    name: Workspace (fmt, clippy, tests)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: vault
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: vault -> target
+      - name: PDFium 8076 (checksum pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"; mkdir -p "$tools/pdfium"
+          curl -sSfL -o "$tools/pdfium.tgz" https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8076/pdfium-win-x64.tgz
+          echo "808d36da9bc5a3104315fb307c80998121f565ee53953633bf33e80d7429e5ac  $tools/pdfium.tgz" | sha256sum -c -
+          tar -xzf "$tools/pdfium.tgz" -C "$tools/pdfium"
+          echo "VAULT_PDFIUM_DLL=$(cygpath -w "$tools/pdfium/bin/pdfium.dll")" >> "$GITHUB_ENV"
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: tests
+        run: cargo test --workspace --locked
+
+  tools:
+    name: vault-stage and model-bench
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            vault/tools/vault-stage -> target
+            vault/bench/model-bench -> target
+      - name: vault-stage (clippy, tests)
+        working-directory: vault/tools/vault-stage
+        run: |
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+      - name: model-bench (tests)
+        working-directory: vault/bench/model-bench
+        run: cargo test --release --locked

@@ -1,0 +1,60 @@
+name: Legacy tutor
+
+# The original Tutor V1.0 workspace (legacy/desktop-tutor): its own definition of done, minus the steps
+# that rewrite tracked files. Search must stay at or above the recorded hit@3 baseline of 90%.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "legacy/**"
+      - ".github/workflows/legacy.yml"
+  pull_request:
+    paths:
+      - "legacy/**"
+      - ".github/workflows/legacy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  legacy:
+    name: Build, tests, quiz smoke, search eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: legacy/desktop-tutor
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: "1.98.1"
+      - name: Build tutor-search
+        run: cargo build --release --locked
+      - name: Rust tests
+        run: cargo test --locked
+      - name: Python tests
+        run: python -m unittest discover -s tests -v
+      - name: Quiz smoke
+        run: python -m tutor.cli quiz --domain math --n 2 --non-interactive
+      - name: Search eval (hit@3 must stay at or above 90%)
+        run: |
+          python -m tutor.cli eval-search --k 3 | tee eval.txt
+          python - <<'PY'
+          import re
+          text = open("eval.txt", encoding="utf-8").read()
+          m = re.search(r"hit@3 \[all\]: (\d+)/(\d+)", text)
+          assert m, "no hit@3 line in the eval output"
+          hit, total = int(m.group(1)), int(m.group(2))
+          print(f"hit@3 = {hit}/{total}")
+          assert hit / total >= 0.90, "search regressed below the 90% baseline"
+          PY

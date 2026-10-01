@@ -1,0 +1,98 @@
+name: Desktop
+
+# The desktop app: the React/TypeScript frontend on Linux, and the root Rust workspace (Tauri shell,
+# learning-core, rag-engine) on Windows, the platform the app ships on. protoc and PDFium are the official
+# release archives, checksum-pinned; they are the same builds the project vendors locally.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  frontend:
+    name: Frontend (typecheck, build, vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - name: Typecheck and build
+        run: npm run build
+      - name: Vitest
+        run: npm test
+
+  rust:
+    name: Rust workspace (fmt, clippy, tests)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Build the frontend the Tauri shell embeds
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: protoc 36.2 and PDFium 8076 (checksum pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"; mkdir -p "$tools"
+          curl -sSfL -o "$tools/protoc.zip" https://github.com/protocolbuffers/protobuf/releases/download/v36.2/protoc-36.2-win64.zip
+          echo "f0c128dc0d8492eceece83bb459a4c0e316764b929ffbf1aa416357fd644edd3  $tools/protoc.zip" | sha256sum -c -
+          unzip -q "$tools/protoc.zip" -d "$tools/protoc"
+          curl -sSfL -o "$tools/pdfium.tgz" https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8076/pdfium-win-x64.tgz
+          echo "808d36da9bc5a3104315fb307c80998121f565ee53953633bf33e80d7429e5ac  $tools/pdfium.tgz" | sha256sum -c -
+          mkdir -p "$tools/pdfium" && tar -xzf "$tools/pdfium.tgz" -C "$tools/pdfium"
+          echo "PROTOC=$(cygpath -w "$tools/protoc/bin/protoc.exe")" >> "$GITHUB_ENV"
+          echo "PDFIUM_DYNAMIC_LIB_PATH=$(cygpath -w "$tools/pdfium/bin")" >> "$GITHUB_ENV"
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: tests
+        run: cargo test --workspace --locked

@@ -1,0 +1,43 @@
+# Grouped, monthly version updates (security updates arrive as soon as an advisory lands). Grouping keeps it
+# to about one pull request per ecosystem a month, which keeps CI minutes down on this private repo.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions: { patterns: ["*"] }
+
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      python: { patterns: ["*"], update-types: [minor, patch] }
+
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      desktop-npm: { patterns: ["*"], update-types: [minor, patch] }
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      web-npm: { patterns: ["*"], update-types: [minor, patch] }
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      rust: { patterns: ["*"], update-types: [minor, patch] }
+
+  # The vault pins exact versions on purpose (SPEC section 1): security updates only.
+  - package-ecosystem: cargo
+    directory: /vault
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 0
