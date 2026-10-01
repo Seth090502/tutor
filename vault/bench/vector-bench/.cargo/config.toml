@@ -3,7 +3,7 @@
 # Compile-time vectorised Rust code therefore never uses AVX-512 here; runtime-dispatched kernels
 # (lance-linalg, NumKong inside usearch) still detect the host CPU, see docs/phase0/vector-bench.md.
 [build]
-target-dir = "C:/Users/sethy/Projects/vault/target"
+target-dir = "C:/Users/sethy/Projects/tutor/vault/target"
 rustflags = ["-C", "target-cpu=x86-64-v3"]
 
 [env]

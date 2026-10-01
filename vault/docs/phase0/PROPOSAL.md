@@ -85,7 +85,7 @@ Detail reports are in `docs/phase0/`:
 
 ### 2.1 Architecture (as briefed, with the changes in section 3)
 
-- **Cargo workspace** in `C:\Users\sethy\Projects\vault`:
+- **Cargo workspace** in `C:\Users\sethy\Projects\tutor\vault`:
   - `vault-core`: all retrieval logic.
   - `libraryd`: MCP over rmcp streamable HTTP, and gRPC over tonic.
   - `vault-client`: the Rust gRPC client.

@@ -10,11 +10,11 @@ Windows is the supported staging platform; other operating systems are not estab
 
 ## Build and install executables
 
-The source is `C:\Users\sethy\Projects\vault\tools\vault-stage` on this PC. Choose a session-owned scratch
+The source is `C:\Users\sethy\Projects\tutor\vault\tools\vault-stage` on this PC. Choose a session-owned scratch
 target; use the standalone manifest explicitly. Dependencies are pinned in this package's own lockfile.
 
 ```powershell
-$packageCargo = 'C:\Users\sethy\Projects\vault\tools\vault-stage\Cargo.toml'
+$packageCargo = 'C:\Users\sethy\Projects\tutor\vault\tools\vault-stage\Cargo.toml'
 $scratchBuild = Join-Path $env:TEMP 'vault-stage-build'
 cargo build --offline --locked --release --manifest-path $packageCargo --target-dir $scratchBuild
 cargo test --offline --locked --manifest-path $packageCargo --target-dir $scratchBuild
@@ -89,9 +89,9 @@ after freezing. The seed changes harmless fixture bytes/order, never membership.
 Explicit scanner options avoid relying on the build machine's paths:
 
 ```powershell
-$mechanicalEval = 'C:\Users\sethy\Projects\vault\tools\vault-stage\bin\vault-stage-eval.exe'
+$mechanicalEval = 'C:\Users\sethy\Projects\tutor\vault\tools\vault-stage\bin\vault-stage-eval.exe'
 $trustedGitleaks = 'C:\Users\sethy\scoop\apps\gitleaks\8.30.1\gitleaks.exe'
-$trustedScannerConfig = 'C:\Users\sethy\Projects\vault\skills\ingest\assets\gitleaks.toml'
+$trustedScannerConfig = 'C:\Users\sethy\Projects\tutor\vault\skills\ingest\assets\gitleaks.toml'
 & $mechanicalEval --output $newTrainJson --split train --seed 41 --repeat 2 --scanner $trustedGitleaks --scanner-config $trustedScannerConfig
 & $mechanicalEval --output $newHeldoutJson --split test --seed 41 --repeat 1 --scanner $trustedGitleaks --scanner-config $trustedScannerConfig
 ```

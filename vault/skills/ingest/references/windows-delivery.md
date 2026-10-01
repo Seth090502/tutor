@@ -1,6 +1,6 @@
 # Windows delivery binding
 
-Verified binding: 2026-10-01. Canonical tool source is `C:\Users\sethy\Projects\vault\tools\vault-stage`.
+Verified binding: 2026-10-01. Canonical tool source is `C:\Users\sethy\Projects\tutor\vault\tools\vault-stage`.
 It is an independent Rust package with its own workspace and lockfile. Do not add it to the root workspace or
 use the root build target while another agent is building. Installed executables are under its gitignored `bin\`.
 
@@ -16,7 +16,7 @@ skill directory: `assets\gitleaks.toml`. If a prerequisite is unavailable, stop 
 Example in PowerShell; `$skillRoot` is the directory containing the loaded skill, not a source repository:
 
 ```powershell
-$stageTool = 'C:\Users\sethy\Projects\vault\tools\vault-stage\bin\vault-stage.exe'
+$stageTool = 'C:\Users\sethy\Projects\tutor\vault\tools\vault-stage\bin\vault-stage.exe'
 $scanner = 'C:\Users\sethy\scoop\apps\gitleaks\8.30.1\gitleaks.exe'
 $scanConfig = Join-Path $skillRoot 'assets\gitleaks.toml'
 $source = 'E:\Ready to Transfer\notable'

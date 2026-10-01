@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # CPU-only smoke test of the harness (no GPU). Small subset, at most 8 threads.
 set -u
-B=C:/Users/sethy/Projects/vault/bench/model-bench/target/release/model-bench.exe
+B=C:/Users/sethy/Projects/tutor/vault/bench/model-bench/target/release/model-bench.exe
 M=C:/Users/sethy/Projects/vault-models
 CPU=$M/llama.cpp/llama-b11310-cpu/llama-server.exe
 D=C:/Users/sethy/Projects/vault-eval/external/bright/subset-smoke
-OUT=C:/Users/sethy/Projects/vault/docs/phase0/model-bench/smoke
+OUT=C:/Users/sethy/Projects/tutor/vault/docs/phase0/model-bench/smoke
 mkdir -p "$OUT"
 common=(--server-bin "$CPU" --build b11310 --backend cpu --results "$OUT/results.jsonl" --log-dir "$OUT" \
   --dataset "$D" --splits psychology --np 2 --slot-ctx 1024 --ubatch 2048 --ngl 0 --threads 8 \

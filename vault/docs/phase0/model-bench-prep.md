@@ -13,10 +13,10 @@ llama.cpp build with 8 threads. Nothing was committed to git.
 | Download manifest with verified hashes | `C:\Users\sethy\Projects\vault-models\manifest.json` (and `fetch.log`) |
 | BRIGHT raw parquet, JSONL, token stats, licence | `C:\Users\sethy\Projects\vault-eval\external\bright` |
 | Seeded GPU-window subset and the CPU smoke subset | `...\bright\subset-v1`, `...\bright\subset-smoke` (each has `subset.json`) |
-| Rust harness (own `[workspace]`, built) | `C:\Users\sethy\Projects\vault\bench\model-bench`, binary `C:\Users\sethy\Projects\vault\target\release\model-bench.exe` |
-| One-command runner | `C:\Users\sethy\Projects\vault\bench\model-bench\run-gpu-matrix.ps1` |
+| Rust harness (own `[workspace]`, built) | `C:\Users\sethy\Projects\tutor\vault\bench\model-bench`, binary `C:\Users\sethy\Projects\tutor\vault\target\release\model-bench.exe` |
+| One-command runner | `C:\Users\sethy\Projects\tutor\vault\bench\model-bench\run-gpu-matrix.ps1` |
 | Helper scripts | `bench\model-bench\scripts\{fetch_assets.py,prep_bright.py,make_subset.py,gguf_inspect.py}` |
-| Smoke-test output | `C:\Users\sethy\Projects\vault\docs\phase0\model-bench\smoke\` |
+| Smoke-test output | `C:\Users\sethy\Projects\tutor\vault\docs\phase0\model-bench\smoke\` |
 
 Total disk used under `vault-models`: 29.3 GB (28.4 GB of verified downloads plus 0.9 GB unzipped). Free on C: before
 starting was 216 GB. BRIGHT adds 0.11 GB.
@@ -24,12 +24,12 @@ starting was 216 GB. BRIGHT adds 0.11 GB.
 ## The command to run once the owner frees the GPU
 
 ```
-pwsh -NoProfile -File C:\Users\sethy\Projects\vault\bench\model-bench\run-gpu-matrix.ps1
+pwsh -NoProfile -File C:\Users\sethy\Projects\tutor\vault\bench\model-bench\run-gpu-matrix.ps1
 ```
 
 `-DryRun` prints the plan and every harness command without starting anything (use `-OutDir` to keep the dry run out of
 the real results). `-Only 'rerank-*'` filters configurations. Results go to
-`C:\Users\sethy\Projects\vault\docs\phase0\model-bench\results.jsonl`, logs next to it (`runner.log`, one log per run,
+`C:\Users\sethy\Projects\tutor\vault\docs\phase0\model-bench\results.jsonl`, logs next to it (`runner.log`, one log per run,
 server logs, VRAM samples `*-vram.csv`). Behaviour:
 
 - Pre-flight: all files exist, one `nvidia-smi` query (not a loop) requires at least 18,000 MiB free (`-MinFreeMiB`),
@@ -197,7 +197,7 @@ two runs' `tokens_per_s` before trusting the rest of the projection.
 ## The harness
 
 `model-bench embed | rerank | parity` (clap, ureq, serde; pinned crates: anyhow 1.0.104, clap 4.6.7, serde 1.0.229,
-serde_json 1.0.151, ureq 3.4.2 without TLS). cargo 1.98.1, target `C:\Users\sethy\Projects\vault\target`.
+serde_json 1.0.151, ureq 3.4.2 without TLS). cargo 1.98.1, target `C:\Users\sethy\Projects\tutor\vault\target`.
 `cargo build --release` is clean (no warnings) and `cargo test --release` passes 4 tests (nDCG, recall, Matryoshka
 renormalisation, cosine search with excluded ids).
 

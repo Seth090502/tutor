@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_SYNTH: &str = r"C:\Users\sethy\Projects\vault-synth";
 pub const DEFAULT_RESULTS: &str =
-    r"C:\Users\sethy\Projects\vault\docs\phase0\vector-bench-results.jsonl";
+    r"C:\Users\sethy\Projects\tutor\vault\docs\phase0\vector-bench-results.jsonl";
 pub const LANCEDB_VERSION: &str = "0.39.0";
 pub const LANCE_VERSION: &str = "12.0.0";
 pub const USEARCH_CRATE_VERSION: &str = "2.26.2";

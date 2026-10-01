@@ -4,7 +4,7 @@
 #   pwsh run.ps1 "gen" "gt" "us-build --kind i8 --m 16" "us-bench --kind i8 --m 16 --threads 12 --recall"
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps)
 $ErrorActionPreference = 'Continue'
-$exe = 'C:\Users\sethy\Projects\vault\target\release\vector-bench.exe'
+$exe = 'C:\Users\sethy\Projects\tutor\vault\target\release\vector-bench.exe'
 $synth = 'C:\Users\sethy\Projects\vault-synth'
 $logs = Join-Path $synth 'logs'
 $bin = Join-Path $synth 'bin'

@@ -1,3 +1,5 @@
+> **Owner's fork:** read `HANDOFF.md` first (the tutor is the heart of the project; `vault/` complements it).
+
 # DeepTutor — Agent-Native Architecture
 
 ## Overview

@@ -2,7 +2,8 @@
 
 Base: HKUDS/DeepTutor v1.6.12 (`ef2d9e5`, Apache-2.0). Remote `upstream`, work branch `custom`.
 Home: `C:\Users\sethy\Projects\tutor` (outside OneDrive on purpose: node_modules, indexes, corpus).
-Layout map: `TUTOR.md`. Local commits only; nothing is pushed anywhere.
+Layout map: `TUTOR.md`. Start with `HANDOFF.md`. Since 2026-10-01 this is one private monorepo with the vault
+(`vault/`): https://github.com/Seth090502/tutor, `custom` pushed as `main`, and only when the owner asks.
 
 | Document | What it covers |
 |---|---|

@@ -8,7 +8,7 @@ import json
 import sys
 from collections import defaultdict
 
-path = r"C:\Users\sethy\Projects\vault\docs\phase0\vector-bench-results.jsonl"
+path = r"C:\Users\sethy\Projects\tutor\vault\docs\phase0\vector-bench-results.jsonl"
 data_tag = "d1024"
 args = sys.argv[1:]
 if args and not args[0].startswith("--"):

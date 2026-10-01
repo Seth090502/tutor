@@ -6,7 +6,7 @@ tool broker against an explicitly selected local OpenAI-compatible model. Mechan
 HTTP passes are not evidence that Qwen 3.8 27B passed; only a recorded live run establishes that.
 
 The standalone tool's `README.md` and `eval/local-model.md` contain the exact runnable commands and
-frozen contracts. Locate them under `C:\Users\sethy\Projects\vault\tools\vault-stage`; use executables in `bin\`.
+frozen contracts. Locate them under `C:\Users\sethy\Projects\tutor\vault\tools\vault-stage`; use executables in `bin\`.
 Keep all eval output outside the real vault and source staging. Do not start or replace the owner's model server,
 change inference settings, or claim a model name inferred from the route. Supply its verified served identifier.
 

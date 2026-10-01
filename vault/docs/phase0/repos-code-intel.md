@@ -332,4 +332,4 @@ Principle: a vault answer must always exist (no build required), say how precise
 | 10 | Optional LSP sidecar for one-off precise queries | mcpls, Serena | L | `rmcp`/own LSP client; spawn clangd | yes (Apache-2.0 LLVM-exception, MIT) |
 | 11 | Per-language Unreal/engine detection and ignore sets | Serena `common.py:188-195` | S | own code | yes |
 
-Output file: `C:/Users/sethy/Projects/vault/docs/phase0/repos-code-intel.md`.
+Output file: `C:/Users/sethy/Projects/tutor/vault/docs/phase0/repos-code-intel.md`.

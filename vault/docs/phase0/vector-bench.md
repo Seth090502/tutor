@@ -48,7 +48,7 @@ Conditions on the recommendation (details in sections 6-9):
 - Arrow 58.4.0 and DataFusion 54.1.0 come in through lancedb.
 - lancedb 0.39.0 must be built with its `remote` feature (section 8).
 
-**Build:** `cargo build --release -j 6` with `-C target-cpu=x86-64-v3` (AVX2 + FMA + F16C, the AI PC's instruction set), set in `bench/vector-bench/.cargo/config.toml`. The same file sets `target-dir = C:/Users/sethy/Projects/vault/target` and `PROTOC`. Every compile-time-vectorised loop is therefore AVX2-only: this benchmark's own kernels and the Rust code inside lance. Kernels that choose their ISA at runtime are covered in section 7.
+**Build:** `cargo build --release -j 6` with `-C target-cpu=x86-64-v3` (AVX2 + FMA + F16C, the AI PC's instruction set), set in `bench/vector-bench/.cargo/config.toml`. The same file sets `target-dir = C:/Users/sethy/Projects/tutor/vault/target` and `PROTOC`. Every compile-time-vectorised loop is therefore AVX2-only: this benchmark's own kernels and the Rust code inside lance. Kernels that choose their ISA at runtime are covered in section 7.
 
 **Machine:**
 - Ryzen 7 9800X3D (8C/16T, Zen 5, AVX-512, 96 MB L3).

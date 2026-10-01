@@ -1,4 +1,9 @@
-# HANDOFF: read this first
+# HANDOFF: the vault (read the tutor's top-level `HANDOFF.md` first)
+
+Since 2026-10-01 the vault lives in the `vault/` folder of the tutor monorepo (`C:\Users\sethy\Projects\tutor`,
+GitHub `Seth090502/tutor`, private). **The tutor is the heart of the project; the vault complements it.** Paths
+below that say "this repository" mean `vault/`; git commands run from the monorepo root. The old standalone repo
+`C:\Users\sethy\Projects\vault` is retired (see the top-level handoff).
 
 Written 2026-10-01 by the lead session (Claude Opus 5.5) that ran Phase 0 and Phase 1 wave 1, so a fresh
 session can continue with no context lost. It summarises; the files it points to are authoritative. When this
@@ -66,7 +71,7 @@ Build the highest-performance knowledge vault and retrieval system for the owner
 | Subagents | Sonnet 5.5 (high effort) for volume and bounded work; Opus 5.5 at xhigh for hard engineering and review. Brief them per `docs/BRIEFING.md` (from Anthropic's Opus 5.5, Sonnet 5.5 and general prompting guides) |
 | Disk hygiene | Delete merged worktrees' `target/` folders (5-25 GB each) |
 | `/ingest` | A skill that delivers staged material from `E:\Ready to Transfer` into vault inbox batches; codebases stay whole folders |
-| GitHub | Pushed to the **private** repo https://github.com/Seth090502/vault (`origin`) at the owner's request, 2026-10-01. Push again only when the owner asks |
+| GitHub | One **private** monorepo for the tutor and the vault: https://github.com/Seth090502/tutor (`origin`; local branch `custom` is pushed as `main`), owner's request 2026-10-01. Push again only when the owner asks |
 
 **Pending owner answer:** after wave 1, the lead asked "should I start wave 2 now?". There is no answer yet. Do
 not start wave 2 (a multi-agent run) until the owner says go.
@@ -158,8 +163,10 @@ not start wave 2 (a multi-agent run) until the owner says go.
   - rerankers: Qwen3-Reranker 0.6B, 4B and 8B;
   - CUDA-vs-Vulkan parity;
   - all measured on the BRIGHT subset `subset-v1`.
-  - Command: `pwsh -NoProfile -File C:\Users\sethy\Projects\vault\bench\model-bench\run-gpu-matrix.ps1` (`-DryRun`
+  - Command: `pwsh -NoProfile -File C:\Users\sethy\Projects\tutor\vault\bench\model-bench\run-gpu-matrix.ps1` (`-DryRun`
     to preview).
+  - The harness is built in its new home (`cargo build --release` inside `vault/bench/model-bench`, 2026-10-01;
+    rebuild after changing it). A dry run of the runner there passes its file checks.
   - Details: `docs/phase0/model-bench-prep.md`.
 - **SSD inspection** when the 1 TB SSD is attached: run `tools/iobench`, check the file system and BitLocker.
 
@@ -263,18 +270,20 @@ its own worktree under `C:\Users\sethy\Projects\wt\` with separate owned paths, 
   - `cargo fmt --all --check`.
   - Build parallel worktrees with their own `CARGO_TARGET_DIR` and `-j 4` to `-j 8`.
 - **Worktrees:**
-  - create them by hand: `git worktree add ../wt/<name> -b wt/<name> main`. The Agent tool's
-    `isolation: "worktree"` fails when the session starts outside this repository;
+  - create them by hand from the monorepo root: `git worktree add ../wt/<name> -b wt/<name> custom`; vault code
+    is then under `../wt/<name>/vault`. The Agent tool's `isolation: "worktree"` fails when the session starts
+    outside the repository;
   - merge with `--no-ff`;
   - delete the worktree and its `target/` after merging (check `git merge-base --is-ancestor` first).
 - **`Cargo.lock` conflicts between worker branches:** keep `main`'s copy and let cargo add the missing packages,
   then run all checks.
-- **Commits:** local by default, with the session's attribution trailer. `origin` is the private GitHub repo;
+- **Commits:** local by default, on the monorepo's `custom` branch, with the session's attribution trailer.
+  `origin` is the private GitHub repo `Seth090502/tutor`;
   push only when the owner asks.
 - **Commit identity:** always the GitHub no-reply address,
-  `Seth <276114533+Seth090502@users.noreply.github.com>`. It is set in this repository's `git config`, so never
-  pass `-c user.email=...` with the private Gmail address. GitHub rejects pushes that expose it (email privacy
-  setting).
+  `Seth <276114533+Seth090502@users.noreply.github.com>`, set in the monorepo's `git config`. Older tutor commits
+  carry the owner's Gmail; the owner chose (2026-10-01) to turn off GitHub's email-privacy push block so they can
+  be pushed. New commits still use the no-reply address.
 - **Subagent results:** verify them before merging (read the diff, rerun the checks). Subagent reports are
   claims, not facts.
 - **Files:** keep line endings per `.gitattributes` (LF, with CRLF for `.ps1`, `.cmd` and `.bat`). Python on
@@ -289,7 +298,8 @@ its own worktree under `C:\Users\sethy\Projects\wt\` with separate owned paths, 
   `docs/phase0/`.
 - **Rewritten commit IDs:** on 2026-10-01, before the first push, every commit's email was rewritten to the
   no-reply address, which changed all 40 commit IDs. IDs quoted inside older commit messages are pre-rewrite IDs;
-  `docs/commit-id-map.tsv` maps old to new. A local backup branch `backup/pre-noreply-2026-10-01` keeps the old
+  `docs/commit-id-map.tsv` maps old to new. The retired standalone repo `C:\Users\sethy\Projects\vault` keeps a local
+  backup branch `backup/pre-noreply-2026-10-01` with the old
   history. Never push it: it carries the private email.
 - **The full transcript of the founding session** (local to the main PC, not in this repository):
   `C:\Users\sethy\.claude\projects\C--Users-sethy-OneDrive-Desktop-Tutor\ba4722e7-2537-4ced-b4a0-4062c34e0fa8.jsonl`.

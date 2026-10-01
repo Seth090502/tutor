@@ -15,7 +15,7 @@
   Exit codes: 0 all done, 1 pre-flight failed, 2 a run failed (server/infrastructure), 4 timeout.
 
   Requires the GPU to be free: the owner must release it first. Run from any directory:
-    pwsh -File C:\Users\sethy\Projects\vault\bench\model-bench\run-gpu-matrix.ps1
+    pwsh -File C:\Users\sethy\Projects\tutor\vault\bench\model-bench\run-gpu-matrix.ps1
 
 .PARAMETER DryRun   Print the plan and the harness commands without starting anything.
 .PARAMETER Only     Wildcard filter on config ids, e.g. -Only 'rerank-*'.
@@ -25,8 +25,8 @@ param(
   [string]$Build = 'b11310',
   [string]$ModelsDir = 'C:\Users\sethy\Projects\vault-models',
   [string]$Dataset = 'C:\Users\sethy\Projects\vault-eval\external\bright\subset-v1',
-  [string]$OutDir = 'C:\Users\sethy\Projects\vault\docs\phase0\model-bench',
-  [string]$Bench = 'C:\Users\sethy\Projects\vault\bench\model-bench\target\release\model-bench.exe',
+  [string]$OutDir = 'C:\Users\sethy\Projects\tutor\vault\docs\phase0\model-bench',
+  [string]$Bench = 'C:\Users\sethy\Projects\tutor\vault\bench\model-bench\target\release\model-bench.exe',
   [int]$MinFreeMiB = 18000,
   [int]$RunTimeoutMin = 60,
   [string]$Only = '*',

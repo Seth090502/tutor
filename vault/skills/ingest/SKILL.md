@@ -14,7 +14,7 @@ The model chooses the authorised scope and explains the results; it never implem
 - Vault: an explicit machine config; otherwise `VAULT_CONFIG`, `%ProgramData%\vault\libraryd.toml`, then
   `%APPDATA%\vault\libraryd.toml`. Read `[vault] root` and the supported inbox override. If no config exists,
   the stand-in is `E:\Stand-In Vault` (2026-10-01). An invalid explicit config is an error; never silently fall back.
-- Tool: `C:\Users\sethy\Projects\vault\tools\vault-stage\bin\vault-stage.exe` on this PC. Check `--version`
+- Tool: `C:\Users\sethy\Projects\tutor\vault\tools\vault-stage\bin\vault-stage.exe` on this PC. Check `--version`
   and `--help`; require tool `vault-stage`, version `0.1.0`, schema `1`. Read
   [references/windows-delivery.md](references/windows-delivery.md) for commands, prerequisites and failures.
 - Scanner: trusted local Gitleaks plus this skill's [assets/gitleaks.toml](assets/gitleaks.toml).

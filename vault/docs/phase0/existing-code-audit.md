@@ -7,7 +7,7 @@ Written by a Phase 0 worker for the lead. Scope: what the owner's existing retri
 - **(S: where)** documented by the named source (a repo document, a baseline log, or a crate's source in `~/.cargo/registry`). Behaviour I infer from reading code is tagged `(S: file:line)`.
 - **(E)** my estimate or inference.
 
-Paths: `T` = `C:\Users\sethy\Projects\tutor`, `RE` = `T\crates\rag-engine`, `D` = `C:\Users\sethy\OneDrive\Desktop\Tutor`, `V` = `C:\Users\sethy\Projects\vault`.
+Paths: `T` = `C:\Users\sethy\Projects\tutor`, `RE` = `T\crates\rag-engine`, `D` = `C:\Users\sethy\OneDrive\Desktop\Tutor`, `V` = `C:\Users\sethy\Projects\tutor\vault`.
 
 ---
 
