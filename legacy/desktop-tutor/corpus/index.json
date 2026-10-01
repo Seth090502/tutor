@@ -1,0 +1,79 @@
+{
+  "version": "1.0.0",
+  "documents": [
+    {
+      "id": "corpus/domains/chemistry/quant.md",
+      "local_path": "corpus/domains/chemistry/quant.md",
+      "chars": 746,
+      "tokens": 113
+    },
+    {
+      "id": "corpus/domains/english/craft.md",
+      "local_path": "corpus/domains/english/craft.md",
+      "chars": 812,
+      "tokens": 114
+    },
+    {
+      "id": "corpus/domains/math/foundations.md",
+      "local_path": "corpus/domains/math/foundations.md",
+      "chars": 663,
+      "tokens": 131
+    },
+    {
+      "id": "corpus/domains/science/mechanisms.md",
+      "local_path": "corpus/domains/science/mechanisms.md",
+      "chars": 767,
+      "tokens": 118
+    },
+    {
+      "id": "corpus/papers/chemistry/README.md",
+      "local_path": "corpus/papers/chemistry/README.md",
+      "chars": 388,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/papers/english/README.md",
+      "local_path": "corpus/papers/english/README.md",
+      "chars": 386,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/papers/math/README.md",
+      "local_path": "corpus/papers/math/README.md",
+      "chars": 383,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/papers/science/README.md",
+      "local_path": "corpus/papers/science/README.md",
+      "chars": 386,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/books/chemistry/README.md",
+      "local_path": "corpus/books/chemistry/README.md",
+      "chars": 386,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/books/english/README.md",
+      "local_path": "corpus/books/english/README.md",
+      "chars": 384,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/books/math/README.md",
+      "local_path": "corpus/books/math/README.md",
+      "chars": 381,
+      "tokens": 60
+    },
+    {
+      "id": "corpus/books/science/README.md",
+      "local_path": "corpus/books/science/README.md",
+      "chars": 384,
+      "tokens": 60
+    }
+  ],
+  "manifest_sources": 12,
+  "note": "Full text only for own-notes/open licenses. Manifest holds links for the rest."
+}

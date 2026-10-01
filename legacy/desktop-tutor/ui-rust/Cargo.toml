@@ -1,0 +1,9 @@
+[package]
+name = "tutor-ui"
+version = "1.1.0"
+edition = "2021"
+description = "Rust TUI bridge for the Tutor CLI/API (stdlib.fn only, no crates)"
+
+[[bin]]
+name = "tutor-ui"
+path = "src/main.rs"

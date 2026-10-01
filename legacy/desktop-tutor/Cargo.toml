@@ -1,0 +1,3 @@
+[workspace]
+members = ["ui-rust", "search-rs"]
+resolver = "3"

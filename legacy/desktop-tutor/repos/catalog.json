@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "policy": "Catalog first, clone opt-in shallow. Never bulk-clone 50 repos into OneDrive by default (sync + disk).",
+  "repos": [
+    {"name": "autogen", "url": "https://github.com/microsoft/autogen", "why": "Multi-agent conversation framework; patterns for tutor+critic agents."},
+    {"name": "langchain", "url": "https://github.com/langchain-ai/langchain", "why": "Agent tooling/chains; reference for quiz-generator tools."},
+    {"name": "langgraph", "url": "https://github.com/langchain-ai/langgraph", "why": "Stateful agent graphs; model for learn->quiz->review loop."},
+    {"name": "generative-ai-for-beginners", "url": "https://github.com/microsoft/Generative-AI-for-beginners", "why": "Teaching curriculum structure to copy for lesson design."},
+    {"name": "ai-for-beginners", "url": "https://github.com/microsoft/AI-For-Beginners", "why": "Curriculum + quizzes layout; inspiration for topic order."},
+    {"name": "openai-cookbook", "url": "https://github.com/openai/openai-cookbook", "why": "Prompt/assessment patterns for explanation + grading."},
+    {"name": "openai-agents-python", "url": "https://github.com/openai/openai-agents-python", "why": "Lightweight agent SDK; guardrails + handoffs for tutor agents."},
+    {"name": "prompt-eng-tutorial", "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial", "why": "Prompt teaching notebook; Socratic prompting examples."},
+    {"name": "autogpt", "url": "https://github.com/Significant-Gravitas/AutoGPT", "why": "Autonomous loop reference; what NOT to copy blindly (heavy)."},
+    {"name": "babyagi", "url": "https://github.com/yoheinakajima/babyagi", "why": "Minimal task-loop archetype; useful for review scheduler ideas."},
+    {"name": "crewai", "url": "https://github.com/crewAIInc/crewAI", "why": "Role-based crews; tutor/reviewer/verifier role split."},
+    {"name": "agno", "url": "https://github.com/agno-agi/agno", "why": "Fast agents + memory; study memory design for spaced repetition."},
+    {"name": "mem0", "url": "https://github.com/mem0ai/mem0", "why": "Agent memory layer; compare vs local JSON progress store."},
+    {"name": "pydantic-ai", "url": "https://github.com/pydantic/pydantic-ai", "why": "Typed agent outputs; model for validated quiz items."},
+    {"name": "open-webui", "url": "https://github.com/open-webui/open-webui", "why": "Local chat UI; optional front-end over this CLI later."},
+    {"name": "khoj", "url": "https://github.com/khoj-ai/khoj", "why": "Personal search assistant; compare corpus search approach."},
+    {"name": "llm-zoomcamp", "url": "https://github.com/DataTalksClub/llm-zoomcamp", "why": "Cohort teaching repo; homework/quiz cadence to copy."},
+    {"name": "llm-course", "url": "https://github.com/mlabonne/llm-course", "why": "Roadmap-style curriculum; topic-graph example."},
+    {"name": "llms-from-scratch", "url": "https://github.com/rasbt/LLMs-from-scratch", "why": "First-principles teaching gold standard; derive don't memorize."},
+    {"name": "project-based-learning", "url": "https://github.com/practical-tutorials/project-based-learning", "why": "Learn-by-building list; source of applied exercises."},
+    {"name": "free-programming-books", "url": "https://github.com/EbookFoundation/free-programming-books", "why": "Open-license book index model for corpus manifest."},
+    {"name": "transformers", "url": "https://github.com/huggingface/transformers", "why": "Reference impls; only clone if doing model work (large)."},
+    {"name": "python-genai", "url": "https://github.com/googleapis/python-genai", "why": "Client patterns if you add an LLM explainer later."},
+    {"name": "gemini-cookbook", "url": "https://github.com/google-gemini/cookbook", "why": "Recipes for eval/grading prompts."}
+  ]
+}

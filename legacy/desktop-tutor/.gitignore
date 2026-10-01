@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+data/*.json
+!data/.gitkeep
+corpus/ingest/*
+!corpus/ingest/.gitkeep
+corpus/papers/**/*.pdf
+corpus/books/**/*.pdf
+corpus/papers_index.json
+repos/clones/
+*.pyc

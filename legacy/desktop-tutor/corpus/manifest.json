@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "policy": "metadata+links scale freely; full text only for public-domain/CC-BY/own notes. No vendored copyrighted books/papers.",
+  "sources": [
+    {"id": "openstax-calculus-1", "title": "OpenStax Calculus Volume 1", "license": "CC-BY", "url": "https://openstax.org/details/books/calculus-volume-1", "local_path": null, "domains": ["math"]},
+    {"id": "openstax-algebra", "title": "OpenStax Elementary Algebra", "license": "CC-BY", "url": "https://openstax.org/details/books/elementary-algebra-2e", "local_path": null, "domains": ["math"]},
+    {"id": "mit-ocw-1801", "title": "MIT OCW 18.01 Single Variable Calculus", "license": "CC-BY-NC-SA", "url": "https://ocw.mit.edu/courses/18-01-single-variable-calculus-fall-2006/", "local_path": null, "domains": ["math"]},
+    {"id": "openstax-biology-2e", "title": "OpenStax Biology 2e", "license": "CC-BY", "url": "https://openstax.org/details/books/biology-2e", "local_path": null, "domains": ["science"]},
+    {"id": "openstax-physics", "title": "OpenStax University Physics Vol 1", "license": "CC-BY", "url": "https://openstax.org/details/books/university-physics-volume-1", "local_path": null, "domains": ["science"]},
+    {"id": "openstax-chemistry-2e", "title": "OpenStax Chemistry 2e", "license": "CC-BY", "url": "https://openstax.org/details/books/chemistry-2e", "local_path": null, "domains": ["chemistry"]},
+    {"id": "mit-ocw-5111", "title": "MIT OCW 5.111 Principles of Chemical Science", "license": "CC-BY-NC-SA", "url": "https://ocw.mit.edu/courses/5-111-principles-of-chemical-science-fall-2008/", "local_path": null, "domains": ["chemistry"]},
+    {"id": "openstax-comp", "title": "OpenStax English Composition", "license": "CC-BY", "url": "https://openstax.org/details/books/english-composition", "local_path": null, "domains": ["english"]},
+    {"id": "local-math-foundations", "title": "Local note: Math foundations (original)", "license": "own-notes", "url": null, "local_path": "corpus/domains/math/foundations.md", "domains": ["math"]},
+    {"id": "local-english-craft", "title": "Local note: English craft (original)", "license": "own-notes", "url": null, "local_path": "corpus/domains/english/craft.md", "domains": ["english"]},
+    {"id": "local-science-mechanisms", "title": "Local note: Science mechanisms (original)", "license": "own-notes", "url": null, "local_path": "corpus/domains/science/mechanisms.md", "domains": ["science"]},
+    {"id": "local-chemistry-quant", "title": "Local note: Chemistry quantitative (original)", "license": "own-notes", "url": null, "local_path": "corpus/domains/chemistry/quant.md", "domains": ["chemistry"]}
+  ]
+}

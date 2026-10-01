@@ -1,0 +1,9 @@
+[package]
+name = "tutor-search"
+version = "0.1.0"
+edition = "2024"
+description = "BM25 corpus search for the Tutor (bm25 crate, MIT); tutor/corpus.py calls it over stdin/stdout"
+
+[dependencies]
+bm25 = "2.3"
+serde_json = "1"

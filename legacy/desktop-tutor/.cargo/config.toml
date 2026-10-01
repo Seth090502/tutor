@@ -1,0 +1,4 @@
+# Build output stays outside OneDrive so the synced folder stays lean.
+# tutor/corpus.py reads target-dir from this file to find the tutor-search binary.
+[build]
+target-dir = "C:/Users/sethy/AppData/Local/tutor-cargo-target"

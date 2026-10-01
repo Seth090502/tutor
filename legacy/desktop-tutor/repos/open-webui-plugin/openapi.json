@@ -1,0 +1,26 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Tutor API", "version": "1.1.0"},
+  "servers": [{"url": "http://127.0.0.1:8797"}],
+  "paths": {
+    "/search": {"get": {"operationId": "search",
+      "parameters": [
+        {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+        {"name": "n", "in": "query", "schema": {"type": "integer", "default": 5}}],
+      "responses": {"200": {"description": "corpus hits"}}}},
+    "/quiz": {"get": {"operationId": "quiz",
+      "parameters": [
+        {"name": "domain", "in": "query", "schema": {"type": "string", "default": "math"}},
+        {"name": "n", "in": "query", "schema": {"type": "integer", "default": 5}},
+        {"name": "seed", "in": "query", "schema": {"type": "integer", "default": 7}}],
+      "responses": {"200": {"description": "quiz items (answers withheld)"}}}},
+    "/progress": {"get": {"operationId": "progress",
+      "responses": {"200": {"description": "accuracy by domain"}}}},
+    "/attempt": {"post": {"operationId": "attempt",
+      "requestBody": {"required": true, "content": {"application/json": {
+        "schema": {"type": "object", "required": ["item_id", "answer"],
+          "properties": {"item_id": {"type": "string"},
+            "answer": {"type": "string", "description": "choice letter, e.g. B"}}}}}},
+      "responses": {"200": {"description": "graded server-side: correct, answer, explanation, misconception"}}}}
+  }
+}
