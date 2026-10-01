@@ -13,4 +13,5 @@ checklist. Update both as work lands.
 - `docs/vault/AGENTS.md` is a different file: the corpus-management rules deployed into the vault itself.
 - Done means `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` and
   `cargo fmt --all --check` all pass (cargo is at `C:/Users/sethy/.cargo/bin/cargo.exe`).
-- Commit locally on `custom`; push to `origin` (private GitHub `Seth090502/tutor`) only when the owner asks.
+- Commit on `custom` and push to `origin` (private GitHub `Seth090502/tutor`, `git push origin custom:main`)
+  once checks pass; the owner allows pushing freely (2026-10-01).

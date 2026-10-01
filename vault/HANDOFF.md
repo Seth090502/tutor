@@ -71,7 +71,7 @@ Build the highest-performance knowledge vault and retrieval system for the owner
 | Subagents | Sonnet 5.5 (high effort) for volume and bounded work; Opus 5.5 at xhigh for hard engineering and review. Brief them per `docs/BRIEFING.md` (from Anthropic's Opus 5.5, Sonnet 5.5 and general prompting guides) |
 | Disk hygiene | Delete merged worktrees' `target/` folders (5-25 GB each) |
 | `/ingest` | A skill that delivers staged material from `E:\Ready to Transfer` into vault inbox batches; codebases stay whole folders |
-| GitHub | One **private** monorepo for the tutor and the vault: https://github.com/Seth090502/tutor (`origin`; local branch `custom` is pushed as `main`), owner's request 2026-10-01. Push again only when the owner asks |
+| GitHub | One **private** monorepo for the tutor and the vault: https://github.com/Seth090502/tutor (`origin`; local branch `custom` is pushed as `main`), owner's request 2026-10-01; the owner allows pushing freely (2026-10-01) |
 
 **Pending owner answer:** after wave 1, the lead asked "should I start wave 2 now?". There is no answer yet. Do
 not start wave 2 (a multi-agent run) until the owner says go.
@@ -279,7 +279,7 @@ its own worktree under `C:\Users\sethy\Projects\wt\` with separate owned paths, 
   then run all checks.
 - **Commits:** local by default, on the monorepo's `custom` branch, with the session's attribution trailer.
   `origin` is the private GitHub repo `Seth090502/tutor`;
-  push only when the owner asks.
+  push once checks pass; the owner allows pushing freely (2026-10-01).
 - **Commit identity:** always the GitHub no-reply address,
   `Seth <276114533+Seth090502@users.noreply.github.com>`, set in the monorepo's `git config`. Older tutor commits
   carry the owner's Gmail; the owner chose (2026-10-01) to turn off GitHub's email-privacy push block so they can

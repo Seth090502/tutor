@@ -159,7 +159,10 @@ The owner's personal tutor, in one private monorepo: https://github.com/Seth0905
 - **Branch and pushing:**
   - commit on `custom`;
   - `origin` is the private GitHub repo, and `custom` is pushed as `main`
-    (`git push origin custom:main`, only when the owner asks);
+    (`git push origin custom:main`); the owner allows pushing freely (2026-10-01): push once a commit's checks pass, and push
+    work branches that hold unmerged work (`git push origin wt/<name>`) so nothing exists only on this PC;
+  - never push the local `main` branch (it is upstream DeepTutor's v1.6.12 base) or any branch carrying
+    rewritten-history backups;
   - `upstream` is HKUDS/DeepTutor (fetch only).
 - **Commit identity:**
   - this repository's `git config` uses `Seth <276114533+Seth090502@users.noreply.github.com>`;

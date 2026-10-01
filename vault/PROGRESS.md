@@ -11,7 +11,7 @@ Read `HANDOFF.md` first, then this checklist. Update both as work lands; commit 
 - **Scope additions (owner, 2026-10-01):** source code folders as a first-class delivery type; any agent (not only the
   tutor) can reference chosen material through collections; everything state of the art and in Rust.
 - **Repository:** the `vault/` folder of the tutor monorepo `C:\Users\sethy\Projects\tutor` (branch `custom`), private
-  GitHub repo https://github.com/Seth090502/tutor since 2026-10-01 (push only when the owner asks). The tutor is the
+  GitHub repo https://github.com/Seth090502/tutor since 2026-10-01 (the owner allows pushing freely (2026-10-01)). The tutor is the
   heart; the vault complements it. Eval directory and model files live outside the vault and outside the repository.
 
 ## Phase 0: explore, audit, measure, propose (STOP for approval)
