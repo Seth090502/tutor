@@ -176,6 +176,25 @@ The owner's personal tutor, in one private monorepo: https://github.com/Seth0905
   - the tutor's are in `docs/tutor/QA.md` (pytest, vitest, cargo, with the named baseline failures);
   - the vault's are `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` and
     `cargo fmt --all --check`, run inside `vault/`.
+- **GitHub Actions CI** (`.github/workflows/`, set up 2026-10-01; keep it green):
+  - **Workflows:** one per component, each triggered only by its own paths on pushes to `main` and on pull
+    requests:
+    - `lint` runs on every change: Ruff check and format over the whole repository, import-linter, the
+      architecture check, hygiene, actionlint, and gitleaks on the new commits;
+    - `backend`: imports on Linux 3.11 and Windows 3.14; pytest on Linux 3.11 and 3.14 with the language
+      extras; the evals suite separately; all four Pythons weekly;
+    - `web`: upstream's Next.js gate and Playwright audits;
+    - `desktop`: the frontend on Linux, and the root Rust workspace on Windows with pinned protoc and PDFium;
+    - `vault`: the vault workspace on Windows with PDFium, plus `vault-stage` (with pinned gitleaks) and
+      model-bench;
+    - `legacy`: Windows, including the 90% hit@3 search floor.
+  - **Conventions:** actions are pinned to commit SHAs; downloaded tools are checksum-pinned; the token is
+    read-only; superseded runs are cancelled; Dependabot sends monthly grouped updates plus security fixes.
+  - **Plan limits:** the free plan has no branch protection, rulesets, CodeQL or secret scanning on private
+    repos, so the workflows are the gate. Run the matching checks locally before pushing to `main`, and fix
+    anything red before other work.
+  - **Making a CI change:** test it on a branch with a pull request first (`git push origin custom:ci/<name>`),
+    then push `custom:main` once green. Windows minutes cost twice Linux minutes on the free quota.
 - **Worktrees:** `git worktree add ../wt/<name> -b wt/<name> custom`. Merge with `--no-ff`, then delete the
   worktree and its `target/`.
 - **The root `.gitignore`** ignores `/docs/*` except `docs/tutor/`, plus `*.pdf`, `data/`, `build/` and `*.log`.
