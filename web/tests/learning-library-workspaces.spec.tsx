@@ -10,7 +10,12 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/learning/books',
   useSearchParams: () => new URLSearchParams(mocks.query),
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+// A stable t, like the real hook: ActivityLibrary reloads when t changes, so a fresh t per render would start a
+// new fetch on every render and leave one resolving after the test ends.
+vi.mock('react-i18next', () => {
+  const t = (key: string) => key
+  return { useTranslation: () => ({ t }) }
+})
 vi.mock('@/hooks/useChatWorkspaces', () => ({ useChatWorkspaces: () => ({
   workspaces: [{ workspace_id: 'other', display_name: 'Other', status: 'ready' }], error: '',
 }) }))
@@ -57,4 +62,5 @@ it('keeps equal practice IDs in separate workspaces and filters without changing
   expect(screen.getByRole('link', { name: /Other question/ })).toBeInTheDocument()
   expect(mocks.push).not.toHaveBeenCalled()
   expect(window.location.search).toBe('')
+  expect(mocks.library).toHaveBeenCalledOnce()
 })

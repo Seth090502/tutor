@@ -59,7 +59,9 @@ jobs:
   rust:
     name: Rust workspace (fmt, clippy, tests)
     runs-on: windows-latest
-    timeout-minutes: 60
+    # A cold build (LanceDB, Tauri) takes about an hour on a hosted Windows runner; main cannot reuse a pull
+    # request's cache, so its first run after a cache change is cold.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
