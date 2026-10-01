@@ -1,0 +1,14 @@
+title = "Vault pre-copy checks"
+minVersion = "v8.25.0"
+
+[extend]
+useDefault = true
+
+# Additional conservative check for credentials embedded in notes. Matches are held for review;
+# this is not a substitute for the default token/private-key rules or a guarantee of secret-free content.
+[[rules]]
+id = "vault-credential-in-notes"
+description = "Credential assignment or admin/password notation in delivered text"
+regex = '''(?i)(?:\b(?:password|passwd|pwd|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\b\s*[:=]\s*|\badmin\s*/\s*)["'`]?([a-z0-9_./+=-]{8,})'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd", "api", "token", "secret", "admin"]

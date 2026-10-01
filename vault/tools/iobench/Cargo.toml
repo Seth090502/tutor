@@ -1,0 +1,10 @@
+[package]
+name = "iobench"
+version = "0.1.0"
+edition = "2024"
+description = "Unbuffered sequential and random I/O measurement for a vault root (Windows)"
+publish = false
+
+[dependencies]
+
+[workspace]

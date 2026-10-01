@@ -1,0 +1,860 @@
+[
+  {
+    "name": "search",
+    "description": "Find passages by meaning and keywords. Pass 2-4 focused queries in one call and narrow the shelf with filters (category, area, kind, level, year range, language, openalex_topic, batch, repo). Each hit is exact text with its address, printed page label and section path, plus a summary of its document. While the retrieval index is not built this tool answers not_yet_available: use find_docs, grep and read meanwhile.",
+    "inputSchema": {
+      "$defs": {
+        "DocKind": {
+          "enum": [
+            "paper",
+            "book",
+            "chapter",
+            "thesis",
+            "report",
+            "notes",
+            "code",
+            "repository",
+            "other"
+          ],
+          "type": "string"
+        },
+        "Filters": {
+          "description": "Filters shared by search, find_docs, grep (category scope) and define. Every field is optional.",
+          "properties": {
+            "area": {
+              "default": null,
+              "description": "Psychology study-map area (`memory`, `clinical`, ...); requires category `psych-cogsci` or none.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "batch": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "category": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DocKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "language": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "openalex_topic": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "description": "Restrict to documents of one source-code repository.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "year_from": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "year_to": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/Filters",
+          "default": {
+            "area": null,
+            "batch": null,
+            "category": null,
+            "kind": null,
+            "language": null,
+            "level": null,
+            "openalex_topic": null,
+            "repo": null,
+            "year_from": null,
+            "year_to": null
+          }
+        },
+        "k": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "queries": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "queries"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "find_docs",
+    "description": "Find documents (not passages): landmark studies, textbooks, a paper you half-remember. Pass several queries in one call; each gets its own ranked list of document summaries (doc_id, title, authors, year, kind, category, line count). Use the doc_id with outline, read, grep and workspace.",
+    "inputSchema": {
+      "$defs": {
+        "DocKind": {
+          "enum": [
+            "paper",
+            "book",
+            "chapter",
+            "thesis",
+            "report",
+            "notes",
+            "code",
+            "repository",
+            "other"
+          ],
+          "type": "string"
+        },
+        "Filters": {
+          "description": "Filters shared by search, find_docs, grep (category scope) and define. Every field is optional.",
+          "properties": {
+            "area": {
+              "default": null,
+              "description": "Psychology study-map area (`memory`, `clinical`, ...); requires category `psych-cogsci` or none.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "batch": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "category": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DocKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "language": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "openalex_topic": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "description": "Restrict to documents of one source-code repository.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "year_from": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "year_to": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/Filters",
+          "default": {
+            "area": null,
+            "batch": null,
+            "category": null,
+            "kind": null,
+            "language": null,
+            "level": null,
+            "openalex_topic": null,
+            "repo": null,
+            "year_from": null,
+            "year_to": null
+          }
+        },
+        "k": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "queries": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "queries"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "workspace",
+    "description": "Keep a working set of documents so later grep and citations calls can be scoped to it. Actions: add, remove, list, clear. Takes doc_ids; a named workspace is optional and defaults to your session's. Adding a document that is already present, or removing one that is absent, changes nothing. While workspaces are not built this tool answers not_yet_available.",
+    "inputSchema": {
+      "$defs": {
+        "WorkspaceAction": {
+          "enum": [
+            "add",
+            "remove",
+            "list",
+            "clear"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/WorkspaceAction"
+        },
+        "doc_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspace": {
+          "default": null,
+          "description": "Named workspace; defaults to the caller's session workspace.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "grep",
+    "description": "Exact or regular-expression search over canonical text (Rust regex syntax; plain text is a valid pattern). Scope is a list of documents, the workspace, a category (with optional area), or the whole vault. Every hit carries its exact address and line, with context_lines of surrounding text; use read for more. Several patterns can run in one call; each hit says which pattern matched. Prefer grep when you know the words.",
+    "inputSchema": {
+      "$defs": {
+        "Scope": {
+          "oneOf": [
+            {
+              "properties": {
+                "doc_ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "const": "docs",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "doc_ids"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "workspace",
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "area": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "category": {
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "category",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "category"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "vault",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "case_insensitive": {
+          "default": false,
+          "type": "boolean"
+        },
+        "context_lines": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_hits": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "patterns": {
+          "description": "Regular expressions (Rust `regex` syntax). Plain text is a valid pattern.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      },
+      "required": [
+        "patterns",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "read",
+    "description": "Read exact text at addresses (doc_id#L120-L148, or a single line doc_id#L7). The text is returned verbatim from the canonical store with its printed page and section. expand widens each address: lines (before and after counts of extra lines) or section (the whole innermost heading section). Pass many addresses at once. Unknown ids and out-of-range lines are reported per address without failing the others. A superseded document still reads exactly as cited and names its newer version.",
+    "inputSchema": {
+      "$defs": {
+        "Expand": {
+          "oneOf": [
+            {
+              "description": "Add lines before and after each address.",
+              "properties": {
+                "after": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "before": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "mode": {
+                  "const": "lines",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mode",
+                "before",
+                "after"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Widen each address to the innermost heading section containing it.",
+              "properties": {
+                "mode": {
+                  "const": "section",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "addresses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expand": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "addresses"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "outline",
+    "description": "Show a document's structure: the heading tree with line ranges and printed pages (for a repository, the file tree), and for source files their symbols. Use it to choose which lines to read. Pass several doc_ids at once; max_depth limits heading depth.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "doc_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_depth": {
+          "default": null,
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "doc_ids"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "citations",
+    "description": "Follow citations within the vault: what the given documents cite (direction cites), what cites them (cited_by), or both. Each edge shows the reference as written, its address in the citing document, and the cited document when it is in the vault or an external id when it is not. While citation data is not built this tool answers not_yet_available.",
+    "inputSchema": {
+      "$defs": {
+        "Direction": {
+          "oneOf": [
+            {
+              "enum": [
+                "both"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "cites",
+              "description": "What these documents cite (papers: reference lists; code: what it imports or calls).",
+              "type": "string"
+            },
+            {
+              "const": "cited_by",
+              "description": "What cites these documents (papers: citing documents; code: what uses it).",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/Direction"
+        },
+        "doc_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "k": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "doc_ids",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "define",
+    "description": "Look up textbook definitions of terms (or, for code, symbol definitions) from back-of-book indexes, definition passages and glossaries. Pass several terms at once; each definition says which term it answers and where it came from. While definition data is not built this tool answers not_yet_available.",
+    "inputSchema": {
+      "$defs": {
+        "DocKind": {
+          "enum": [
+            "paper",
+            "book",
+            "chapter",
+            "thesis",
+            "report",
+            "notes",
+            "code",
+            "repository",
+            "other"
+          ],
+          "type": "string"
+        },
+        "Filters": {
+          "description": "Filters shared by search, find_docs, grep (category scope) and define. Every field is optional.",
+          "properties": {
+            "area": {
+              "default": null,
+              "description": "Psychology study-map area (`memory`, `clinical`, ...); requires category `psych-cogsci` or none.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "batch": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "category": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DocKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "language": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "openalex_topic": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "description": "Restrict to documents of one source-code repository.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "year_from": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "year_to": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/Filters",
+          "default": {
+            "area": null,
+            "batch": null,
+            "category": null,
+            "kind": null,
+            "language": null,
+            "level": null,
+            "openalex_topic": null,
+            "repo": null,
+            "year_from": null,
+            "year_to": null
+          }
+        },
+        "k": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "terms": {
+          "description": "Terms, or for code, symbol names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "terms"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "vault_info",
+    "description": "Describe the vault: counts per kind and category, coverage against targets, index and taxonomy versions, disk use per tier, the deployment stage, and which tools work now (tools_available). Call it first to learn what to expect.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  }
+]

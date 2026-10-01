@@ -1,0 +1,20 @@
+[2026-10-01T02:43:03Z] started C:/Users/sethy/Projects/vault-models/llama.cpp/llama-b11310-cpu/llama-server.exe pid 36648: -m C:/Users/sethy/Projects/vault-models/embedders/Qwen__Qwen3-Embedding-0.6B-GGUF__Qwen3-Embedding-0.6B-Q8_0.gguf --host 127.0.0.1 --port 54209 -c 2048 -np 2 -b 2048 -ub 2048 -ngl 0 -t 8 --embedding --pooling last --no-webui
+[2026-10-01T02:43:04Z] server ready after 1.0s
+[2026-10-01T02:44:27Z] autotune picked batch 32 concurrency 2
+[2026-10-01T02:44:52Z] psychology: embedded 52 docs, 9591 tokens in 24.5s (391 tok/s)
+[2026-10-01T02:44:53Z] wrote candidates C:/Users/sethy/Projects/vault/docs/phase0/model-bench/smoke/candidates.json
+[2026-10-01T02:44:53Z] started C:/Users/sethy/Projects/vault-models/llama.cpp/llama-b11310-cpu/llama-server.exe pid 38312: -m C:/Users/sethy/Projects/vault-models/rerankers/ggml-org__Qwen3-Reranker-0.6B-Q8_0-GGUF__qwen3-reranker-0.6b-q8_0.gguf --host 127.0.0.1 --port 57765 -c 2048 -np 2 -b 2048 -ub 2048 -ngl 0 -t 8 --reranking --pooling rank --no-webui
+[2026-10-01T02:44:54Z] server ready after 1.3s
+[2026-10-01T02:44:56Z] sanity: {"cases":[{"margin":0.9972715862331826,"query":"What is the capital of France?","relevant_idx":0,"scores":[0.9972894191741944,0.000017832941011874937,0.000011958469258388504]},{"margin":0.9987214134180249,"query":"Why does ice float on water?","relevant_idx":0,"scores":[0.9987491369247437,0.00002772350671875756,0.000017688733350951225]}],"min_abs_top":0.05,"min_margin":0.05,"pass":true,"reasons":[]}
+[2026-10-01T02:47:32Z] psychology: reranked 3 queries (156 pairs) in 156.2s; ndcg@10 1.0000 -> 0.9421
+rerank exit: 0
+[2026-10-01T02:47:33Z] started C:/Users/sethy/Projects/vault-models/llama.cpp/llama-b11310-cpu/llama-server.exe pid 40560: -m C:/Users/sethy/Projects/vault-models/embedders/ggml-org__bge-m3-Q8_0-GGUF__bge-m3-q8_0.gguf --host 127.0.0.1 --port 57301 -c 2048 -np 2 -b 2048 -ub 2048 -ngl 0 -t 8 --embedding --pooling cls --no-webui
+[2026-10-01T02:47:35Z] server ready after 2.5s
+[2026-10-01T02:47:51Z] psychology: embedded 52 docs, 9987 tokens in 15.3s (651 tok/s)
+[2026-10-01T02:47:52Z] started C:/Users/sethy/Projects/vault-models/llama.cpp/llama-b11310-cpu/llama-server.exe pid 28588: -m C:/Users/sethy/Projects/vault-models/embedders/Qwen__Qwen3-Embedding-0.6B-GGUF__Qwen3-Embedding-0.6B-Q8_0.gguf --host 127.0.0.1 --port 56320 -c 2048 -np 2 -b 2048 -ub 2048 -ngl 0 -t 8 --embedding --pooling last --no-webui
+[2026-10-01T02:47:53Z] server ready after 1.0s
+[2026-10-01T02:48:09Z] parity a: 5462 tokens in 15.9s
+[2026-10-01T02:48:09Z] started C:/Users/sethy/Projects/vault-models/llama.cpp/llama-b11310-cpu/llama-server.exe pid 27280: -m C:/Users/sethy/Projects/vault-models/embedders/Qwen__Qwen3-Embedding-0.6B-GGUF__Qwen3-Embedding-0.6B-Q8_0.gguf --host 127.0.0.1 --port 59837 -c 2048 -np 2 -b 2048 -ub 2048 -ngl 0 -t 8 --embedding --pooling last --no-webui
+[2026-10-01T02:48:10Z] server ready after 1.0s
+[2026-10-01T02:48:25Z] parity b: 5462 tokens in 15.4s
+parity exit: 0

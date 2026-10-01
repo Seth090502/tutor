@@ -1,0 +1,34 @@
+[package]
+name = "vault-extract"
+description = "Format detection and converters from delivered files to canonical-ready Markdown with structure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["pdfium"]
+# PDF text with page labels and reading order through PDFium, bound at run time (no DLL is needed to build).
+pdfium = ["dep:pdfium-render"]
+
+[[example]]
+name = "pdf_probe"
+required-features = ["pdfium"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+roxmltree.workspace = true
+scraper.workspace = true
+ego-tree.workspace = true
+zip = { workspace = true, features = ["deflate-flate2-zlib-rs"] }
+tar.workspace = true
+flate2.workspace = true
+encoding_rs.workspace = true
+chardetng.workspace = true
+regex.workspace = true
+pdfium-render = { workspace = true, features = ["pdfium_latest", "thread_safe"], optional = true }
+
+[dev-dependencies]

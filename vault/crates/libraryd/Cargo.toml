@@ -1,0 +1,40 @@
+[package]
+name = "libraryd"
+description = "The vault server: MCP and gRPC over the VaultApi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# MockVault: a VaultApi over fixture data, for tests and `libraryd --mock`.
+default = ["mock"]
+mock = ["dep:regex"]
+
+[dependencies]
+vault-api = { workspace = true, features = ["schema"] }
+vault-client = { workspace = true, features = ["server"] }
+vault-core.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server"] }
+tonic = { workspace = true, features = ["transport", "codegen", "router", "gzip", "zstd"] }
+axum = { workspace = true, features = ["http2"] }
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true, features = ["net"] }
+tokio-util.workspace = true
+futures.workspace = true
+subtle.workspace = true
+rand.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+regex = { workspace = true, optional = true }
+clap = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tower.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
