@@ -19,8 +19,10 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 - [x] Existing code audit (`docs/phase0/existing-code-audit.md`)
 - [x] Delivered material characterised; cold-tier projection (`docs/phase0/delivered-material.md`)
 - [x] Project status checks, version pins (`docs/phase0/projects-*.md`, `references.md`)
-- [ ] Embedding and reranker candidates benchmarked on the 5090 (needs a GPU window)
-- [ ] Vector index candidates A and B benchmarked on synthetic 6M data; projection to the AI PC (`docs/phase0/vector-bench.md`)
+- [ ] Embedding and reranker candidates benchmarked on the 5090 (needs a GPU window). Harrier-OSS-v1 0.6B added
+  2026-10-01 (provenance checked, `docs/phase0/model-bench-prep.md`). Cohere Embed 5 considered and declined by the
+  owner 2026-10-01: hosted only, and library indexing stays local.
+- [x] Vector index candidates A and B benchmarked on synthetic 6M data; projection to the AI PC (`docs/phase0/vector-bench.md`)
 - [x] Storage plan and 1 TB budget
 - [x] Intake handoff mechanism; pilot composition request
 - [x] Pre-transfer schedule
