@@ -112,5 +112,8 @@ jobs:
           mkdir -p data/user/settings
           printf 'system:\n  language: en\nlogging:\n  level: WARNING\n' > data/user/settings/main.yaml
           cp tests/fixtures/ci_model_catalog.json data/user/settings/model_catalog.json
-      - name: Pytest
-        run: python -m pytest -q -rfE tests deeptutor/learning/tests evals/tests
+      - name: Pytest (backend)
+        run: python -m pytest -q -rfE tests deeptutor/learning/tests
+      # The evals suite imports its own helpers (evals/tests/fakes.py), so it is collected on its own.
+      - name: Pytest (evals)
+        run: python -m pytest -q -rfE evals/tests
