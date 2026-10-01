@@ -330,7 +330,7 @@ fn ident(n: &MNode) -> String {
         .join(" ")
 }
 
-fn op(raw: &str) -> String {
+pub(crate) fn op(raw: &str) -> String {
     let t: String = raw.chars().filter(|c| !('\u{2061}'..='\u{2064}').contains(c)).collect();
     let t = t.trim();
     if t.is_empty() {
@@ -357,7 +357,7 @@ fn op(raw: &str) -> String {
     }
 }
 
-fn escape_char(c: char) -> String {
+pub(crate) fn escape_char(c: char) -> String {
     match c {
         '#' | '$' | '%' | '&' | '_' => format!("\\{c}"),
         '{' => "\\{".into(),
@@ -369,7 +369,7 @@ fn escape_char(c: char) -> String {
     }
 }
 
-fn escape_text(s: &str) -> String {
+pub(crate) fn escape_text(s: &str) -> String {
     let mut out = String::new();
     for c in s.chars() {
         match c {
@@ -408,7 +408,7 @@ fn space(n: &MNode) -> String {
 }
 
 /// A subscript or superscript argument: braces unless a single token.
-fn group(s: &str) -> String {
+pub(crate) fn group(s: &str) -> String {
     let single = s.chars().count() == 1 && s.chars().all(|c| c.is_ascii_alphanumeric());
     if single { s.to_string() } else { format!("{{{s}}}") }
 }
@@ -430,7 +430,7 @@ fn is_big_operator(n: &MNode) -> bool {
         || (n.name == "mo" && matches!(n.attr("largeop"), Some("true")))
 }
 
-fn accent_command(accent: &str, single_letter_base: bool) -> Option<&'static str> {
+pub(crate) fn accent_command(accent: &str, single_letter_base: bool) -> Option<&'static str> {
     Some(match accent.trim() {
         "^" | "ˆ" | "\u{302}" => "\\hat",
         "ˇ" | "\u{30C}" => "\\check",
@@ -521,9 +521,37 @@ fn fenced(n: &MNode, kids: &[&MNode], d: usize) -> String {
     format!("\\left{} {inner} \\right{}", delim(open), delim(close))
 }
 
+/// Plain text (the content of a math run) as LaTeX: Greek letters and symbols become commands, math alphanumerics
+/// become font commands, and a command is separated from a following letter by a space.
+pub(crate) fn latex_text(s: &str) -> String {
+    let mut out = String::new();
+    let mut after_command = false;
+    for c in s.chars() {
+        let piece: String = if let Some((style, base)) = math_alnum(c) {
+            styled(style, &base.to_string())
+        } else if let Some(sym) = symbol(c) {
+            sym.to_string()
+        } else if c.is_whitespace() {
+            if !out.ends_with(' ') && !out.is_empty() {
+                out.push(' ');
+            }
+            after_command = false;
+            continue;
+        } else {
+            escape_char(c)
+        };
+        if after_command && piece.chars().next().is_some_and(|f| f.is_alphanumeric()) {
+            out.push(' ');
+        }
+        after_command = piece.starts_with('\\') && piece.chars().last().is_some_and(|l| l.is_ascii_alphabetic());
+        out.push_str(&piece);
+    }
+    out.trim().to_string()
+}
+
 // ------------------------------------------------------------------------------------------ symbol tables
 
-fn styled(style: &str, s: &str) -> String {
+pub(crate) fn styled(style: &str, s: &str) -> String {
     match style {
         "" => s.to_string(),
         cmd => format!("\\{cmd}{{{s}}}"),
@@ -532,7 +560,7 @@ fn styled(style: &str, s: &str) -> String {
 
 /// Mathematical alphanumerics (U+1D400 block) and the letterlike holes: the LaTeX font command and the plain
 /// character they stand for.
-fn math_alnum(c: char) -> Option<(&'static str, char)> {
+pub(crate) fn math_alnum(c: char) -> Option<(&'static str, char)> {
     let u = c as u32;
     let letterlike: Option<(&'static str, char)> = match c {
         'ℂ' => Some(("mathbb", 'C')),
@@ -594,7 +622,7 @@ fn math_alnum(c: char) -> Option<(&'static str, char)> {
 }
 
 /// LaTeX for a Greek letter or a symbol.
-fn symbol(c: char) -> Option<&'static str> {
+pub(crate) fn symbol(c: char) -> Option<&'static str> {
     Some(match c {
         'α' => "\\alpha",
         'β' => "\\beta",

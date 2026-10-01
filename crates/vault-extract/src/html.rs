@@ -2,6 +2,7 @@
 //! equation tables become display maths, the bibliography becomes structured references) and EPUB chapters
 //! (page-break markers become pages).
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use scraper::{ElementRef, Html, Node, Selector};
@@ -31,7 +32,7 @@ static SEL_H1: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1").expec
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct HtmlOptions {
     /// Added to every heading level (an EPUB chapter's `h1` sits below the book title).
-    pub heading_offset: u8,
+    pub heading_offset: i8,
 }
 
 pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
@@ -198,6 +199,26 @@ fn content_root(doc: &Html) -> ElementRef<'_> {
     }
 }
 
+/// The smallest heading level used in `root`, if any.
+pub(crate) fn min_heading_level(root: ElementRef) -> Option<u8> {
+    root.descendants().filter_map(ElementRef::wrap).filter_map(|e| {
+        let n = tag(e).as_bytes();
+        (n.len() == 2 && n[0] == b'h' && (b'1'..=b'6').contains(&n[1])).then(|| n[1] - b'0')
+    }).min()
+}
+
+/// Parse one XHTML chapter: self-closing tags expanded, nesting checked.
+pub(crate) fn parse_chapter(src: &str) -> Result<Html> {
+    check_depth(src)?;
+    let src = if looks_like_xhtml(src) { expand_self_closing(src) } else { src.to_string() };
+    Ok(Html::parse_document(&src))
+}
+
+/// The element a chapter's text lives in.
+pub(crate) fn chapter_body(doc: &Html) -> ElementRef<'_> {
+    doc.select(&SEL_BODY).next().unwrap_or_else(|| doc.root_element())
+}
+
 fn read_metadata(doc: &Html) -> Metadata {
     let mut m = Metadata::default();
     let mut dc_title = None;
@@ -272,6 +293,8 @@ pub(crate) struct Walker<'b> {
     /// Level of the heading that opened a references section, while inside one.
     in_refs: Option<u8>,
     pending_notes: Vec<String>,
+    /// Element ids that start a page, with the printed label (from an EPUB page list).
+    page_targets: HashMap<String, String>,
 }
 
 fn tag<'a>(el: ElementRef<'a>) -> &'a str {
@@ -303,9 +326,15 @@ fn page_label(el: ElementRef) -> Option<String> {
 
 fn is_skipped(el: ElementRef) -> bool {
     let t = tag(el);
+    if t == "aside" {
+        // Notes written as asides (EPUB 3 footnotes) are content; other asides are page furniture.
+        let v = el.value();
+        let note = v.attr("epub:type").is_some_and(|t| t.contains("note")) || v.attr("role").is_some_and(|r| r.starts_with("doc-") && r.contains("note"));
+        return !note;
+    }
     if matches!(
         t,
-        "script" | "style" | "noscript" | "template" | "head" | "meta" | "link" | "title" | "nav" | "aside" | "footer" | "form" | "iframe" | "svg" | "canvas" | "object" | "embed" | "audio" | "video" | "select" | "button" | "input" | "textarea" | "dialog" | "base"
+        "script" | "style" | "noscript" | "template" | "head" | "meta" | "link" | "title" | "nav" | "footer" | "form" | "iframe" | "svg" | "canvas" | "object" | "embed" | "audio" | "video" | "select" | "button" | "input" | "textarea" | "dialog" | "base"
     ) {
         return !(t == "script" && matches!(el.value().attr("type"), Some(ty) if ty.starts_with("math/tex")));
     }
@@ -342,7 +371,16 @@ fn is_block_tag(t: &str) -> bool {
 
 impl<'b> Walker<'b> {
     pub(crate) fn new(b: &'b mut MdBuilder, opts: HtmlOptions) -> Self {
-        Self { b, opts, refs: Vec::new(), warnings: Vec::new(), authors: Vec::new(), abstract_text: None, in_refs: None, pending_notes: Vec::new() }
+        Self { b, opts, refs: Vec::new(), warnings: Vec::new(), authors: Vec::new(), abstract_text: None, in_refs: None, pending_notes: Vec::new(), page_targets: HashMap::new() }
+    }
+
+    pub(crate) fn with_page_targets(mut self, targets: HashMap<String, String>) -> Self {
+        self.page_targets = targets;
+        self
+    }
+
+    fn level(&self, h: u8) -> u8 {
+        (h as i16 + self.opts.heading_offset as i16).clamp(1, 6) as u8
     }
 
     pub(crate) fn into_parts(self) -> (Vec<Reference>, Vec<String>, Vec<String>, Option<String>) {
@@ -379,6 +417,10 @@ impl<'b> Walker<'b> {
                         self.flush(&mut buf);
                         self.b.page_break(page_label(ce));
                         continue;
+                    }
+                    if let Some(label) = ce.value().attr("id").and_then(|id| self.page_targets.get(id)).cloned() {
+                        self.flush(&mut buf);
+                        self.b.page_break(Some(label));
                     }
                     let t = tag(ce);
                     if t == "br" {
@@ -484,7 +526,7 @@ impl<'b> Walker<'b> {
         let level = tag(el).as_bytes()[1] - b'0';
         let text = self.inline_text(el, 0);
         // A new heading at the same or a higher level ends a references section.
-        let eff = level.saturating_add(self.opts.heading_offset);
+        let eff = self.level(level);
         if let Some(open) = self.in_refs {
             if eff <= open {
                 self.in_refs = None;
@@ -682,7 +724,7 @@ impl<'b> Walker<'b> {
 
     fn abstract_block(&mut self, el: ElementRef, depth: usize) {
         let mut paras = Vec::new();
-        self.b.heading(2u8.saturating_add(self.opts.heading_offset), "Abstract");
+        self.b.heading(self.level(2), "Abstract");
         for c in el.children().filter_map(ElementRef::wrap) {
             if has_class(c, "ltx_title") || matches!(tag(c), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
                 continue;

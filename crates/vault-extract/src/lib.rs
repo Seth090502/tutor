@@ -1,12 +1,17 @@
 //! Format detection and converters. See docs/phase1/SPEC.md section 8.
 
+pub mod archive;
 mod builder;
+pub mod docx;
 pub mod detect;
+pub mod epub;
 pub mod error;
 pub mod html;
 pub mod ids;
 pub mod jats;
 pub mod mathml;
+pub mod notebook;
+pub mod odt;
 pub mod pdfscan;
 pub mod quality;
 mod tables;
