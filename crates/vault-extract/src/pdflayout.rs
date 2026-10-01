@@ -50,6 +50,8 @@ pub(crate) struct Line {
     pub column: usize,
     /// In the top or bottom strip of the page (running header, footer, page number).
     pub furniture: bool,
+    /// The line is a bold run-in heading; the body text that followed it on the page line is the next line.
+    pub run_in: bool,
 }
 
 // ---------------------------------------------------------------------------------------------- page layout
@@ -66,6 +68,8 @@ struct Piece {
     bold: bool,
     /// Vertical centre of the dominant (largest, most numerous) glyphs.
     y: f32,
+    /// A bold run-in heading ("2.1. Methods.") at the start of a line of body text.
+    run_in: bool,
 }
 
 /// Word gaps are about a quarter em; a gap this many ems wide separates pieces (columns, table cells).
@@ -119,11 +123,15 @@ fn pieces_of(glyphs: &[&Glyph]) -> Vec<Piece> {
         let mut m: Vec<&Glyph> = c.members.iter().map(|&i| glyphs[i]).collect();
         m.sort_by(|a, b| a.l.partial_cmp(&b.l).unwrap_or(std::cmp::Ordering::Equal));
         let line_size = dominant_size(&m);
+        let split = run_in_boundary(&m);
         let mut cur: Vec<&Glyph> = Vec::new();
         let mut last_r = f32::MIN;
-        for g in m {
-            if !cur.is_empty() && g.l - last_r > PIECE_GAP_EM * line_size {
-                pieces.push(build_piece(&cur, line_size));
+        for (i, g) in m.iter().enumerate() {
+            if !cur.is_empty() && (g.l - last_r > PIECE_GAP_EM * line_size || split == Some(i)) {
+                let mut piece = build_piece(&cur, line_size);
+                // The piece just closed is the run-in head when the split falls here.
+                piece.run_in = split == Some(i);
+                pieces.push(piece);
                 cur.clear();
             }
             cur.push(g);
@@ -134,6 +142,28 @@ fn pieces_of(glyphs: &[&Glyph]) -> Vec<Piece> {
         }
     }
     pieces
+}
+
+/// Index of the first glyph after a bold run-in heading ("2.1. Rigged representations of algebras.") that starts
+/// the line, when the rest of the line is not bold.
+fn run_in_boundary(m: &[&Glyph]) -> Option<usize> {
+    let mut seen = 0usize;
+    let mut last_visible: Option<char> = None;
+    for (i, g) in m.iter().enumerate() {
+        if g.ch.is_whitespace() {
+            continue;
+        }
+        if g.bold {
+            seen += 1;
+            last_visible = Some(g.ch);
+            continue;
+        }
+        // First non-bold glyph: a run-in head needs a sentence-ending bold run of some length before it.
+        let ends = matches!(last_visible, Some('.') | Some(':'));
+        let has_more_text = m[i..].iter().filter(|x| !x.ch.is_whitespace()).count() >= 8;
+        return (seen >= 8 && ends && has_more_text && i > 0).then_some(i);
+    }
+    None
 }
 
 /// The size most characters in the group have.
@@ -182,8 +212,11 @@ fn build_piece(g: &[&Glyph], line_size: f32) -> Piece {
             (Some(k), Some((pk, s))) if *pk == k => s.push(x.ch),
             (Some(k), _) => {
                 flush_script(&mut text, &mut pending_script);
+                // A script touching its base stays attached to it, even where a space was synthesised.
+                if text.ends_with(' ') && last_r > f32::MIN && x.l - last_r <= 0.25 * line_size {
+                    text.pop();
+                }
                 pending_script = Some((k, x.ch.to_string()));
-                // A script right after a space-separated gap stays attached to its base.
             }
             (None, _) => {
                 flush_script(&mut text, &mut pending_script);
@@ -202,7 +235,7 @@ fn build_piece(g: &[&Glyph], line_size: f32) -> Piece {
     let r = g.iter().map(|x| x.r).fold(f32::MIN, f32::max);
     let letters: Vec<&&Glyph> = g.iter().filter(|x| x.ch.is_alphabetic()).collect();
     let bold = !letters.is_empty() && letters.iter().filter(|x| x.bold).count() * 2 > letters.len();
-    Piece { text: text.trim().to_string(), l, r, top, bottom, size: line_size, bold, y: base_y }
+    Piece { text: text.trim().to_string(), l, r, top, bottom, size: line_size, bold, y: base_y, run_in: false }
 }
 
 /// Order pieces: top to bottom, columns left to right between full-width pieces.
@@ -243,6 +276,7 @@ fn reading_order(pieces: &[Piece], page_width: f32) -> Vec<(Piece, usize)> {
     let mut buffers: Vec<Vec<&Piece>> = vec![Vec::new(); ncols];
     let flush = |buffers: &mut Vec<Vec<&Piece>>, out: &mut Vec<(Piece, usize)>| {
         for (c, b) in buffers.iter_mut().enumerate() {
+            sort_into_lines(b);
             for p in b.drain(..) {
                 out.push((p.clone(), c));
             }
@@ -259,6 +293,21 @@ fn reading_order(pieces: &[Piece], page_width: f32) -> Vec<(Piece, usize)> {
     }
     flush(&mut buffers, &mut out);
     out
+}
+
+/// `pieces` are sorted from the top down; pieces whose baselines agree within half a size belong to one line and
+/// are put left to right, so a label that sits a hair lower than its text still comes first.
+fn sort_into_lines(pieces: &mut [&Piece]) {
+    let mut start = 0;
+    while start < pieces.len() {
+        let y0 = pieces[start].y;
+        let mut end = start + 1;
+        while end < pieces.len() && (pieces[end].y - y0).abs() <= 0.5 * pieces[end].size.max(pieces[start].size) {
+            end += 1;
+        }
+        pieces[start..end].sort_by(|a, b| a.l.partial_cmp(&b.l).unwrap_or(std::cmp::Ordering::Equal));
+        start = end;
+    }
 }
 
 /// Vertical gutters: gaps in horizontal coverage, inside the text span, that no short piece crosses and that
@@ -305,7 +354,7 @@ fn merge_into_lines(ordered: &[(Piece, usize)]) -> Vec<Line> {
     let mut last_y = f32::NAN;
     let mut last_col = usize::MAX;
     for (p, col) in ordered {
-        let same_line = lines.last().is_some() && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(lines.last().map(|l| l.size).unwrap_or(0.0)) && p.l >= lines.last().map(|l| l.l).unwrap_or(0.0);
+        let same_line = lines.last().is_some_and(|l| !l.run_in) && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(lines.last().map(|l| l.size).unwrap_or(0.0)) && p.l >= lines.last().map(|l| l.l).unwrap_or(0.0);
         if same_line {
             let l = lines.last_mut().expect("checked above");
             l.text.push(' ');
@@ -318,7 +367,7 @@ fn merge_into_lines(ordered: &[(Piece, usize)]) -> Vec<Line> {
                 l.size = p.size;
             }
         } else {
-            lines.push(Line { text: p.text.clone(), l: p.l, r: p.r, top: p.top, bottom: p.bottom, size: p.size, bold: p.bold, column: *col, furniture: false });
+            lines.push(Line { text: p.text.clone(), l: p.l, r: p.r, top: p.top, bottom: p.bottom, size: p.size, bold: p.bold, column: *col, furniture: false, run_in: p.run_in });
         }
         last_y = p.y;
         last_col = *col;
@@ -337,7 +386,7 @@ fn mark_furniture(lines: &mut [Line], page_height: f32) {
     for l in lines.iter_mut() {
         let frac_from_top = 1.0 - l.top / page_height;
         let frac_from_bottom = l.bottom / page_height;
-        l.furniture = frac_from_top < 0.075 || frac_from_bottom < 0.075;
+        l.furniture = frac_from_top < 0.12 || frac_from_bottom < 0.12;
     }
 }
 
@@ -351,7 +400,7 @@ pub(crate) struct PageLines {
 
 static NUMBERED_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+\p{Lu}").expect("static regex"));
 static SECTION_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?i)(abstract|introduction|references|bibliography|acknowledg\w*|conclusions?|appendix\b.*|contents|preface|summary|index|glossary)$").expect("static regex"));
-static BRACKET_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[(\d{1,4})\]\s*").expect("static regex"));
+static BRACKET_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[(\d{1,4}|[A-Za-z][A-Za-z0-9+\-]{0,15}\d{2,4}[a-z]?)\]\s*").expect("static regex"));
 static DOT_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{1,4})\.\s+\p{Lu}").expect("static regex"));
 static PAGE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?i)(?:page\s+)?(\d{1,4}|[ivxlcdm]{1,7})$").expect("static regex"));
 static BULLET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[•▪◦‣●■□–—]\s+").expect("static regex"));
@@ -369,12 +418,13 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
     let printed_numbers = strip_furniture(&mut pages);
     let body = body_size(&pages);
     let heading_sizes = heading_size_classes(&pages, body);
+    let typical_pitch = median_pitch(&pages);
 
     let mut b = MdBuilder::new();
     let mut refs: Vec<Reference> = Vec::new();
     let mut in_refs = false;
     let mut abstract_candidate: Option<String> = None;
-    let mut want_abstract = false;
+    let want_abstract = std::cell::Cell::new(false);
 
     struct Para {
         text: String,
@@ -390,15 +440,25 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
     }
     let mut para: Option<Para> = None;
     let mut carry = false;
+    // On the first page, everything above the first section heading is the title block: only its largest line
+    // is a heading, the authors, date and affiliations under it are text.
+    let title_zone_end = pages
+        .first()
+        .and_then(|p| p.lines.iter().position(|l| NUMBERED_HEADING.is_match(l.text.trim()) || SECTION_WORD.is_match(l.text.trim())))
+        .unwrap_or(0);
+    let title_zone_max = pages
+        .first()
+        .map(|p| p.lines.iter().take(title_zone_end).map(|l| l.size).fold(0.0f32, f32::max))
+        .unwrap_or(0.0);
     let mut ref_entry: Option<String> = None;
 
     macro_rules! flush_para {
         () => {
             if let Some(p) = para.take() {
                 let t = collapse_ws(&p.text);
-                if want_abstract && abstract_candidate.is_none() && !t.is_empty() {
+                if want_abstract.get() && abstract_candidate.is_none() && !t.is_empty() {
                     abstract_candidate = Some(t.clone());
-                    want_abstract = false;
+                    want_abstract.set(false);
                 }
                 if p.cont {
                     b.paragraph_cont(&t);
@@ -433,14 +493,15 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
             *e = e.max(l.r);
         }
         let mut prev: Option<&Line> = None;
-        for line in &page.lines {
+        for (line_index, line) in page.lines.iter().enumerate() {
             let text = line.text.trim();
             if text.is_empty() {
                 continue;
             }
             let cl = col_l.get(&line.column).copied().unwrap_or(line.l);
             let cr = col_r.get(&line.column).copied().unwrap_or(line.r);
-            let is_heading = heading_level(line, body, &heading_sizes, prev, cl).is_some();
+            let in_title_zone = pi == 0 && line_index < title_zone_end;
+            let is_heading = heading_level(line, body, &heading_sizes, prev, cl).is_some() && (!in_title_zone || (line.size - title_zone_max).abs() < 0.6);
 
             if is_heading {
                 carry = false;
@@ -449,7 +510,7 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
                 let level = heading_level(line, body, &heading_sizes, prev, cl).unwrap_or(2);
                 let t = collapse_ws(text);
                 in_refs = is_refs_title(&t);
-                want_abstract = t.eq_ignore_ascii_case("abstract");
+                want_abstract.set(t.eq_ignore_ascii_case("abstract"));
                 b.heading(level, &t);
                 prev = Some(line);
                 continue;
@@ -457,9 +518,29 @@ pub(crate) fn assemble(mut pages: Vec<PageLines>, mut metadata: Metadata) -> Ass
 
             if in_refs {
                 carry = false;
-                let starts_entry = BRACKET_REF.is_match(text)
+                let labelled = BRACKET_REF.is_match(text);
+                let pitch_here = prev.map(|p| p.top - line.top).unwrap_or(0.0);
+                let open_unlabelled = ref_entry.as_deref().is_some_and(|e| !BRACKET_REF.is_match(e));
+                if labelled && open_unlabelled {
+                    // A label set beside the middle of its entry (vertically centred): it belongs to the entry
+                    // already open, whose first line came before it.
+                    if let (Some(e), Some(m)) = (ref_entry.as_mut(), BRACKET_REF.find(text)) {
+                        let label = text[..m.end()].trim();
+                        let rest = text[m.end()..].trim();
+                        let mut joined = format!("{label} {e}");
+                        if !rest.is_empty() {
+                            join_line(&mut joined, rest);
+                        }
+                        *e = joined;
+                    }
+                    prev = Some(line);
+                    continue;
+                }
+                let starts_entry = labelled
                     || DOT_REF.is_match(text)
-                    || (ref_entry.is_some() && line.l <= cl + 0.6 * line.size && prev.is_some_and(|p| p.l > cl + 0.6 * p.size));
+                    || (ref_entry.is_some() && line.l <= cl + 0.6 * line.size && prev.is_some_and(|p| p.l > cl + 0.6 * p.size))
+                    // Reference lists usually add a little space between entries.
+                    || (ref_entry.is_some() && typical_pitch > 0.0 && pitch_here > 1.25 * typical_pitch);
                 if starts_entry || ref_entry.is_none() {
                     flush_ref!();
                     ref_entry = Some(text.to_string());
@@ -571,6 +652,25 @@ fn join_line(acc: &mut String, next: &str) {
     }
 }
 
+/// The median distance between the tops of consecutive body lines in a column: the normal line pitch.
+fn median_pitch(pages: &[PageLines]) -> f32 {
+    let mut d: Vec<f32> = Vec::new();
+    for p in pages {
+        for w in p.lines.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            let diff = a.top - b.top;
+            if a.column == b.column && diff > 0.5 * a.size && diff < 2.5 * a.size {
+                d.push(diff);
+            }
+        }
+    }
+    if d.is_empty() {
+        return 0.0;
+    }
+    d.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    d[d.len() / 2]
+}
+
 /// The most common font size by character count over body-strip lines.
 fn body_size(pages: &[PageLines]) -> f32 {
     let mut counts: HashMap<i32, (usize, f32)> = HashMap::new();
@@ -585,17 +685,29 @@ fn body_size(pages: &[PageLines]) -> f32 {
 
 /// Distinct sizes of lines that look like headings, largest first (rounded to half points).
 fn heading_size_classes(pages: &[PageLines], body: f32) -> Vec<f32> {
-    let mut sizes: Vec<f32> = Vec::new();
+    // Size classes of heading-like lines with how often each occurs; one-off sizes (a figure label, a pull
+    // quote) do not become heading levels, except the largest line on the first page (the title).
+    let rounded = |x: f32| (x * 2.0).round() / 2.0;
+    let mut counts: Vec<(f32, usize)> = Vec::new();
     for p in pages {
         for l in &p.lines {
             if looks_like_heading(l, body, None, l.l) {
-                let s = (l.size * 2.0).round() / 2.0;
-                if !sizes.iter().any(|x| (*x - s).abs() < 0.26) {
-                    sizes.push(s);
+                let s = rounded(l.size);
+                match counts.iter_mut().find(|(x, _)| (*x - s).abs() < 0.26) {
+                    Some(e) => e.1 += 1,
+                    None => counts.push((s, 1)),
                 }
             }
         }
     }
+    let title_size = pages
+        .first()
+        .and_then(|p| p.lines.iter().filter(|l| looks_like_heading(l, body, None, l.l)).map(|l| rounded(l.size)).fold(None, |m: Option<f32>, s| Some(m.map_or(s, |x| x.max(s)))));
+    let mut sizes: Vec<f32> = counts
+        .into_iter()
+        .filter(|(s, c)| *c >= 2 || title_size.is_some_and(|t| (t - s).abs() < 0.26 && *s >= body * 1.3))
+        .map(|(s, _)| s)
+        .collect();
     sizes.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     sizes
 }
@@ -603,7 +715,7 @@ fn heading_size_classes(pages: &[PageLines], body: f32) -> Vec<f32> {
 fn looks_like_heading(l: &Line, body: f32, prev: Option<&Line>, col_left: f32) -> bool {
     let t = l.text.trim();
     let n = t.chars().count();
-    if n == 0 || n > 140 || t.ends_with([',', ';']) {
+    if n == 0 || n > 140 || t.ends_with([',', ';', ':']) {
         return false;
     }
     let letters = t.chars().filter(|c| c.is_alphabetic()).count();
@@ -630,8 +742,11 @@ fn heading_level(l: &Line, body: f32, classes: &[f32], prev: Option<&Line>, col_
         return Some((parts as u8 + 1).min(6));
     }
     let s = (l.size * 2.0).round() / 2.0;
-    let rank = classes.iter().position(|x| (*x - s).abs() < 0.26).unwrap_or(classes.len());
-    Some((rank as u8 + 1).clamp(1, 4))
+    match classes.iter().position(|x| (*x - s).abs() < 0.26) {
+        Some(rank) => Some((rank as u8 + 1).clamp(1, 4)),
+        None if SECTION_WORD.is_match(t) => Some(2),
+        None => None,
+    }
 }
 
 /// Remove running headers and footers and standalone page numbers. Returns the page number each page printed.
@@ -887,7 +1002,7 @@ mod tests {
     }
 
     fn line(text: &str, l: f32, top: f32, size: f32, bold: bool) -> Line {
-        Line { text: text.into(), l, r: l + text.chars().count() as f32 * size * 0.5, top, bottom: top - size, size, bold, column: 0, furniture: false }
+        Line { text: text.into(), l, r: l + text.chars().count() as f32 * size * 0.5, top, bottom: top - size, size, bold, column: 0, furniture: false, run_in: false }
     }
 
     fn body_lines(texts: &[&str], top: f32) -> Vec<Line> {
@@ -990,7 +1105,7 @@ mod tests {
         // Hanging indent: continuation lines are indented, entries start at the margin.
         let mut lines = body_lines(&["Plain body text lines to set the body size."; 4], 760.0);
         lines.push(line("Bibliography", 72.0, 700.0, 12.0, true));
-        let mut mk = |t: &str, x: f32, y: f32| {
+        let mk = |t: &str, x: f32, y: f32| {
             let mut l = line(t, x, y, 10.0, false);
             l.r = 540.0;
             l

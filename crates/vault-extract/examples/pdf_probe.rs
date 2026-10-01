@@ -36,7 +36,7 @@ fn main() {
                     "labels": ex.pages.iter().map(|p| p.label.clone().unwrap_or_default()).take(12).collect::<Vec<_>>(),
                     "route": c.classification.route, "kind": c.classification.kind, "math_ratio": c.classification.math_ratio,
                     "scanned_ratio": c.classification.scanned_page_ratio, "flags": c.classification.flags, "quality": q.score, "qflags": q.flags,
-                    "title": ex.metadata.title, "arxiv": ex.metadata.arxiv_id, "doi": ex.metadata.doi,
+                    "fonts": c.signals.fonts.iter().take(25).collect::<Vec<_>>(), "title": ex.metadata.title, "arxiv": ex.metadata.arxiv_id, "doi": ex.metadata.doi,
                     "outline": ex.headings.iter().take(40).map(|h| format!("{}{}", "#".repeat(h.level as usize), h.text.chars().take(60).collect::<String>())).collect::<Vec<_>>(),
                 })
             );

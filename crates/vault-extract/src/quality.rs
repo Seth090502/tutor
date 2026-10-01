@@ -131,15 +131,13 @@ fn mojibake_sequences(chars: &[char]) -> Vec<(usize, usize, char)> {
                 }
             }
         }
-        if ok {
-            if let Ok(s) = std::str::from_utf8(&bytes) {
-                if let Some(c) = s.chars().next() {
+        if ok
+            && let Ok(s) = std::str::from_utf8(&bytes)
+                && let Some(c) = s.chars().next() {
                     out.push((i, need + 1, c));
                     i += need + 1;
                     continue;
                 }
-            }
-        }
         i += 1;
     }
     out
@@ -308,7 +306,7 @@ fn assess_inner(text: &str, page_chars: &[usize], headings: &[String], ctx: Qual
 
     let mut score = 1.0f32;
     score -= (garbled_ratio * 10.0).min(0.7);
-    score -= (empty_page_ratio - 0.05).max(0.0).min(0.5);
+    score -= (empty_page_ratio - 0.05).clamp(0.0, 0.5);
     for f in &flags {
         score -= match f.as_str() {
             "too_short" => 0.3,
@@ -436,7 +434,7 @@ mod tests {
         for i in 1..=10u32 {
             pages.push(page(&i.to_string(), i, md.lines().count() as u32 + 1));
             if i % 2 == 0 {
-                md.push_str("\n");
+                md.push('\n');
             } else {
                 md.push_str(&format!("{CLEAN}\n"));
             }
@@ -490,7 +488,7 @@ mod tests {
         assert!(assess_text("hi").flags.contains(&"too_short".to_string()));
         let spaced: String = CLEAN.chars().flat_map(|c| [c, ' ']).collect::<String>().repeat(2);
         assert!(assess_text(&spaced).flags.contains(&"spaced_letters".to_string()));
-        let glued: String = CLEAN.split_whitespace().collect::<Vec<_>>().join("").repeat(1);
+        let glued: String = CLEAN.split_whitespace().collect::<Vec<_>>().join("").clone();
         let glued = format!("{} {}", glued, glued);
         let words_long = (0..120).map(|_| "internationalizationconsiderations").collect::<Vec<_>>().join(" ");
         assert!(assess_text(&words_long).flags.contains(&"glued_words".to_string()), "{glued}");

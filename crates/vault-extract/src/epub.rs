@@ -161,13 +161,12 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+        if b[i] == b'%' && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
                 out.push(v);
                 i += 3;
                 continue;
             }
-        }
         out.push(b[i]);
         i += 1;
     }
@@ -202,13 +201,11 @@ fn read_package(root: Node) -> (Metadata, HashMap<String, Item>, Vec<String>) {
                     let lower = v.to_ascii_lowercase();
                     if scheme == "doi" || lower.starts_with("doi:") || lower.contains("doi.org/") || lower.starts_with("urn:doi:") {
                         m.doi = m.doi.take().or_else(|| ids::find_doi(&v));
-                    } else if scheme == "isbn" || lower.starts_with("urn:isbn:") || lower.starts_with("isbn") || ids::normalize_isbn(&v).is_some() {
-                        if let Some(i) = ids::normalize_isbn(&v).or_else(|| ids::find_isbns(&v).into_iter().next()) {
-                            if !m.isbn.contains(&i) {
+                    } else if (scheme == "isbn" || lower.starts_with("urn:isbn:") || lower.starts_with("isbn") || ids::normalize_isbn(&v).is_some())
+                        && let Some(i) = ids::normalize_isbn(&v).or_else(|| ids::find_isbns(&v).into_iter().next())
+                            && !m.isbn.contains(&i) {
                                 m.isbn.push(i);
                             }
-                        }
-                    }
                 }
                 _ => {}
             }
@@ -246,11 +243,10 @@ fn page_list_from_nav(data: &[u8], dir: &str, opts: &ConvertOptions) -> Vec<(Str
         for a in nav.select(&a_sel) {
             let Some(href) = a.value().attr("href") else { continue };
             let label = collapse_ws(&a.text().collect::<String>());
-            if let Some((file, id)) = href.split_once('#') {
-                if !label.is_empty() && !id.is_empty() {
+            if let Some((file, id)) = href.split_once('#')
+                && !label.is_empty() && !id.is_empty() {
                     out.push((resolve(dir, file), id.to_string(), label));
                 }
-            }
         }
     }
     out
@@ -263,11 +259,10 @@ fn page_list_from_ncx(data: &[u8], dir: &str) -> Vec<(String, String, String)> {
         for pt in doc.descendants().filter(|n| is(*n, "pageTarget")) {
             let label = child(pt, "navLabel").map(text_of).filter(|l| !l.is_empty()).or_else(|| attr(pt, "value").map(str::to_string));
             let src = child(pt, "content").and_then(|c| attr(c, "src"));
-            if let (Some(label), Some(src)) = (label, src) {
-                if let Some((file, id)) = src.split_once('#') {
+            if let (Some(label), Some(src)) = (label, src)
+                && let Some((file, id)) = src.split_once('#') {
                     out.push((resolve(dir, file), id.to_string(), label));
                 }
-            }
         }
         Ok(out)
     })

@@ -136,11 +136,10 @@ pub fn scan(bytes: &[u8]) -> PdfScan {
         for m in PAGES.find_iter(chunk) {
             let lo = m.start().saturating_sub(256);
             let hi = chunk.len().min(m.end() + 512);
-            if let Some(c) = COUNT.captures(&chunk[lo..hi]) {
-                if let Ok(n) = String::from_utf8_lossy(&c[1]).parse::<u32>() {
+            if let Some(c) = COUNT.captures(&chunk[lo..hi])
+                && let Ok(n) = String::from_utf8_lossy(&c[1]).parse::<u32>() {
                     max_count = max_count.max(n);
                 }
-            }
         }
         for c in BASEFONT.captures_iter(chunk) {
             let name = clean_font_name(&String::from_utf8_lossy(&c[1]));

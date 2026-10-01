@@ -123,11 +123,10 @@ fn find_tex_annotation(m: &MNode) -> Option<String> {
                 }
             }
         }
-        if e.name == "semantics" {
-            if let Some(t) = find_tex_annotation(e) {
+        if e.name == "semantics"
+            && let Some(t) = find_tex_annotation(e) {
                 return Some(t);
             }
-        }
     }
     None
 }
@@ -509,12 +508,11 @@ fn fenced(n: &MNode, kids: &[&MNode], d: usize) -> String {
     let seps: Vec<char> = n.attr("separators").unwrap_or(",").chars().filter(|c| !c.is_whitespace()).collect();
     let mut inner = String::new();
     for (i, k) in kids.iter().enumerate() {
-        if i > 0 {
-            if let Some(s) = seps.get(i - 1).or(seps.last()) {
+        if i > 0
+            && let Some(s) = seps.get(i - 1).or(seps.last()) {
                 inner.push_str(&escape_char(*s));
                 inner.push(' ');
             }
-        }
         inner.push_str(&conv(k, d));
     }
     let delim = |s: &str| if s.is_empty() { ".".to_string() } else { op(s) };

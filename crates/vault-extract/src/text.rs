@@ -99,13 +99,12 @@ pub fn decode(bytes: &[u8]) -> Decoded {
     }
     let head = &bytes[..bytes.len().min(4096)];
     // ASCII-range UTF-16 is also valid UTF-8 (every other byte is NUL), so look for it first.
-    if head.contains(&0) {
-        if let Some(guess) = utf16_without_bom(head) {
+    if head.contains(&0)
+        && let Some(guess) = utf16_without_bom(head) {
             let (enc, name) = if guess == TextBom::Utf16Le { (UTF_16LE, "utf-16le") } else { (UTF_16BE, "utf-16be") };
             let (t, had) = enc.decode_without_bom_handling(bytes);
             return Decoded { text: t.into_owned(), encoding: name, lossy: had };
         }
-    }
     if let Ok(s) = std::str::from_utf8(bytes) {
         return Decoded { text: s.to_string(), encoding: "utf-8", lossy: false };
     }
@@ -159,12 +158,11 @@ pub(crate) fn decode_for_conversion(bytes: &[u8], opts: &ConvertOptions, warning
     if d.lossy {
         warnings.push(format!("some bytes were not valid {} and became U+FFFD", d.encoding));
     }
-    if opts.repair_mojibake {
-        if let Some(fixed) = quality::repair_mojibake(&d.text) {
+    if opts.repair_mojibake
+        && let Some(fixed) = quality::repair_mojibake(&d.text) {
             warnings.push("repaired UTF-8 text that had been decoded as Latin-1 (mojibake)".to_string());
             d.text = fixed;
         }
-    }
     d
 }
 
@@ -235,20 +233,18 @@ pub(crate) fn analyze_markdown(md: &str) -> MarkdownAnalysis {
     let mut i = 0usize;
     let mut metadata = Metadata::default();
 
-    if lines.first().is_some_and(|l| l.trim_end() == "---") {
-        if let Some(end) = lines.iter().skip(1).take(200).position(|l| matches!(l.trim_end(), "---" | "...")) {
+    if lines.first().is_some_and(|l| l.trim_end() == "---")
+        && let Some(end) = lines.iter().skip(1).take(200).position(|l| matches!(l.trim_end(), "---" | "...")) {
             read_front_matter(&lines[1..=end], &mut metadata);
             i = end + 2;
         }
-    }
 
     let mut table_start: Option<usize> = None;
     let flush_table = |start: &mut Option<usize>, end: usize, blocks: &mut Vec<BlockSpan>| {
-        if let Some(s) = start.take() {
-            if end - s >= 2 {
+        if let Some(s) = start.take()
+            && end - s >= 2 {
                 blocks.push(BlockSpan { kind: BlockKind::Table, start: s as u32 + 1, end: end as u32 });
             }
-        }
     };
     while i < lines.len() {
         let line = lines[i];
@@ -268,7 +264,7 @@ pub(crate) fn analyze_markdown(md: &str) -> MarkdownAnalysis {
         }
         if t.starts_with("$$") {
             flush_table(&mut table_start, i, &mut blocks);
-            let single = t.len() > 2 && t[2..].contains("$$");
+            let single = t.strip_prefix("$$").is_some_and(|rest| rest.contains("$$"));
             let start = i;
             let mut end = i;
             if !single {
@@ -377,12 +373,11 @@ fn read_front_matter(lines: &[&str], md: &mut Metadata) {
         }
         if l.starts_with(' ') || l.starts_with('\t') || trimmed.is_empty() || trimmed.starts_with('#') {
             // Continuation of a folded or block scalar: append to the current value.
-            if let (Some(_), false) = (&key, trimmed.is_empty() || trimmed.starts_with('#')) {
-                if let Some(last) = items.last_mut() {
+            if let (Some(_), false) = (&key, trimmed.is_empty() || trimmed.starts_with('#'))
+                && let Some(last) = items.last_mut() {
                     last.push(' ');
                     last.push_str(trimmed);
                 }
-            }
             continue;
         }
         flush(&mut key, &mut items, md);
@@ -491,7 +486,7 @@ mod tests {
         let r = convert_text(garbled.as_bytes(), &opts()).unwrap();
         assert_eq!(r.markdown, "Café déjà vu — “quoted” naïve façade, über señor\n");
         assert!(r.warnings.iter().any(|w| w.contains("mojibake")));
-        let off = ConvertOptions { repair_mojibake: false, ..ConvertOptions::default() };
+        let off = ConvertOptions { repair_mojibake: false };
         assert!(convert_text(garbled.as_bytes(), &off).unwrap().markdown.contains("Ã"));
     }
 

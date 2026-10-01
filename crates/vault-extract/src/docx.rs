@@ -302,11 +302,10 @@ fn relationships(zip: &mut ZipDoc, main: &str) -> Result<HashMap<String, String>
     xmlutil::with_document(&data, "docx", |d, _| {
         let mut out = HashMap::new();
         for r in d.descendants().filter(|n| n.is_element() && n.tag_name().name() == "Relationship") {
-            if let (Some(t), Some(target)) = (attr(r, "Type"), attr(r, "Target")) {
-                if attr(r, "TargetMode") != Some("External") {
+            if let (Some(t), Some(target)) = (attr(r, "Type"), attr(r, "Target"))
+                && attr(r, "TargetMode") != Some("External") {
                     out.insert(t.rsplit('/').next().unwrap_or(t).to_string(), target.to_string());
                 }
-            }
         }
         Ok(out)
     })
@@ -432,13 +431,11 @@ impl Docx {
             if t == "title" {
                 return Role::Title;
             }
-            if let Some(rest) = t.strip_prefix("heading") {
-                if let Ok(l) = rest.trim().parse::<u8>() {
-                    if (1..=9).contains(&l) {
+            if let Some(rest) = t.strip_prefix("heading")
+                && let Ok(l) = rest.trim().parse::<u8>()
+                    && (1..=9).contains(&l) {
                         return Role::Heading(l);
                     }
-                }
-            }
         }
         // Outline level on the paragraph or its style.
         let outline = ppr.and_then(|pp| w_val(pp, "outlineLvl")).and_then(|v| v.parse::<u8>().ok()).filter(|l| *l < 9).or_else(|| chain.iter().find_map(|s| s.outline));
@@ -587,15 +584,12 @@ impl Docx {
         }
         c.text = c.segments.iter().filter_map(|s| if let Seg::Text(t) = s { Some(t.as_str()) } else { None }).collect::<Vec<_>>().join(" ");
         // A paragraph holding one equation and no other text is a display equation.
-        if maths == 1 && display_in_text == 0 && c.segments.len() == 1 {
-            if let Seg::Text(t) = &c.segments[0] {
-                if let Some(inner) = t.trim().strip_prefix('$').and_then(|x| x.strip_suffix('$')) {
-                    if !inner.contains('$') {
+        if maths == 1 && display_in_text == 0 && c.segments.len() == 1
+            && let Seg::Text(t) = &c.segments[0]
+                && let Some(inner) = t.trim().strip_prefix('$').and_then(|x| x.strip_suffix('$'))
+                    && !inner.contains('$') {
                         c.math_only = Some(inner.to_string());
                     }
-                }
-            }
-        }
         c
     }
 
@@ -643,12 +637,11 @@ impl Docx {
 
     fn run(&mut self, r: Node, c: &mut ParaContent, cur: &mut String, depth: usize) {
         for n in r.children().filter(Node::is_element) {
-            if !ns_is_w(n) && n.tag_name().name() != "AlternateContent" {
-                if m(n, "oMath") {
+            if !ns_is_w(n) && n.tag_name().name() != "AlternateContent"
+                && m(n, "oMath") {
                     continue;
                 }
                 // Drawing and picture containers (wps, v, mc) may hold text boxes.
-            }
             match n.tag_name().name() {
                 "t" if ns_is_w(n) => cur.push_str(&xmlutil::raw_text(n)),
                 "tab" | "ptab" if ns_is_w(n) => cur.push('\t'),
@@ -668,22 +661,20 @@ impl Docx {
                     }
                 }
                 "footnoteReference" if ns_is_w(n) => {
-                    if let Some(id) = attr(n, "id") {
-                        if let Some(text) = self.footnotes.get(id).cloned() {
+                    if let Some(id) = attr(n, "id")
+                        && let Some(text) = self.footnotes.get(id).cloned() {
                             let num = self.used_notes.len() + 1;
                             self.used_notes.push((num, text));
                             cur.push_str(&format!("[^{num}]"));
                         }
-                    }
                 }
                 "endnoteReference" if ns_is_w(n) => {
-                    if let Some(id) = attr(n, "id") {
-                        if let Some(text) = self.endnotes.get(id).cloned() {
+                    if let Some(id) = attr(n, "id")
+                        && let Some(text) = self.endnotes.get(id).cloned() {
                             let num = self.used_notes.len() + 1;
                             self.used_notes.push((num, text));
                             cur.push_str(&format!("[^{num}]"));
                         }
-                    }
                 }
                 "txbxContent" => {
                     for p in n.children().filter(|x| w(*x, "p")) {
@@ -700,11 +691,10 @@ impl Docx {
                         self.run(b, c, cur, depth + 1);
                     }
                 }
-                "drawing" | "pict" | "object" | "Choice" | "Fallback" | "inline" | "anchor" | "graphic" | "graphicData" | "wsp" | "txbx" | "textbox" | "sdtContent" => {
-                    if depth < MAX_DEPTH {
+                "drawing" | "pict" | "object" | "Choice" | "Fallback" | "inline" | "anchor" | "graphic" | "graphicData" | "wsp" | "txbx" | "textbox" | "sdtContent"
+                    if depth < MAX_DEPTH => {
                         self.run(n, c, cur, depth + 1);
                     }
-                }
                 _ => {}
             }
         }
@@ -734,11 +724,10 @@ impl Docx {
                 let vmerge = pr.and_then(|p| w_child(p, "vMerge")).map(|v| attr(v, "val").unwrap_or("continue").to_string());
                 match vmerge.as_deref() {
                     Some("continue") => {
-                        if let Some(&(r, ci)) = open.get(&col) {
-                            if let Some(cell) = g.rows.get_mut(r).and_then(|rw| rw.get_mut(ci)) {
+                        if let Some(&(r, ci)) = open.get(&col)
+                            && let Some(cell) = g.rows.get_mut(r).and_then(|rw| rw.get_mut(ci)) {
                                 cell.rowspan += 1;
                             }
-                        }
                     }
                     _ => {
                         let mut parts = Vec::new();
@@ -1037,11 +1026,9 @@ mod tests {
 
     #[test]
     fn office_math_becomes_latex() {
-        let doc = format!(
-            r#"<w:p><w:r><w:t xml:space="preserve">Inline </w:t></w:r><m:oMath><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath><w:r><w:t xml:space="preserve"> done.</w:t></w:r></w:p>
+        let doc = r#"<w:p><w:r><w:t xml:space="preserve">Inline </w:t></w:r><m:oMath><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath><w:r><w:t xml:space="preserve"> done.</w:t></w:r></w:p>
 <w:p><m:oMathPara><m:oMath><m:f><m:num><m:r><m:t>a+b</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f><m:r><m:t>=</m:t></m:r><m:nary><m:naryPr><m:chr m:val="∑"/></m:naryPr><m:sub><m:r><m:t>i=1</m:t></m:r></m:sub><m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:sSub><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:r><m:t>i</m:t></m:r></m:sub></m:sSub></m:e></m:nary></m:oMath></m:oMathPara></w:p>
-<w:p><m:oMath><m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>α</m:t></m:r></m:e></m:rad></m:oMath></w:p>"#
-        );
+<w:p><m:oMath><m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>α</m:t></m:r></m:e></m:rad></m:oMath></w:p>"#.to_string();
         let r = run(&doc, &[]);
         assert!(r.markdown.contains("Inline $x^2$ done."), "{}", r.markdown);
         assert!(r.markdown.contains("$$\n\\frac{a+b}{2} = \\sum_{i=1}^n x_i\n$$"), "{}", r.markdown);

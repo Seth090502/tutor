@@ -419,12 +419,11 @@ fn detect_text(b: &[u8], name_hint: Option<&str>) -> Detected {
         d.format = Format::Notebook;
         return d;
     }
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        if serde_json::from_slice::<serde::de::IgnoredAny>(b).is_ok() {
+    if (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && serde_json::from_slice::<serde::de::IgnoredAny>(b).is_ok() {
             d.format = Format::Json;
             return d;
         }
-    }
     if trimmed.starts_with("{\\rtf") {
         d.format = Format::Rtf;
         return d;
@@ -607,7 +606,7 @@ fn markdown_score(s: &str, ext: Option<&str>) -> usize {
 fn is_atx_heading(l: &str) -> bool {
     let t = l.trim_end();
     let hashes = t.chars().take_while(|&c| c == '#').count();
-    (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') && t[hashes..].trim().len() > 0
+    (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') && !t[hashes..].trim().is_empty()
 }
 
 fn has_md_link(s: &str) -> bool {

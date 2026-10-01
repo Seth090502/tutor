@@ -45,6 +45,12 @@ pub fn init_from_environment() -> Result<()> {
     Err(ExtractError::ToolUnavailable(format!("PDFium is not configured: set {LIBRARY_ENV} to the library path")))
 }
 
+/// Whether PDFium is bound in this process.
+#[doc(hidden)]
+pub fn is_bound() -> bool {
+    matches!(PDFIUM.get(), Some(Ok(_)))
+}
+
 fn pdfium() -> Result<&'static Pdfium> {
     match PDFIUM.get() {
         Some(Ok(p)) => Ok(p),
@@ -104,11 +110,10 @@ fn page_signals(page: &PdfPage, text: &str) -> PageSignals {
     let area = (page.width().value * page.height().value).max(1.0);
     let mut covered = 0.0f32;
     for obj in page.objects().iter() {
-        if obj.object_type() == PdfPageObjectType::Image {
-            if let Ok(b) = obj.bounds() {
+        if obj.object_type() == PdfPageObjectType::Image
+            && let Ok(b) = obj.bounds() {
                 covered += (b.width().value * b.height().value).abs();
             }
-        }
     }
     PageSignals { chars, image_coverage: (covered / area).min(1.0), math_chars: math_char_count(text), cjk_chars: cjk_char_count(text) }
 }
@@ -219,6 +224,27 @@ fn read_metadata(doc: &PdfDocument) -> Metadata {
     m
 }
 
+/// Bold and italic from a PDF font name (`ABCDEF+TimesNewRomanPS-BoldMT`, `CMBX12`, `NimbusRomNo9L-Medi`).
+/// Names only: the weight PDFium reports is unreliable for Type 1 fonts without a descriptor. Math italic fonts
+/// (`CMMI`) are not text italic.
+pub(crate) fn font_style(raw: &str) -> (bool, bool) {
+    let name = raw.rsplit('+').next().unwrap_or(raw).to_lowercase();
+    let bold = name.contains("bold")
+        || name.contains("black")
+        || name.contains("heavy")
+        || name.contains("demi")
+        || name.ends_with("-medi")
+        || name.ends_with("-bd")
+        || name.ends_with("bd")
+        || name.starts_with("cmbx")
+        || name.starts_with("cmb")
+        || name.starts_with("cmssbx")
+        || name.starts_with("cmbsy")
+        || name.starts_with("cmmib");
+    let italic = (name.contains("italic") || name.contains("oblique") || name.starts_with("cmti") || name.starts_with("cmsl") || name.ends_with("-ital") || name.ends_with("-it")) && !name.starts_with("cmmi");
+    (bold, italic)
+}
+
 /// Rejects the placeholder titles authoring tools leave behind.
 fn plausible_title(t: &str) -> bool {
     let l = t.to_lowercase();
@@ -240,13 +266,23 @@ fn glyphs_of(page: &PdfPage, text: &PdfPageText) -> PageInput {
     // PDFium reports character boxes in the displayed orientation, so rotated pages need no transform.
     let (w, h) = (page.width().value, page.height().value);
     let mut input = PageInput { width: w, height: h, ..Default::default() };
+    let mut last: Option<(f32, f32, f32, f32, f32)> = None; // r, b, t, size of the previous glyph
     for c in text.chars().iter() {
         let Some(ch) = c.unicode_char() else { continue };
-        if c.is_generated().unwrap_or(false) || matches!(ch, '\r' | '\n' | '\u{fffe}' | '\u{ffff}') {
+        // PDFium synthesises a space where the text layer has a gap; take those as word separators and let the
+        // geometry decide only where PDFium did not.
+        if c.is_generated().unwrap_or(false) {
+            if ch == ' '
+                && let Some((r, b, t, size, _)) = last {
+                    input.glyphs.push(Glyph { ch: ' ', l: r, r, b, t, size, bold: false, italic: false });
+                }
+            continue;
+        }
+        if matches!(ch, '\r' | '\n' | '\u{fffe}' | '\u{ffff}') {
             continue;
         }
         // PDFium marks a line-end hyphen with U+0002.
-        let ch = if ch == '\u{2}' { '-' } else { ch };
+        let ch = if ch == '\u{2}' || ch == '\u{ad}' { '-' } else { ch };
         if ch.is_control() && !ch.is_whitespace() {
             continue;
         }
@@ -262,11 +298,9 @@ fn glyphs_of(page: &PdfPage, text: &PdfPageText) -> PageInput {
             continue;
         }
         let (l, r, bt, tp) = (b.left().value, b.right().value, b.bottom().value, b.top().value);
-        let name = c.font_name().to_lowercase();
-        let bold = name.contains("bold") || name.contains("black") || name.contains("heavy") || name.contains("semibold") || name.contains("demi") || matches!(c.font_weight(), Some(PdfFontWeight::Weight700Bold | PdfFontWeight::Weight800 | PdfFontWeight::Weight900)) || matches!(c.font_weight(), Some(PdfFontWeight::Custom(n)) if n >= 600);
-        let italic = name.contains("italic") || name.contains("oblique") || c.font_is_italic();
-        let ch = if ch == '\u{ad}' { '-' } else { ch };
+        let (bold, italic) = font_style(&c.font_name());
         input.glyphs.push(Glyph { ch, l, r, b: bt, t: tp, size, bold, italic });
+        last = Some((r, bt, tp, size, 0.0));
     }
     input
 }
@@ -275,124 +309,7 @@ fn glyphs_of(page: &PdfPage, text: &PdfPageText) -> PageInput {
 mod tests {
     use super::*;
     use crate::pdfclass::{GpuReason, PdfRoute};
-    use std::sync::Once;
-
-    /// The vendored PDFium of the development machine, used when `VAULT_PDFIUM_DLL` is not set.
-    const DEV_DLL: &str = "C:/Users/sethy/Projects/tutor/crates/rag-engine/vendor/pdfium/bin/pdfium.dll";
-
-    fn have_pdfium() -> bool {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| {
-            let path = std::env::var_os(LIBRARY_ENV).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(DEV_DLL));
-            if path.exists() {
-                if let Err(e) = init(&path) {
-                    eprintln!("PDFium did not load: {e}");
-                }
-            }
-        });
-        matches!(PDFIUM.get(), Some(Ok(_)))
-    }
-
-    macro_rules! need_pdfium {
-        () => {
-            if !have_pdfium() {
-                eprintln!("SKIPPED: PDFium library not found (set {LIBRARY_ENV})");
-                return;
-            }
-        };
-    }
-
-    // --- a tiny PDF writer -------------------------------------------------------------------------------------
-
-    struct Op {
-        font: &'static str, // F1 Helvetica, F2 Helvetica-Bold, F3 Courier
-        size: f32,
-        x: f32,
-        y: f32,
-        text: String,
-    }
-
-    fn op(font: &'static str, size: f32, x: f32, y: f32, text: &str) -> Op {
-        Op { font, size, x, y, text: text.to_string() }
-    }
-
-    struct PageSpec {
-        ops: Vec<Op>,
-        rotate: u32,
-        full_page_image: bool,
-    }
-
-    fn page(ops: Vec<Op>) -> PageSpec {
-        PageSpec { ops, rotate: 0, full_page_image: false }
-    }
-
-    fn escape(s: &str) -> String {
-        s.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)")
-    }
-
-    fn build_pdf(pages: &[PageSpec], page_labels: Option<&str>, info_title: Option<&str>) -> Vec<u8> {
-        let n = pages.len();
-        // object ids: 1 catalog, 2 pages, 3..5 fonts, 6 image, then (page, content) pairs, then info
-        let mut objs: Vec<Vec<u8>> = Vec::new();
-        let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 7 + i * 2)).collect();
-        let labels = page_labels.map(|l| format!(" /PageLabels << /Nums [{l}] >>")).unwrap_or_default();
-        objs.push(format!("<< /Type /Catalog /Pages 2 0 R{labels} >>").into_bytes());
-        objs.push(format!("<< /Type /Pages /Kids [{}] /Count {n} >>", kids.join(" ")).into_bytes());
-        objs.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_vec());
-        objs.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>".to_vec());
-        objs.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>".to_vec());
-        let img_data = [0x80u8, 0x80, 0x80];
-        let mut img = format!("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length {} >>\nstream\n", img_data.len()).into_bytes();
-        img.extend_from_slice(&img_data);
-        img.extend_from_slice(b"\nendstream");
-        objs.push(img);
-        for (i, p) in pages.iter().enumerate() {
-            let content_id = 8 + i * 2;
-            let rotate = if p.rotate != 0 { format!(" /Rotate {}", p.rotate) } else { String::new() };
-            objs.push(
-                format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]{rotate} /Contents {content_id} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> /XObject << /Im0 6 0 R >> >> >>").into_bytes(),
-            );
-            let mut s = String::new();
-            if p.full_page_image {
-                s.push_str("q 612 0 0 792 0 0 cm /Im0 Do Q\n");
-            }
-            for o in &p.ops {
-                s.push_str(&format!("BT /{} {} Tf {} {} Td ({}) Tj ET\n", o.font, o.size, o.x, o.y, escape(&o.text)));
-            }
-            let mut c = format!("<< /Length {} >>\nstream\n", s.len()).into_bytes();
-            c.extend_from_slice(s.as_bytes());
-            c.extend_from_slice(b"\nendstream");
-            objs.push(c);
-        }
-        let info_id = objs.len() + 1;
-        if let Some(t) = info_title {
-            objs.push(format!("<< /Title ({}) /Author (Ann Lee; Bo Chen) /CreationDate (D:20190402101500Z) >>", escape(t)).into_bytes());
-        }
-        let mut out = b"%PDF-1.4\n".to_vec();
-        let mut offsets = Vec::new();
-        for (i, o) in objs.iter().enumerate() {
-            offsets.push(out.len());
-            out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
-            out.extend_from_slice(o);
-            out.extend_from_slice(b"\nendobj\n");
-        }
-        let xref = out.len();
-        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
-        for o in offsets {
-            out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
-        }
-        let info = if info_title.is_some() { format!(" /Info {info_id} 0 R") } else { String::new() };
-        out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R{info} >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
-        out
-    }
-
-    fn convert_pdf(bytes: &[u8]) -> PdfConversion {
-        convert(bytes, &ConvertOptions::default()).unwrap()
-    }
-
-    fn body(lines: &[&str], y0: f32) -> Vec<Op> {
-        lines.iter().enumerate().map(|(i, t)| op("F1", 10.0, 72.0, y0 - i as f32 * 12.0, t)).collect()
-    }
+    use crate::testpdf::*;
 
     // --- tests -------------------------------------------------------------------------------------------------
 
@@ -444,8 +361,8 @@ mod tests {
         let mut pages = Vec::new();
         for i in 0..8 {
             let mut ops = vec![op("F1", 9.0, 72.0, 765.0, "Journal of Synthetic Results"), op("F1", 9.0, 300.0, 30.0, &format!("{}", 100 + i))];
-            ops.push(op("F1", 10.0, 72.0, 600.0, &format!("Page {i} body text about energy E = m c")));
-            ops.push(op("F1", 6.0, 72.0 + 10.0 * 0.5 * 36.0 + 3.0, 604.0, "2"));
+            // The exponent is part of the same text run, raised with a text rise.
+            ops.push(op("RAW", 0.0, 0.0, 0.0, &format!("BT /F1 10 Tf 72 600 Td (Page {i} body text about energy E = m c) Tj /F1 6 Tf 4 Ts (2) Tj 0 Ts /F1 10 Tf ( holds.) Tj ET")));
             pages.push(page(ops));
         }
         let r = convert_pdf(&build_pdf(&pages, None, None));
@@ -454,13 +371,13 @@ mod tests {
         assert!(!ex.markdown.contains("\n100\n") && !ex.markdown.contains("\n107\n"), "{}", ex.markdown);
         let labels: Vec<_> = ex.pages.iter().map(|p| p.label.clone().unwrap_or_default()).collect();
         assert_eq!(labels, (100..108).map(|n| n.to_string()).collect::<Vec<_>>());
-        assert!(ex.markdown.contains("m c^2"), "{}", ex.markdown);
+        assert!(ex.markdown.contains("m c^2 holds."), "{}", ex.markdown);
     }
 
     #[test]
     fn rotated_pages_are_read_upright() {
         need_pdfium!();
-        let ops = vec![op("F1", 10.0, 72.0, 700.0, "First line on a landscape page"), op("F1", 10.0, 72.0, 686.0, "Second line on a landscape page")];
+        let ops = [op("F1", 10.0, 72.0, 700.0, "First line on a landscape page"), op("F1", 10.0, 72.0, 686.0, "Second line on a landscape page")];
         for rotate in [90, 180, 270] {
             let mut p = page(ops.iter().map(|o| op(o.font, o.size, o.x, o.y, &o.text)).collect());
             p.rotate = rotate;
@@ -497,6 +414,18 @@ mod tests {
         let good = build_pdf(&[page(body(&["Some text here."], 700.0))], None, None);
         let truncated = &good[..good.len() / 2];
         assert!(convert(truncated, &ConvertOptions::default()).is_err() || convert(truncated, &ConvertOptions::default()).is_ok());
+    }
+
+    #[test]
+    fn font_names_give_bold_and_italic() {
+        for n in ["ABCDEF+TimesNewRomanPS-BoldMT", "CMBX12", "Helvetica-Bold", "MyriadPro-Semibold", "NimbusRomNo9L-Medi", "Times-BoldItalic"] {
+            assert!(font_style(n).0, "{n}");
+        }
+        for n in ["CMR10", "Times-Roman", "CMMI10", "Calibri", "Cambria"] {
+            assert!(!font_style(n).0, "{n}");
+        }
+        assert!(font_style("CMTI10").1 && font_style("Times-Italic").1 && font_style("Helvetica-Oblique").1);
+        assert!(!font_style("CMMI10").1 && !font_style("CMR10").1);
     }
 
     #[test]

@@ -118,13 +118,11 @@ impl Tei {
         };
         self.meta.title = pick_title(title_stmt).or_else(|| pick_title(analytic)).or_else(|| pick_title(monogr));
 
-        for scope in [analytic, title_stmt, monogr] {
-            if let Some(s) = scope {
-                let authors: Vec<String> = children_named(s, "author").filter_map(|a| person_name(a)).collect();
-                if !authors.is_empty() {
-                    self.meta.authors = authors;
-                    break;
-                }
+        for s in [analytic, title_stmt, monogr].into_iter().flatten() {
+            let authors: Vec<String> = children_named(s, "author").filter_map(|a| person_name(a)).collect();
+            if !authors.is_empty() {
+                self.meta.authors = authors;
+                break;
             }
         }
         if let Some(b) = bibl {
@@ -151,11 +149,10 @@ impl Tei {
             .map(text_of)
             .filter(|t| !t.is_empty() && Some(t) != self.meta.title.as_ref());
         let profile = child(h, "profileDesc");
-        if let Some(l) = profile.and_then(|p| child(p, "langUsage")).and_then(|l| child(l, "language")).and_then(|l| attr(l, "ident")) {
-            if self.meta.language.is_none() {
+        if let Some(l) = profile.and_then(|p| child(p, "langUsage")).and_then(|l| child(l, "language")).and_then(|l| attr(l, "ident"))
+            && self.meta.language.is_none() {
                 self.meta.language = Some(l.to_string());
             }
-        }
         if let Some(tc) = profile.and_then(|p| child(p, "textClass")) {
             for kw in tc.descendants().filter(|d| is(*d, "term")) {
                 let t = text_of(kw);
@@ -180,11 +177,10 @@ impl Tei {
             "arxiv" => self.meta.arxiv_id = self.meta.arxiv_id.take().or_else(|| ids::bare_arxiv(&v).or_else(|| ids::find_arxiv(&v))),
             "pmc" | "pmcid" => self.meta.pmcid = self.meta.pmcid.take().or_else(|| ids::normalize_pmcid(&v)),
             "isbn" | "isbn-10" | "isbn-13" | "isbn10" | "isbn13" => {
-                if let Some(i) = ids::normalize_isbn(&v) {
-                    if !self.meta.isbn.contains(&i) {
+                if let Some(i) = ids::normalize_isbn(&v)
+                    && !self.meta.isbn.contains(&i) {
                         self.meta.isbn.push(i);
                     }
-                }
             }
             _ => {}
         }
@@ -659,7 +655,7 @@ impl Tei {
                     }
                     s.push_str(&format!("({y})"));
                 }
-                let mut push = |s: &mut String, part: String| {
+                let push = |s: &mut String, part: String| {
                     if part.is_empty() {
                         return;
                     }

@@ -319,10 +319,6 @@ impl<'a> ZipDoc<'a> {
         Ok(Self { zip, format, allowance, used: 0, limits, archive_len })
     }
 
-    pub fn names(&self) -> Vec<String> {
-        self.zip.file_names().map(str::to_string).collect()
-    }
-
     pub fn has(&self, name: &str) -> bool {
         self.zip.file_names().any(|n| n == name)
     }

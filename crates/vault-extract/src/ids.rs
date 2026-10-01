@@ -96,11 +96,10 @@ pub fn normalize_isbn(s: &str) -> Option<String> {
 pub fn find_isbns(s: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for c in ISBN.captures_iter(s) {
-        if let Some(i) = normalize_isbn(&c[1]) {
-            if !out.contains(&i) {
+        if let Some(i) = normalize_isbn(&c[1])
+            && !out.contains(&i) {
                 out.push(i);
             }
-        }
     }
     out
 }

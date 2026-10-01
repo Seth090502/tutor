@@ -29,10 +29,6 @@ impl MdBuilder {
         Self::default()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.lines.is_empty()
-    }
-
     fn last(&self) -> Last {
         self.last.unwrap_or(Last::Start)
     }

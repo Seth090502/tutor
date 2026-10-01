@@ -49,11 +49,10 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
 
     let mut b = MdBuilder::new();
     let has_h1 = root.select(&SEL_H1).next().is_some();
-    if !has_h1 {
-        if let Some(t) = &meta.title {
+    if !has_h1
+        && let Some(t) = &meta.title {
             b.heading(1, t);
         }
-    }
     let mut w = Walker::new(&mut b, HtmlOptions::default());
     w.run(root);
     let (refs, mut warn, authors, abstract_text) = w.into_parts();
@@ -160,15 +159,14 @@ fn nesting_depth(src: &str) -> usize {
 /// Decode: valid UTF-8 first, then a `<meta charset>` declaration, then detection.
 pub(crate) fn decode_html(bytes: &[u8], opts: &ConvertOptions, warnings: &mut Vec<String>) -> (String, String) {
     let bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]) || bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]);
-    if !bom && std::str::from_utf8(bytes).is_err() {
-        if let Some(enc) = meta_charset(bytes) {
+    if !bom && std::str::from_utf8(bytes).is_err()
+        && let Some(enc) = meta_charset(bytes) {
             let (t, had) = enc.decode_without_bom_handling(bytes);
             if had {
                 warnings.push(format!("some bytes were not valid {} and became U+FFFD", enc.name()));
             }
             return (t.into_owned(), enc.name().to_ascii_lowercase());
         }
-    }
     let d = text::decode_for_conversion(bytes, opts, warnings);
     (d.text, d.encoding.to_string())
 }
@@ -527,11 +525,10 @@ impl<'b> Walker<'b> {
         let text = self.inline_text(el, 0);
         // A new heading at the same or a higher level ends a references section.
         let eff = self.level(level);
-        if let Some(open) = self.in_refs {
-            if eff <= open {
+        if let Some(open) = self.in_refs
+            && eff <= open {
                 self.in_refs = None;
             }
-        }
         if is_references_title(&text) {
             self.in_refs = Some(eff);
         }
@@ -788,8 +785,8 @@ impl<'b> Walker<'b> {
         match c.value() {
             Node::Text(t) => out.push_str(t),
             Node::Element(_) => {
-                if let Some(ce) = ElementRef::wrap(c) {
-                    if !is_skipped(ce) {
+                if let Some(ce) = ElementRef::wrap(c)
+                    && !is_skipped(ce) {
                         if is_page_break(ce) {
                             // Inline page break: keep position by splitting later; record immediately.
                             self.b.page_break(page_label(ce));
@@ -797,7 +794,6 @@ impl<'b> Walker<'b> {
                             self.inline(ce, out, depth + 1);
                         }
                     }
-                }
             }
             _ => {}
         }
@@ -865,11 +861,10 @@ impl<'b> Walker<'b> {
                     if let Some(c) = content {
                         let mut s = String::new();
                         for ch in c.children() {
-                            if let Some(ce) = ElementRef::wrap(ch) {
-                                if class_contains(ce, "ltx_note_mark") || class_contains(ce, "ltx_tag_note") {
+                            if let Some(ce) = ElementRef::wrap(ch)
+                                && (class_contains(ce, "ltx_note_mark") || class_contains(ce, "ltx_tag_note")) {
                                     continue;
                                 }
-                            }
                             self.inline_node(ch, &mut s, depth);
                         }
                         let s = collapse_ws(&s);
@@ -923,11 +918,10 @@ fn is_references_title(t: &str) -> bool {
 fn strip_label(raw: &str, label: Option<&str>) -> String {
     let Some(l) = label else { return raw.to_string() };
     for p in [format!("[{l}]"), format!("{l}."), l.to_string()] {
-        if let Some(rest) = raw.strip_prefix(&p) {
-            if rest.starts_with(' ') || p.starts_with('[') {
+        if let Some(rest) = raw.strip_prefix(&p)
+            && (rest.starts_with(' ') || p.starts_with('[')) {
                 return rest.trim_start().to_string();
             }
-        }
     }
     raw.to_string()
 }

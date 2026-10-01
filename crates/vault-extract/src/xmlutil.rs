@@ -14,23 +14,20 @@ pub(crate) const NODES_LIMIT: u32 = 8_000_000;
 /// Decode XML bytes, honouring a BOM or the declared encoding, then falling back to detection.
 pub(crate) fn decode_xml(bytes: &[u8]) -> (String, &'static str) {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(256)]).to_ascii_lowercase();
-    if !bytes.starts_with(&[0xEF, 0xBB, 0xBF]) && !bytes.starts_with(&[0xFF, 0xFE]) && !bytes.starts_with(&[0xFE, 0xFF]) {
-        if let Some(i) = head.find("encoding=") {
+    if !bytes.starts_with(&[0xEF, 0xBB, 0xBF]) && !bytes.starts_with(&[0xFF, 0xFE]) && !bytes.starts_with(&[0xFE, 0xFF])
+        && let Some(i) = head.find("encoding=") {
             let rest = &head[i + 9..];
             let q = rest.chars().next();
-            if let Some(q) = q.filter(|c| *c == '"' || *c == '\'') {
-                if let Some(end) = rest[1..].find(q) {
+            if let Some(q) = q.filter(|c| *c == '"' || *c == '\'')
+                && let Some(end) = rest[1..].find(q) {
                     let label = &rest[1..1 + end];
-                    if let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes()) {
-                        if enc != encoding_rs::UTF_8 && enc != encoding_rs::UTF_16LE && enc != encoding_rs::UTF_16BE {
+                    if let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes())
+                        && enc != encoding_rs::UTF_8 && enc != encoding_rs::UTF_16LE && enc != encoding_rs::UTF_16BE {
                             let (t, _) = enc.decode_without_bom_handling(bytes);
                             return (t.into_owned(), enc.name());
                         }
-                    }
                 }
-            }
         }
-    }
     let d = text::decode(bytes);
     (d.text, d.encoding)
 }
@@ -192,11 +189,6 @@ pub(crate) fn text_of(n: Node) -> String {
 
 pub(crate) fn text_of_child(n: Node, local: &str) -> Option<String> {
     child(n, local).map(text_of).filter(|s| !s.is_empty())
-}
-
-/// The nearest `xml:lang` or `lang` in scope.
-pub(crate) fn lang_in_scope(n: Node) -> Option<String> {
-    n.ancestors().find_map(|a| attr(a, "lang").map(str::to_string)).filter(|l| !l.is_empty())
 }
 
 // ------------------------------------------------------------------------------------------ HTML entity table
@@ -504,6 +496,5 @@ mod tests {
         let doc = Document::parse(r#"<a xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="u" xml:lang="fr"><b/></a>"#).unwrap();
         let a = doc.root_element();
         assert_eq!(attr(a, "href"), Some("u"));
-        assert_eq!(lang_in_scope(child(a, "b").unwrap()).as_deref(), Some("fr"));
     }
 }

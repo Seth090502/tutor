@@ -657,11 +657,10 @@ impl Jats {
         } else {
             push_rows(table, false, &mut g);
             // No <thead>: a first row made only of <th> is the header.
-            if let Some(first) = children_named(table, "tr").next() {
-                if first.children().filter(Node::is_element).all(|c| is(c, "th")) && first.children().any(|c| c.is_element()) {
+            if let Some(first) = children_named(table, "tr").next()
+                && first.children().filter(Node::is_element).all(|c| is(c, "th")) && first.children().any(|c| c.is_element()) {
                     header_rows = 1;
                 }
-            }
         }
         g.header_rows = header_rows;
         g
@@ -888,11 +887,10 @@ fn strip_leading_label(raw: &str, label: Option<&str>) -> String {
     let Some(l) = label else { return raw.to_string() };
     let bracket = format!("[{l}]");
     for p in [bracket.as_str(), l, &format!("{l}.")] {
-        if let Some(rest) = raw.strip_prefix(p) {
-            if rest.starts_with(' ') || p == bracket {
+        if let Some(rest) = raw.strip_prefix(p)
+            && (rest.starts_with(' ') || p == bracket) {
                 return rest.trim_start().to_string();
             }
-        }
     }
     raw.to_string()
 }

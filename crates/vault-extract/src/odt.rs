@@ -278,8 +278,9 @@ impl Odt<'_, '_> {
             return;
         }
         let ordered = style.as_ref().and_then(|s| self.styles.lists.get(s)).and_then(|lv| lv.get(&level)).copied().unwrap_or(false);
-        let mut n = attr(l, "start-value").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1);
-        for item in l.children().filter(|c| is(*c, "list-item") || is(*c, "list-header")) {
+        let start = attr(l, "start-value").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1);
+        for (offset, item) in l.children().filter(|c| is(*c, "list-item") || is(*c, "list-header")).enumerate() {
+            let n = start + offset;
             let mut text = String::new();
             let mut nested = Vec::new();
             for k in item.children().filter(Node::is_element) {
@@ -299,7 +300,6 @@ impl Odt<'_, '_> {
             }
             let marker = if ordered { format!("{n}.") } else { "-".to_string() };
             self.b.list_item(level - 1, &marker, &text);
-            n += 1;
             for nl in nested {
                 let inner_style = attr(nl, "style-name").map(str::to_string).or_else(|| style.clone());
                 self.list(nl, inner_style, level + 1, depth + 1);
@@ -408,14 +408,13 @@ impl Odt<'_, '_> {
                     }
                 }
                 "frame" => {
-                    if let Some(obj) = descendant(c, "object") {
-                        if let Some(l) = self.formula(obj) {
+                    if let Some(obj) = descendant(c, "object")
+                        && let Some(l) = self.formula(obj) {
                             out.push('$');
                             out.push_str(&l);
                             out.push('$');
                             formulas.push(l);
                         }
-                    }
                     // Text boxes are written after the paragraph by the caller.
                 }
                 "annotation" | "annotation-end" | "tracked-changes" | "change" | "change-start" | "change-end" | "soft-page-break" | "bookmark" | "bookmark-start" | "bookmark-end" | "image" | "text-box" | "ruby-text" | "object" => {}
