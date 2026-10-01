@@ -102,11 +102,13 @@ jobs:
           cache-dependency-path: |
             requirements/server.txt
             requirements/partners.txt
+            evals/requirements.txt
             pyproject.toml
       - name: Install dependencies, including the language segmenters
         run: |
           python -m pip install -r requirements/server.txt -r requirements/partners.txt pytest pytest-asyncio
           python -m pip install -e ".[languages]"
+          python -m pip install -r evals/requirements.txt
       - name: Minimal runtime config
         run: |
           mkdir -p data/user/settings
