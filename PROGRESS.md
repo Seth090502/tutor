@@ -29,6 +29,8 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 - [ ] Intake: format detection, routing, metadata, language, dedup, quality checks, quarantine, intake report page
 - [ ] Markdown store with structure maps and sidecars; BLAKE3 integrity manifest
 - [ ] vault-core: read, outline, grep (incl. trigram corpus-wide), find_docs (metadata), vault_info; MCP and gRPC; tutor connected; Claude Code config
+- [ ] tutor-runtime: headless Claude Code / OpenCode Go session, locked down to libraryd; runtime/model/effort picker in the desktop app
+- [ ] TUTOR.md v0 (the tutor's CLAUDE.md), from the owner's working-agreement form, PEDAGOGY.md and the vault tool loop
 - [ ] Gate: layer A invariants 100% on the pilot incl. portability; extraction sample reviewed per path
 
 ## Phase 2: eval harness and baselines (STOP twice)
@@ -44,6 +46,7 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 
 ## Phase 5: agentic layer, enrichment, pilot tuning
 - [ ] workspace, citations, define; system prompt and tool descriptions; enrichment experiments; tuning loop
+- [ ] TUTOR.md tuned through the tuning loop (one root-cause rule per round; held-out test decides)
 - [ ] Gate: layer D recorded; citation validity >= 95%; frozen pilot settings file
 
 ## Transfer phase (planned 2026-10-05)
