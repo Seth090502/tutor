@@ -71,6 +71,7 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
     let mut doc_count = 0usize;
     for idref in &spine {
         let Some(item) = manifest.get(idref) else {
+            tracing::warn!(idref = %idref, "spine item is not in the manifest");
             warnings.push(format!("spine item {idref} is not in the manifest"));
             continue;
         };
@@ -82,6 +83,7 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
         }
         let path = resolve(&base, &item.href);
         let Some(data) = zip.read(&path)? else {
+            tracing::warn!(path = %path, "spine document is missing from the archive");
             warnings.push(format!("spine document {path} is missing from the archive"));
             continue;
         };
@@ -91,6 +93,7 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
         let doc = match html::parse_chapter(&src) {
             Ok(d) => d,
             Err(e) => {
+                tracing::warn!(path = %path, error = %e, "spine document skipped");
                 warnings.push(format!("{path}: {e}"));
                 continue;
             }
@@ -337,8 +340,8 @@ mod tests {
         assert_eq!(hs, vec![(1, "The Synthetic Book"), (2, "Chapter One"), (3, "A Section"), (2, "Chapter Two")]);
         assert!(!r.markdown.contains("skip me") && !r.markdown.contains("Chapter One\n\n- "), "{}", r.markdown);
         assert!(r.markdown.contains("Ann Lee, Bo Chen\n\n## Chapter One\n\nOpening paragraph"), "{}", r.markdown);
-        assert!(r.markdown.contains("Section text1.") || r.markdown.contains("Section text 1."), "{}", r.markdown);
-        assert!(r.markdown.contains("The footnote text."), "{}", r.markdown);
+        assert!(r.markdown.contains("Section text[^1]."), "{}", r.markdown);
+        assert!(r.markdown.contains("[^1]: The footnote text."), "{}", r.markdown);
         assert_eq!(r.blocks.iter().filter(|b| b.kind == BlockKind::Table).count(), 1);
     }
 

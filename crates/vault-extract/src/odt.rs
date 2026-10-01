@@ -437,6 +437,7 @@ impl Odt<'_, '_> {
         .ok()
         .flatten();
         if latex.is_none() {
+            tracing::warn!(object = %href, "formula object could not be converted");
             self.warnings.push(format!("formula object {href} could not be converted"));
         }
         latex

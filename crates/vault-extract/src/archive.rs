@@ -159,6 +159,7 @@ fn unpack_zip(bytes: &[u8], limits: &Limits, budget: &mut Budget) -> Result<Unpa
         let mut file = match zip.by_index(i) {
             Ok(f) => f,
             Err(zip::result::ZipError::InvalidPassword) => {
+                tracing::warn!(path = %listed_name, "skipped an encrypted entry");
                 out.skipped.push(Skipped { path: listed_name, reason: "encrypted" });
                 continue;
             }
@@ -179,6 +180,7 @@ fn unpack_zip(bytes: &[u8], limits: &Limits, budget: &mut Budget) -> Result<Unpa
             return Err(ExtractError::Limits(format!("path escapes the archive: {raw_name:?}")));
         };
         if file.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
+            tracing::warn!(path = %path, "skipped a symlink entry");
             out.skipped.push(Skipped { path, reason: "symlink" });
             continue;
         }

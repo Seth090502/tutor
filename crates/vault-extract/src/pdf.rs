@@ -133,6 +133,7 @@ pub fn convert(bytes: &[u8], _opts: &ConvertOptions) -> Result<PdfConversion> {
         let text = match page.text() {
             Ok(t) => t,
             Err(e) => {
+                tracing::warn!(page = i + 1, error = ?e, "PDF page has no readable text layer");
                 warnings.push(format!("page {}: no text layer ({e:?})", i + 1));
                 inputs.push(PageInput { width: page.width().value, height: page.height().value, ..Default::default() });
                 psigs.push(page_signals(&page, ""));
@@ -356,6 +357,21 @@ mod tests {
     }
 
     #[test]
+    fn two_columns_in_column_by_column_stream_order_stay_in_order() {
+        need_pdfium!();
+        let mut ops = Vec::new();
+        for i in 0..6 {
+            ops.push(op("F1", 10.0, 72.0, 700.0 - i as f32 * 12.0, &format!("left column sentence number {i} with words")));
+        }
+        for i in 0..6 {
+            ops.push(op("F1", 10.0, 320.0, 700.0 - i as f32 * 12.0, &format!("right column sentence number {i} with words")));
+        }
+        let r = convert_pdf(&build_pdf(&[page(ops)], None, None));
+        let md = &r.extracted.markdown;
+        assert!(md.find("left column sentence number 5").unwrap() < md.find("right column sentence number 0").unwrap(), "{md}");
+    }
+
+    #[test]
     fn superscripts_running_headers_and_printed_page_numbers() {
         need_pdfium!();
         let mut pages = Vec::new();
@@ -372,6 +388,17 @@ mod tests {
         let labels: Vec<_> = ex.pages.iter().map(|p| p.label.clone().unwrap_or_default()).collect();
         assert_eq!(labels, (100..108).map(|n| n.to_string()).collect::<Vec<_>>());
         assert!(ex.markdown.contains("m c^2 holds."), "{}", ex.markdown);
+    }
+
+    #[test]
+    fn conversion_is_deterministic() {
+        need_pdfium!();
+        let mut ops = vec![op("F2", 16.0, 72.0, 740.0, "Title Of The Test Paper"), op("F2", 12.0, 72.0, 700.0, "1 Introduction")];
+        ops.extend(body(&["Some body text that fills the page.", "A second line of the paragraph."], 680.0));
+        let pdf = build_pdf(&[page(ops)], Some("0 << /S /D >>"), Some("A Test Paper"));
+        let a = convert_pdf(&pdf).extracted;
+        let b = convert_pdf(&pdf).extracted;
+        assert_eq!(a, b);
     }
 
     #[test]

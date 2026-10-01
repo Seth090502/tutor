@@ -42,7 +42,7 @@ pub fn convert(bytes: &[u8], opts: &ConvertOptions) -> Result<Extracted> {
     let mut warnings = Vec::new();
     let (src, encoding) = decode_html(bytes, opts, &mut warnings);
     check_depth(&src)?;
-    let src = if looks_like_xhtml(&src) { expand_self_closing(&src) } else { src };
+    let src = if looks_like_xhtml(&src) { strip_mathml_prefix(&expand_self_closing(&src)) } else { src };
     let doc = Html::parse_document(&src);
     let mut meta = read_metadata(&doc);
     let root = content_root(&doc);
@@ -90,6 +90,19 @@ pub(crate) fn looks_like_xhtml(src: &str) -> bool {
 static SELF_CLOSING: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?s)<([A-Za-z][A-Za-z0-9:\-]*)(\s[^<>]*?)?/>").expect("static regex"));
 
+/// XHTML that binds MathML to a prefix (`<m:math xmlns:m="...">`) loses its maths in an HTML parser, which does
+/// not know prefixes. Drop the prefix from the tags of every prefix bound to the MathML namespace.
+pub(crate) fn strip_mathml_prefix(src: &str) -> String {
+    static DECL: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"xmlns:([A-Za-z_][\w.\-]*)\s*=\s*["']http://www\.w3\.org/1998/Math/MathML["']"#).expect("static regex"));
+    let mut out = src.to_string();
+    let prefixes: Vec<String> = DECL.captures_iter(src).map(|c| c[1].to_string()).collect();
+    for p in prefixes {
+        out = out.replace(&format!("<{p}:"), "<").replace(&format!("</{p}:"), "</");
+        out = out.replace(&format!("xmlns:{p}="), "data-stripped-xmlns=");
+    }
+    out
+}
+
 /// Turn `<name attrs/>` into `<name attrs></name>` for elements that are not void in HTML.
 pub(crate) fn expand_self_closing(src: &str) -> String {
     SELF_CLOSING
@@ -114,6 +127,7 @@ pub(crate) const MAX_HTML_DEPTH: usize = 1500;
 pub(crate) fn check_depth(src: &str) -> Result<()> {
     let depth = nesting_depth(src);
     if depth > MAX_HTML_DEPTH {
+        tracing::warn!(depth, "refusing hostile HTML nesting");
         return Err(ExtractError::Limits(format!("html element nesting is about {depth} levels deep (limit {MAX_HTML_DEPTH})")));
     }
     Ok(())
@@ -208,7 +222,7 @@ pub(crate) fn min_heading_level(root: ElementRef) -> Option<u8> {
 /// Parse one XHTML chapter: self-closing tags expanded, nesting checked.
 pub(crate) fn parse_chapter(src: &str) -> Result<Html> {
     check_depth(src)?;
-    let src = if looks_like_xhtml(src) { expand_self_closing(src) } else { src.to_string() };
+    let src = if looks_like_xhtml(src) { strip_mathml_prefix(&expand_self_closing(src)) } else { src.to_string() };
     Ok(Html::parse_document(&src))
 }
 
@@ -293,6 +307,8 @@ pub(crate) struct Walker<'b> {
     pending_notes: Vec<String>,
     /// Element ids that start a page, with the printed label (from an EPUB page list).
     page_targets: HashMap<String, String>,
+    /// Footnote and endnote ids that a note reference points at, with the reference's label.
+    noterefs: HashMap<String, String>,
 }
 
 fn tag<'a>(el: ElementRef<'a>) -> &'a str {
@@ -369,7 +385,7 @@ fn is_block_tag(t: &str) -> bool {
 
 impl<'b> Walker<'b> {
     pub(crate) fn new(b: &'b mut MdBuilder, opts: HtmlOptions) -> Self {
-        Self { b, opts, refs: Vec::new(), warnings: Vec::new(), authors: Vec::new(), abstract_text: None, in_refs: None, pending_notes: Vec::new(), page_targets: HashMap::new() }
+        Self { b, opts, refs: Vec::new(), warnings: Vec::new(), authors: Vec::new(), abstract_text: None, in_refs: None, pending_notes: Vec::new(), page_targets: HashMap::new(), noterefs: HashMap::new() }
     }
 
     pub(crate) fn with_page_targets(mut self, targets: HashMap<String, String>) -> Self {
@@ -386,6 +402,7 @@ impl<'b> Walker<'b> {
     }
 
     pub(crate) fn run(&mut self, root: ElementRef) {
+        self.noterefs = note_references(root);
         self.flow(root, 0);
     }
 
@@ -420,6 +437,14 @@ impl<'b> Walker<'b> {
                         self.flush(&mut buf);
                         self.b.page_break(Some(label));
                     }
+                    // A footnote body that a note reference points at: "[^label]: text".
+                    if let Some(label) = ce.value().attr("id").and_then(|id| self.noterefs.get(id)).cloned()
+                        && is_note_body(ce) {
+                            self.flush(&mut buf);
+                            let t = self.inline_text(ce, depth + 1);
+                            self.b.paragraph(&format!("[^{label}]: {t}"));
+                            continue;
+                        }
                     let t = tag(ce);
                     if t == "br" {
                         if prev_br {
@@ -807,6 +832,12 @@ impl<'b> Walker<'b> {
         let t = tag(el);
         match t {
             "br" => out.push(' '),
+            "a" if is_noteref(el) => {
+                let label = collapse_ws(&el.text().collect::<String>());
+                if !label.is_empty() {
+                    out.push_str(&format!("[^{}]", label.trim_matches(['[', ']', '(', ')'])));
+                }
+            }
             "sup" => {
                 if class_contains(el, "ltx_note_mark") {
                     return;
@@ -901,6 +932,31 @@ impl<'b> Walker<'b> {
             }
         }
     }
+}
+
+fn is_noteref(el: ElementRef) -> bool {
+    let v = el.value();
+    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| x == "noteref")) || v.attr("role") == Some("doc-noteref")
+}
+
+fn is_note_body(el: ElementRef) -> bool {
+    let v = el.value();
+    v.attr("epub:type").is_some_and(|t| t.split_whitespace().any(|x| matches!(x, "footnote" | "endnote" | "rearnote" | "note")))
+        || v.attr("role").is_some_and(|r| matches!(r, "doc-footnote" | "doc-endnote"))
+}
+
+/// Note references in `root`: target id to the reference's label.
+fn note_references(root: ElementRef) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    for a in root.descendants().filter_map(ElementRef::wrap).filter(|e| tag(*e) == "a" && is_noteref(*e)) {
+        let label = collapse_ws(&a.text().collect::<String>());
+        let label = label.trim_matches(['[', ']', '(', ')']).to_string();
+        if let (Some(href), false) = (a.value().attr("href"), label.is_empty())
+            && let Some((_, id)) = href.split_once('#') {
+                m.entry(id.to_string()).or_insert(label);
+            }
+    }
+    m
 }
 
 /// A `display="block"` MathML element standing on its own in a flow of text.

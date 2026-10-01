@@ -354,20 +354,20 @@ fn merge_into_lines(ordered: &[(Piece, usize)]) -> Vec<Line> {
     let mut last_y = f32::NAN;
     let mut last_col = usize::MAX;
     for (p, col) in ordered {
-        let same_line = lines.last().is_some_and(|l| !l.run_in) && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(lines.last().map(|l| l.size).unwrap_or(0.0)) && p.l >= lines.last().map(|l| l.l).unwrap_or(0.0);
-        if same_line {
-            let l = lines.last_mut().expect("checked above");
-            l.text.push(' ');
-            l.text.push_str(&p.text);
-            l.r = l.r.max(p.r);
-            l.top = l.top.max(p.top);
-            l.bottom = l.bottom.min(p.bottom);
-            l.bold = l.bold && p.bold;
-            if p.size > l.size {
-                l.size = p.size;
+        let joins = |l: &Line| !l.run_in && *col == last_col && (p.y - last_y).abs() <= 0.5 * p.size.max(l.size) && p.l >= l.l;
+        match lines.last_mut().filter(|l| joins(l)) {
+            Some(l) => {
+                l.text.push(' ');
+                l.text.push_str(&p.text);
+                l.r = l.r.max(p.r);
+                l.top = l.top.max(p.top);
+                l.bottom = l.bottom.min(p.bottom);
+                l.bold = l.bold && p.bold;
+                if p.size > l.size {
+                    l.size = p.size;
+                }
             }
-        } else {
-            lines.push(Line { text: p.text.clone(), l: p.l, r: p.r, top: p.top, bottom: p.bottom, size: p.size, bold: p.bold, column: *col, furniture: false, run_in: p.run_in });
+            None => lines.push(Line { text: p.text.clone(), l: p.l, r: p.r, top: p.top, bottom: p.bottom, size: p.size, bold: p.bold, column: *col, furniture: false, run_in: p.run_in }),
         }
         last_y = p.y;
         last_col = *col;
@@ -680,7 +680,8 @@ fn body_size(pages: &[PageLines]) -> f32 {
             e.0 += l.text.chars().count();
         }
     }
-    counts.into_values().max_by(|a, b| a.0.cmp(&b.0)).map(|(_, s)| s).unwrap_or(10.0)
+    // Ties on count go to the larger size, so the result does not depend on hash order.
+    counts.into_values().max_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))).map(|(_, s)| s).unwrap_or(10.0)
 }
 
 /// Distinct sizes of lines that look like headings, largest first (rounded to half points).
@@ -715,7 +716,8 @@ fn heading_size_classes(pages: &[PageLines], body: f32) -> Vec<f32> {
 fn looks_like_heading(l: &Line, body: f32, prev: Option<&Line>, col_left: f32) -> bool {
     let t = l.text.trim();
     let n = t.chars().count();
-    if n == 0 || n > 140 || t.ends_with([',', ';', ':']) {
+    // A bullet line is a list item however large the slide font is.
+    if n == 0 || n > 140 || t.ends_with([',', ';', ':']) || BULLET.is_match(t) {
         return false;
     }
     let letters = t.chars().filter(|c| c.is_alphabetic()).count();
@@ -1117,6 +1119,20 @@ mod tests {
         let a = assemble(vec![PageLines { label: None, lines }], meta());
         assert_eq!(a.extracted.references.len(), 2, "{}", a.extracted.markdown);
         assert_eq!(a.extracted.references[0].raw, "Smith, J. (2019). A study of things. Journal of Stuff, 5, 1-10.");
+    }
+
+    #[test]
+    fn large_bullet_lines_on_slides_are_list_items_not_headings() {
+        let mut lines = vec![line("Arrays", 72.0, 700.0, 24.0, true)];
+        for (i, t) in ["• Arrays are a simple data structure", "• Arrays store a set of values"].iter().enumerate() {
+            let mut l = line(t, 72.0, 660.0 - i as f32 * 30.0, 20.0, true);
+            l.r = 400.0;
+            lines.push(l);
+        }
+        lines.extend(body_lines(&["small print that sets the body size to ten points here"; 6], 500.0));
+        let a = assemble(vec![PageLines { label: None, lines }], meta());
+        assert!(a.extracted.markdown.contains("- Arrays are a simple data structure\n- Arrays store a set of values"), "{}", a.extracted.markdown);
+        assert!(a.extracted.headings.iter().all(|h| !h.text.starts_with('•')), "{:?}", a.extracted.headings);
     }
 
     #[test]

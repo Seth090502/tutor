@@ -131,6 +131,7 @@ pub(crate) fn with_document<T>(
     let (src, encoding) = decode_xml(bytes);
     let depth = max_depth(&src);
     if depth > MAX_XML_DEPTH {
+        tracing::warn!(depth, format, "refusing hostile XML nesting");
         return Err(ExtractError::Limits(format!("{format} element nesting is {depth} levels deep (limit {MAX_XML_DEPTH})")));
     }
     match Document::parse_with_options(&src, parse_options()) {

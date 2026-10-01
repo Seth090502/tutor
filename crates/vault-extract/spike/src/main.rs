@@ -256,6 +256,10 @@ async fn main() {
     }
     let mode = args[1].as_str();
     let out_dir = PathBuf::from(&args[2]);
+    if mode == "office" {
+        run_office(&args[4..], &out_dir).await;
+        return;
+    }
     let dll = &args[3];
     let files: Vec<PathBuf> = args[4..].iter().map(PathBuf::from).collect();
 
@@ -319,6 +323,48 @@ async fn main() {
                 },
                 Err(e) => fail("xberg", file, bytes.len(), &format!("{e}")),
             }
+        }
+    }
+}
+
+/// xberg on DOCX, EPUB and ODT files: the markdown it produces, the table count and the metadata keys.
+async fn run_office(files: &[String], out_dir: &Path) {
+    let config = ExtractionConfig {
+        output_format: OutputFormat::Markdown,
+        pages: Some(PageConfig { extract_pages: true, insert_page_markers: false, ..Default::default() }),
+        use_cache: false,
+        disable_ocr: true,
+        ..Default::default()
+    };
+    let _ = std::fs::create_dir_all(out_dir);
+    for f in files {
+        let path = PathBuf::from(f);
+        let bytes = std::fs::read(&path).unwrap_or_default();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let mime = match ext.as_str() {
+            "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "epub" => "application/epub+zip",
+            "odt" => "application/vnd.oasis.opendocument.text",
+            _ => "application/octet-stream",
+        };
+        let name = path.file_name().and_then(|n| n.to_str()).map(str::to_string);
+        let t = Instant::now();
+        match extract(ExtractInput::from_bytes(bytes.clone(), mime, name), &config).await {
+            Ok(out) => match out.results.first() {
+                Some(doc) => {
+                    let secs = t.elapsed().as_secs_f64();
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("x");
+                    let _ = std::fs::write(out_dir.join(format!("{stem}.{ext}.xberg.md")), &doc.content);
+                    let keys: Vec<String> = doc.metadata.additional.keys().map(|k| k.to_string()).collect();
+                    println!(
+                        "{}",
+                        json!({"tool": "xberg", "file": f, "ok": true, "secs": secs, "chars": doc.content.chars().count(), "tables": doc.tables.len(),
+                               "pages": doc.pages.as_ref().map(|p| p.len()), "title": doc.metadata.title, "metadata_keys": keys, "errors": out.errors.len()})
+                    );
+                }
+                None => println!("{}", json!({"tool": "xberg", "file": f, "ok": false, "error": "no results"})),
+            },
+            Err(e) => println!("{}", json!({"tool": "xberg", "file": f, "ok": false, "error": e.to_string()})),
         }
     }
 }
