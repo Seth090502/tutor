@@ -237,6 +237,23 @@ Detection is by content: magic bytes, then container inspection.
 
 ## 9. Source code (summary; full design after the code research)
 
+**Scope (owner, 2026-10-01):** not only game code. Many state-of-the-art open-source codebases, organised in
+collections such as `gamedev` and `rust-exemplars`. An agent mid-development can look at how they solve the same
+problem, compare approaches across repositories, and read exact lines, seamlessly.
+
+**Correction from the repo sweep (`docs/phase0/repos-*.md`):**
+- **Classify files by content and markers, never by directory name alone.** Several tools exclude `bin/`,
+  `build/`, `out/` and `docs/` by name, which drops real engine source.
+- **Use these signals:**
+  - `.gitignore` and `.gitattributes` (`linguist-vendored`, `linguist-generated`) through the `ignore` crate;
+  - `@generated` headers;
+  - build-artifact signatures (object files, PDBs, `CMakeCache.txt`);
+  - lockfiles;
+  - minified-content heuristics.
+- **Vendored third-party code** (Godot's `thirdparty/`) is kept and tagged `vendored`. It is de-duplicated across
+  repositories by content.
+- **Translations and similar bulk data** (`.po`) are indexed lightly or excluded by a named, reported rule.
+
 - Each kept file is its own document, canonicalised as code (section 3) and addressed by its real line
   numbers.
 - One repository document per repository snapshot holds: the README first, then the file tree with addresses,
