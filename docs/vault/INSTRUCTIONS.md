@@ -76,6 +76,22 @@ The vault is your library in a form a tutor can search, read exactly and cite.
 
 ## 3. Delivering content
 
+### 3.0 The fast path: `/ingest`
+
+- Put material in the **staging folder**, `E:\Ready to Transfer` on the main PC. Codebases go there as whole
+  folders, one repository per folder.
+- In Claude Code or OpenCode, run **`/ingest`**. The skill:
+  1. surveys the staging folder;
+  2. sorts everything into themed batches in `inbox\`, writing `SOURCE.toml` for each repository and manifests
+     for documents;
+  3. verifies the copies and marks each batch complete;
+  4. runs intake once it exists, then reports.
+- **It never deletes or edits anything in staging;** you clear it when satisfied.
+- The skill's canonical copy is `skills/ingest/SKILL.md` in the code repository. It is installed for Claude Code
+  in `~/.claude/skills/ingest/` (OpenCode reads the same folder) and as an OpenCode `/ingest` command.
+
+The rest of this section describes what the skill does, so you can also deliver by hand.
+
 **Put copies in the inbox, never your only copy or a working folder:**
 - Intake moves accepted files into `cold\originals` once you approve that policy; until then it copies them.
 - It leaves everything else in `inbox\_done\`. It never deletes a file.
