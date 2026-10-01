@@ -41,10 +41,10 @@ impl DocId {
         if hash.len() != HASH_LEN || !hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
             return Err(AddressError::BadHash(hash.to_string()));
         }
-        if let Some(s) = slug {
-            if !valid_slug(s) {
-                return Err(AddressError::BadSlug(s.to_string()));
-            }
+        if let Some(s) = slug
+            && !valid_slug(s)
+        {
+            return Err(AddressError::BadSlug(s.to_string()));
         }
         Ok(Self { hash: hash.to_string(), slug: slug.map(str::to_string) })
     }
