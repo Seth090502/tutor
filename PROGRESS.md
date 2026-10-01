@@ -35,7 +35,7 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 - [x] vault-api contract and docs/phase1/SPEC.md
 - [x] Wave 1 merged 2026-10-01 (e2c28ce): vault-core (canon, store, SQLite, jobs, publish, read/outline/find_docs/
   vault_info), libraryd + vault-client (MCP and gRPC, identical results), vault-extract (detection, converters;
-  spike picks PDFium for PDF and own EPUB/DOCX/ODT converters, `docs/phase1/extract-spike.md`). 409 tests pass.
+  spike picks PDFium for PDF and own EPUB/DOCX/ODT converters, `docs/phase1/extract-spike.md`). 408 tests pass.
 - [ ] libraryd wired to vault-core with a blocking-pool adapter and an end-to-end test; pins hoisted to the
   workspace; rustfmt 120 columns (worker running on wt/v-wire)
 - [ ] Wave 1 follow-ups: run PDF conversion in a child process with a timeout (PDFium is native code); pilot
