@@ -1,16 +1,18 @@
 # Vault build: progress checklist
 
-Read this first when resuming. Update it as work lands; commit it with each phase.
+Read `HANDOFF.md` first, then this checklist. Update both as work lands; commit them with each phase.
 
 - **Deployment stage:** Stage 1 (local; vault SSD in the main PC). Transfer planned for Monday 2026-10-05
   (exact time not confirmed yet).
 - **Current phase:** Phase 1 started 2026-10-01 on the owner's go-ahead, in parallel with the Phase 0 items still open
-  (GPU model matrix, vault SSD, vector benchmark). Defaults: originals copied (not moved), GROBID waits for hosting,
-  GPU extraction waits for owner windows. Stand-in vault: `E:\Stand-In Vault`.
+  (GPU model matrix, vault SSD). Wave 1 is merged; wave 2 waits for the owner's go. Defaults: originals copied (not
+  moved), GROBID waits for hosting, GPU extraction waits for owner windows. Stand-in vault: `E:\Stand-In Vault`.
+- **Open owner question:** code scope (HANDOFF.md section 3).
 - **Scope additions (owner, 2026-10-01):** source code folders as a first-class delivery type; any agent (not only the
   tutor) can reference chosen material through collections; everything state of the art and in Rust.
-- **Repository:** `C:\Users\sethy\Projects\vault` (canonical copy on the main PC). Eval directory and model
-  files live outside the vault.
+- **Repository:** `C:\Users\sethy\Projects\vault` (canonical copy on the main PC), pushed to the private GitHub
+  repo https://github.com/Seth090502/vault on 2026-10-01 at the owner's request (push only when asked). Eval
+  directory and model files live outside the vault and outside this repository.
 
 ## Phase 0: explore, audit, measure, propose (STOP for approval)
 - [x] Machine snapshot: drives, GPU, WSL, tools (`docs/phase0/README.md`)
