@@ -99,6 +99,13 @@ impl MdBuilder {
         self.last = Some(Last::List);
     }
 
+    /// End the current list so the next item starts a new one (a blank line separates the two lists).
+    pub fn break_list(&mut self) {
+        if self.last == Some(Last::List) {
+            self.last = Some(Last::Para);
+        }
+    }
+
     /// Verbatim lines (no escaping or collapsing), recorded as a block of `kind`.
     pub fn block(&mut self, kind: BlockKind, lines: Vec<String>) {
         if lines.is_empty() {
@@ -114,19 +121,10 @@ impl MdBuilder {
 
     /// Fenced code. The fence is longer than any backtick run in the code.
     pub fn code_block(&mut self, lang: &str, code: &str) {
-        let code = code.trim_matches(|c| c == '\n' || c == '\r');
-        if code.trim().is_empty() {
+        let lines = fenced(lang, code);
+        if lines.is_empty() {
             return;
         }
-        let longest = longest_run(code, '`');
-        let fence = "`".repeat((longest + 1).max(3));
-        let lang: String = lang
-            .chars()
-            .filter(|c| c.is_alphanumeric() || matches!(c, '+' | '-' | '_' | '#' | '.'))
-            .collect();
-        let mut lines = vec![format!("{fence}{lang}")];
-        lines.extend(code.lines().map(|l| l.trim_end_matches('\r').to_string()));
-        lines.push(fence);
         self.block(BlockKind::Code, lines);
     }
 
@@ -217,6 +215,24 @@ pub(crate) struct FinishedMarkdown {
     pub headings: Vec<HeadingMark>,
     pub pages: Vec<PageMark>,
     pub blocks: Vec<BlockSpan>,
+}
+
+/// The lines of a fenced code block, empty when the code is blank. The fence is longer than any backtick run in
+/// the code, and the language tag is reduced to characters that cannot break the fence line.
+pub(crate) fn fenced(lang: &str, code: &str) -> Vec<String> {
+    let code = code.trim_matches(['\n', '\r']);
+    if code.trim().is_empty() {
+        return Vec::new();
+    }
+    let fence = "`".repeat((longest_run(code, '`') + 1).max(3));
+    let lang: String = lang
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '+' | '-' | '_' | '#' | '.'))
+        .collect();
+    let mut lines = vec![format!("{fence}{lang}")];
+    lines.extend(code.lines().map(|l| l.trim_end_matches('\r').to_string()));
+    lines.push(fence);
+    lines
 }
 
 fn longest_run(s: &str, ch: char) -> usize {

@@ -669,6 +669,9 @@ impl Jats {
 
     fn list(&mut self, l: Node, depth: usize) {
         let ordered = matches!(attr(l, "list-type"), Some("order" | "alpha-lower" | "alpha-upper" | "roman-lower" | "roman-upper"));
+        if depth == 0 {
+            self.b.break_list();
+        }
         let mut n = 0;
         for item in children_named(l, "list-item") {
             n += 1;
@@ -703,6 +706,7 @@ impl Jats {
     }
 
     fn def_list(&mut self, dl: Node) {
+        self.b.break_list();
         if let Some(t) = child(dl, "title") {
             let t = self.inline_text(t);
             self.b.paragraph(&t);
@@ -817,7 +821,7 @@ impl Jats {
             }
             s.push_str(&format!("({y})"));
         }
-        let mut sentence = |s: &mut String, part: String| {
+        let sentence = |s: &mut String, part: String| {
             if part.is_empty() {
                 return;
             }

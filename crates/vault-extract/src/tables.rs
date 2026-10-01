@@ -33,8 +33,7 @@ impl Grid {
 
     /// Whether a data row has a span (a pipe table cannot say which cells are merged).
     fn has_body_spans(&self) -> bool {
-        let skip = self.header_rows.max(1);
-        self.rows.iter().skip(skip).any(|r| r.iter().any(|c| c.colspan > 1 || c.rowspan > 1))
+        self.rows.iter().skip(self.header_rows).any(|r| r.iter().any(|c| c.colspan > 1 || c.rowspan > 1))
     }
 
     /// Rows with spans expanded: a colspan adds empty cells to the right, a rowspan adds empty cells below.
@@ -44,7 +43,7 @@ impl Grid {
         for row in &self.rows {
             let mut cells: Vec<String> = Vec::new();
             let mut col = 0usize;
-            let mut take_carried = |cells: &mut Vec<String>, col: &mut usize, carry: &mut Vec<usize>| {
+            let take_carried = |cells: &mut Vec<String>, col: &mut usize, carry: &mut Vec<usize>| {
                 while *col < carry.len() && carry[*col] > 0 {
                     carry[*col] -= 1;
                     cells.push(String::new());

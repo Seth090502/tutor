@@ -3,12 +3,14 @@
 mod builder;
 pub mod detect;
 pub mod error;
+pub mod html;
 pub mod ids;
 pub mod jats;
 pub mod mathml;
 pub mod pdfscan;
 pub mod quality;
 mod tables;
+pub mod tei;
 pub mod text;
 pub mod types;
 mod xmlutil;
