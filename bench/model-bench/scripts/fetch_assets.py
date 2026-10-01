@@ -21,6 +21,8 @@ HF_MODELS = [
     ("embedders", "Qwen/Qwen3-Embedding-4B-GGUF", "Qwen3-Embedding-4B-Q8_0.gguf"),
     ("embedders", "Qwen/Qwen3-Embedding-8B-GGUF", "Qwen3-Embedding-8B-Q8_0.gguf"),
     ("embedders", "ggml-org/bge-m3-Q8_0-GGUF", "bge-m3-q8_0.gguf"),
+    # No official GGUF; this conversion's source weights are byte-identical to microsoft/harrier-oss-v1-0.6b.
+    ("embedders", "mradermacher/harrier-oss-v1-0.6b-GGUF", "harrier-oss-v1-0.6b.Q8_0.gguf"),
     ("rerankers", "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF", "qwen3-reranker-0.6b-q8_0.gguf"),
     ("rerankers", "giladgd/Qwen3-Reranker-4B-GGUF", "Qwen3-Reranker-4B.Q8_0.gguf"),
     ("rerankers", "giladgd/Qwen3-Reranker-8B-GGUF", "Qwen3-Reranker-8B.Q8_0.gguf"),

@@ -181,8 +181,14 @@ pub fn mean_metrics(split: &Split, ranked: &[Vec<usize>]) -> (f64, f64) {
     (n / c.max(1) as f64, r / c.max(1) as f64)
 }
 
-pub fn instruct_query(task: &str, q: &str) -> String {
-    format!("Instruct: {task}\nQuery:{q}")
+/// A query in the model's trained format: `qwen3` = "Instruct: <task>\nQuery:<q>", `harrier` = the same with a
+/// space after "Query:" (its model card), `none` = the raw query (BGE-M3).
+pub fn format_query(format: &str, task: &str, q: &str) -> String {
+    match format {
+        "qwen3" => format!("Instruct: {task}\nQuery:{q}"),
+        "harrier" => format!("Instruct: {task}\nQuery: {q}"),
+        _ => q.to_string(),
+    }
 }
 
 /// Task description for Qwen3-Embedding queries (BRIGHT's per-domain instruction).
@@ -205,7 +211,7 @@ pub struct EmbedEval {
 }
 
 /// Embed docs and queries of every split, compute nDCG@10 / recall@100 at full, 512 and 256 dims.
-pub fn eval_embedder(base: &str, splits: &[Split], qwen_instruct: bool, batch: usize, conc: usize) -> Result<EmbedEval> {
+pub fn eval_embedder(base: &str, splits: &[Split], query_format: &str, batch: usize, conc: usize) -> Result<EmbedEval> {
     let mut per_split = serde_json::Map::new();
     let mut cands = serde_json::Map::new();
     let (mut tokens, mut seconds, mut ndocs) = (0u64, 0f64, 0usize);
@@ -220,7 +226,7 @@ pub fn eval_embedder(base: &str, splits: &[Split], qwen_instruct: bool, batch: u
         ndocs += dtexts.len();
         let task = task_for(&sp.name);
         let qtexts: Vec<String> = sp.queries.iter()
-            .map(|q| if qwen_instruct { instruct_query(&task, &q.query) } else { q.query.clone() })
+            .map(|q| format_query(query_format, &task, &q.query))
             .collect();
         let qrefs: Vec<&str> = qtexts.iter().map(String::as_str).collect();
         let qe = embed_texts(base, &qrefs, batch.min(16), conc)?;

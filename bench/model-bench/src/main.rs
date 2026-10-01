@@ -96,8 +96,8 @@ struct Common {
 struct EmbedArgs {
     #[command(flatten)]
     c: Common,
-    /// qwen3 = "Instruct: <task>\nQuery:<q>" for queries; none = raw query (BGE-M3).
-    #[arg(long, default_value = "qwen3")]
+    /// qwen3 = "Instruct: <task>\nQuery:<q>" for queries; harrier = the same with "Query: <q>"; none = raw query (BGE-M3).
+    #[arg(long, default_value = "qwen3", value_parser = ["qwen3", "harrier", "none"])]
     query_format: String,
     #[arg(long, default_value_t = 32)]
     embed_batch: usize,
@@ -250,7 +250,7 @@ fn run_embed(a: &EmbedArgs) -> Result<ExitCode> {
     } else {
         (a.embed_batch, a.concurrency, Value::Null)
     };
-    let ev = embed::eval_embedder(&srv.base, &splits, a.query_format == "qwen3", batch, conc)?;
+    let ev = embed::eval_embedder(&srv.base, &splits, &a.query_format, batch, conc)?;
     let flags = srv.args.clone();
     srv.stop();
     let vram = mon.map(|m| m.stop());

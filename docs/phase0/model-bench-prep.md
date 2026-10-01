@@ -36,8 +36,8 @@ server logs, VRAM samples `*-vram.csv`). Behaviour:
   then `llama-server --list-devices` for the CUDA and Vulkan builds and picks the device whose name contains "5090"
   (Vulkan may also list the CPU's integrated GPU). It aborts with a clear message if the GPU is still busy.
 - Runs sequentially, cheapest and most decisive first, the 8B runs last. Order: embed 0.6B Q8_0 (autotune; writes the
-  first-stage candidates), parity 0.6B Q8_0 CUDA vs Vulkan, embed 0.6B f16, embed BGE-M3, embed 4B, rerank 0.6B, rerank
-  4B, embed 8B, rerank 8B, parity 0.6B f16.
+  first-stage candidates), parity 0.6B Q8_0 CUDA vs Vulkan, embed 0.6B f16, embed BGE-M3, embed Harrier-OSS-v1 0.6B,
+  embed 4B, rerank 0.6B, rerank 4B, embed 8B, rerank 8B, parity 0.6B f16.
 - Resumable: a configuration with a result line (`status` ok, sanity_failed or parity_failed) is skipped. The 0.6B Q8_0
   embed run is also re-run if `first-stage-candidates.json` is missing.
 - Stops on the first server or infrastructure failure (harness exit 2) with the log tail and the log path. A reranker
@@ -47,7 +47,7 @@ server logs, VRAM samples `*-vram.csv`). Behaviour:
   matches) after every run and in `finally`.
 - Prints a compact summary table from `results.jsonl` at the end.
 
-Conservative time estimate for the whole matrix: about 84 minutes (see the budget below). Throughput on the real card is
+Conservative time estimate for the whole matrix: about 85 minutes (see the budget below). Throughput on the real card is
 unknown; the runner is resumable if the window closes early.
 
 ## What was downloaded (all SHA-256 verified against the host's published digest)
@@ -73,6 +73,7 @@ Models (Hugging Face LFS oid from the repo tree API; downloads pinned to the rep
 | Qwen3-Embedding-4B-Q8_0.gguf | Qwen/Qwen3-Embedding-4B-GGUF @ f4602530db1d | 4,280 MB | b60ae5ce2dd6a0b77f82cadf21def1f310a3e10cde380ad0081b07a9d416949d |
 | Qwen3-Embedding-8B-Q8_0.gguf | Qwen/Qwen3-Embedding-8B-GGUF @ 69d0e58a13e4 | 8,047 MB | d20ddc71e8a5c4344f2343481e242233a997dc5eaff442427a945836c97b4deb |
 | bge-m3-q8_0.gguf | ggml-org/bge-m3-Q8_0-GGUF @ 9eba04c5d75b | 635 MB | aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173 |
+| harrier-oss-v1-0.6b.Q8_0.gguf (added 2026-10-01) | mradermacher/harrier-oss-v1-0.6b-GGUF @ d79decec1ab9 | 639 MB | ba2c9408f82cfdb73aaf70aaea9f125f3fb24c5e76ce0efb469e1530e5ec53e4 |
 | qwen3-reranker-0.6b-q8_0.gguf | ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF @ a02f48bb4f05 | 639 MB | 22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48 |
 | Qwen3-Reranker-4B.Q8_0.gguf | giladgd/Qwen3-Reranker-4B-GGUF @ 618ca919a196 | 4,280 MB | d060a1bfb805debcd6c2258c70ba21c56ee1ea837bc23b0bc49e09d13115987c |
 | Qwen3-Reranker-8B.Q8_0.gguf | giladgd/Qwen3-Reranker-8B-GGUF @ 3398b1b2ee12 | 8,047 MB | 0f062cc2d6b013c2bd708549dcf36a153043323bc37e17b3b993d95fa0a2105d |
@@ -84,6 +85,28 @@ Local file names are `<owner>__<repo>__<file>` (see `manifest.json`). The harnes
 GGUF facts checked by reading the headers (`scripts/gguf_inspect.py`): Qwen3-Embedding has `pooling_type=3` (last) and
 `add_eos_token=true`; a server test confirmed that "Hello world" becomes 3 tokens (the last is `<|endoftext|>`) and that
 returned vectors have norm 1.0. BGE-M3 is architecture `bert`, `pooling_type=2` (CLS), 8192 context, adds BOS/EOS.
+
+**Harrier-OSS-v1 0.6B (Microsoft, MIT; added 2026-10-01 as the local alternative from the Cohere Embed 5 comparison
+chart).** Same architecture as Qwen3-Embedding-0.6B (`qwen3`, 28 layers, 1024 dimensions, last-token pooling, EOS
+appended), so it is a drop-in. Microsoft publishes no GGUF, so the provenance of the conversion was checked:
+
+- The conversion names `calculatortamer/harrier-oss-v1-0.6b` as its source. That mirror's `model.safetensors` and
+  `tokenizer.json` have the same LFS SHA-256 as `microsoft/harrier-oss-v1-0.6b` @ f9b9dc8d367d (6bb12422... and
+  def76fb0...).
+- The header matches the official Qwen3-Embedding GGUF: `pooling_type=3`, `add_eos_token=true`, `add_bos_token=false`,
+  EOS and padding id 151643, pre-tokenizer `qwen2`.
+- The weights were compared with Microsoft's tensors (fetched by byte range, BF16). Dequantised Q8_0 values for
+  `token_embd` (256 rows), `blk.0.attn_q`, `blk.13.attn_k` and `blk.27.ffn_down` are within 0.537 of a quantisation step
+  everywhere, with a relative RMS error of 0.52-0.56%, and `output_norm` is exact. The same comparison against the
+  Qwen3-Embedding-0.6B GGUF gives 23-51% relative error, so the check tells the two models apart.
+- Query format from the model card: `Instruct: <task>\nQuery: <q>` (a space after "Query:", unlike Qwen3-Embedding);
+  the harness flag is `--query-format harrier`. The card does not claim Matryoshka training, so its 512 and 256
+  dimension numbers may be weak by design.
+- CPU smoke on `subset-smoke` (2026-10-01): loads, embeds and scores; like every model it saturates that tiny subset
+  (nDCG@10 1.0), so this shows only that the path works.
+
+Not added: `perplexity-ai/pplx-embed-v1` (architecture `bidirectional_pplx_qwen3` with custom code; llama.cpp support
+for its bidirectional attention is unverified, and a causal conversion would give wrong vectors).
 
 ## Reranker conversions and why
 
@@ -157,14 +180,15 @@ candidates skew long) so 593 tokens per pair:
 | Embed 0.6B Q8_0 | 28,409 | 1,403,285 | 0.8 |
 | Embed 0.6B f16 | 28,409 | 1,403,285 | 0.8 |
 | Embed BGE-M3 Q8_0 | 41,667 | 1,403,285 | 0.6 |
+| Embed Harrier 0.6B Q8_0 (added 2026-10-01) | 28,409 | 1,403,285 | 0.8 |
 | Embed 4B Q8_0 | 3,472 | 1,403,285 | 6.7 |
 | Embed 8B Q8_0 | 1,799 | 1,403,285 | 13.0 |
 | Rerank 0.6B | 28,409 | 3,559,485 | 2.1 |
 | Rerank 4B | 3,472 | 3,559,485 | 17.1 |
 | Rerank 8B | 1,799 | 3,559,485 | 33.0 |
-| Compute subtotal | | | 74.1 |
-| Overhead: 16 server starts at 25 s plus autotune and warm-up | | | 9.7 |
-| **Total** | | | **83.8** |
+| Compute subtotal | | | 74.9 |
+| Overhead: 17 server starts at 25 s plus autotune and warm-up | | | 10.3 |
+| **Total** | | | **85.2** |
 
 Parity (500 chunks, about 60k tokens per backend, two quantisations) is not in the table; it adds about a minute. The
 numbers are estimates, not measurements: real throughput should be better than this, and the lead should read the first

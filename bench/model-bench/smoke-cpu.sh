@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CPU-only smoke test of the harness (no GPU). Small subset, at most 8 threads.
 set -u
-B=C:/Users/sethy/Projects/vault/target/release/model-bench.exe
+B=C:/Users/sethy/Projects/vault/bench/model-bench/target/release/model-bench.exe
 M=C:/Users/sethy/Projects/vault-models
 CPU=$M/llama.cpp/llama-b11310-cpu/llama-server.exe
 D=C:/Users/sethy/Projects/vault-eval/external/bright/subset-smoke

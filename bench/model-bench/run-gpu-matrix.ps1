@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   Runs sequentially through llama-server (CUDA build; Vulkan only for the parity checks):
-    Qwen3-Embedding 0.6B Q8_0 / 0.6B f16 / 4B Q8_0 / 8B Q8_0, BGE-M3 Q8_0 (embedders: nDCG@10 and recall@100 on
+    Qwen3-Embedding 0.6B Q8_0 / 0.6B f16 / 4B Q8_0 / 8B Q8_0, BGE-M3 Q8_0, Harrier-OSS-v1 0.6B Q8_0 (embedders: nDCG@10 and recall@100 on
     BRIGHT psychology+biology+economics at full, 512 and 256 dims; bulk throughput; peak VRAM),
     Qwen3-Reranker 0.6B / 4B / 8B Q8_0 over the fixed 0.6B first-stage top-100 (sanity test first),
     and CUDA-vs-Vulkan embedding parity (500 chunks, cosine >= 0.999) for Qwen3-Embedding-0.6B Q8_0 and f16.
@@ -26,7 +26,7 @@ param(
   [string]$ModelsDir = 'C:\Users\sethy\Projects\vault-models',
   [string]$Dataset = 'C:\Users\sethy\Projects\vault-eval\external\bright\subset-v1',
   [string]$OutDir = 'C:\Users\sethy\Projects\vault\docs\phase0\model-bench',
-  [string]$Bench = 'C:\Users\sethy\Projects\vault\target\release\model-bench.exe',
+  [string]$Bench = 'C:\Users\sethy\Projects\vault\bench\model-bench\target\release\model-bench.exe',
   [int]$MinFreeMiB = 18000,
   [int]$RunTimeoutMin = 60,
   [string]$Only = '*',
@@ -72,6 +72,7 @@ $M = @{
   'q4q8'   = "$E\Qwen__Qwen3-Embedding-4B-GGUF__Qwen3-Embedding-4B-Q8_0.gguf"
   'q8q8'   = "$E\Qwen__Qwen3-Embedding-8B-GGUF__Qwen3-Embedding-8B-Q8_0.gguf"
   'bge'    = "$E\ggml-org__bge-m3-Q8_0-GGUF__bge-m3-q8_0.gguf"
+  'har'    = "$E\mradermacher__harrier-oss-v1-0.6b-GGUF__harrier-oss-v1-0.6b.Q8_0.gguf"
   'r06'    = "$R\ggml-org__Qwen3-Reranker-0.6B-Q8_0-GGUF__qwen3-reranker-0.6b-q8_0.gguf"
   'r4'     = "$R\giladgd__Qwen3-Reranker-4B-GGUF__Qwen3-Reranker-4B.Q8_0.gguf"
   'r8'     = "$R\giladgd__Qwen3-Reranker-8B-GGUF__Qwen3-Reranker-8B.Q8_0.gguf"
@@ -86,6 +87,7 @@ $Plan = @(@(
   @{ id = 'parity-qwen3-embedding-0.6b-q8_0-cuda-vs-vulkan'; kind = 'parity'; m = 'q06q8'; name = 'qwen3-embedding-0.6b'; quant = 'Q8_0'; pool = 'last'; s = $small }
   @{ id = 'embed-qwen3-embedding-0.6b-f16-cuda';   kind = 'embed';  m = 'q06f16'; name = 'qwen3-embedding-0.6b'; quant = 'f16'; pool = 'last'; qf = 'qwen3'; s = $small }
   @{ id = 'embed-bge-m3-q8_0-cuda';                kind = 'embed';  m = 'bge';    name = 'bge-m3';              quant = 'Q8_0'; pool = 'cls';  qf = 'none';  s = $small }
+  @{ id = 'embed-harrier-oss-v1-0.6b-q8_0-cuda';   kind = 'embed';  m = 'har';    name = 'harrier-oss-v1-0.6b'; quant = 'Q8_0'; pool = 'last'; qf = 'harrier'; s = $small }
   @{ id = 'embed-qwen3-embedding-4b-q8_0-cuda';    kind = 'embed';  m = 'q4q8';   name = 'qwen3-embedding-4b';  quant = 'Q8_0'; pool = 'last'; qf = 'qwen3'; s = $big }
   @{ id = 'rerank-qwen3-reranker-0.6b-q8_0-cuda';  kind = 'rerank'; m = 'r06';    name = 'qwen3-reranker-0.6b'; quant = 'Q8_0'; pool = 'rank'; s = $rsmall }
   @{ id = 'rerank-qwen3-reranker-4b-q8_0-cuda';    kind = 'rerank'; m = 'r4';     name = 'qwen3-reranker-4b';   quant = 'Q8_0'; pool = 'rank'; s = $rbig }
