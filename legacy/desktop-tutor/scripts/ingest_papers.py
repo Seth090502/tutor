@@ -9,6 +9,7 @@ Usage:
   python scripts/ingest_papers.py --src "D:\\Papers" --limit 5000
   python scripts/ingest_papers.py --src "D:\\Papers" --merge-manifest
 """
+
 import argparse
 import hashlib
 import json
@@ -39,12 +40,20 @@ def scan(src, limit=5000):
                 size = os.path.getsize(fp)
             except OSError:
                 continue
-            pid = "paper-" + hashlib.sha1(os.path.relpath(fp, src).encode("utf-8", "ignore")).hexdigest()[:12]
-            out.append({"id": pid, "filename": f,
-                        "path": fp if os.path.isabs(fp) else os.path.relpath(fp, BASE),
-                        "size": size,
-                        "title_hint": title_hint(f),
-                        "license": "user-provided; verify rights before redistributing"})
+            pid = (
+                "paper-"
+                + hashlib.sha1(os.path.relpath(fp, src).encode("utf-8", "ignore")).hexdigest()[:12]
+            )
+            out.append(
+                {
+                    "id": pid,
+                    "filename": f,
+                    "path": fp if os.path.isabs(fp) else os.path.relpath(fp, BASE),
+                    "size": size,
+                    "title_hint": title_hint(f),
+                    "license": "user-provided; verify rights before redistributing",
+                }
+            )
             n += 1
             if n >= limit:
                 return out
@@ -55,8 +64,11 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Index user papers (metadata only)")
     p.add_argument("--src", required=True, help="Folder holding your PDFs/md/txt")
     p.add_argument("--limit", type=int, default=5000)
-    p.add_argument("--merge-manifest", action="store_true",
-                   help="Also append entries to corpus/manifest.json (dedupe by id)")
+    p.add_argument(
+        "--merge-manifest",
+        action="store_true",
+        help="Also append entries to corpus/manifest.json (dedupe by id)",
+    )
     args = p.parse_args(argv)
     if not os.path.isdir(args.src):
         print(f"No such folder: {args.src}")
@@ -64,7 +76,9 @@ def main(argv=None):
     docs = scan(args.src, args.limit)
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump({"version": "1.1.0", "count": len(docs), "documents": docs}, fh, indent=2)
-    print(f"Indexed {len(docs)} papers -> corpus/papers_index.json (metadata only, files untouched)")
+    print(
+        f"Indexed {len(docs)} papers -> corpus/papers_index.json (metadata only, files untouched)"
+    )
     if args.merge_manifest and os.path.exists(MANIFEST):
         with open(MANIFEST, "r", encoding="utf-8") as fh:
             m = json.load(fh)
@@ -73,9 +87,16 @@ def main(argv=None):
         for d in docs:
             if d["id"] in have:
                 continue
-            m["sources"].append({"id": d["id"], "title": d["title_hint"],
-                                 "license": d["license"], "url": None,
-                                 "local_path": d["path"], "domains": []})
+            m["sources"].append(
+                {
+                    "id": d["id"],
+                    "title": d["title_hint"],
+                    "license": d["license"],
+                    "url": None,
+                    "local_path": d["path"],
+                    "domains": [],
+                }
+            )
             added += 1
         with open(MANIFEST, "w", encoding="utf-8") as fh:
             json.dump(m, fh, indent=2)

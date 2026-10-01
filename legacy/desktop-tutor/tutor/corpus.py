@@ -30,8 +30,14 @@ def search_many(queries, limit=5):
     if not os.path.exists(exe):
         raise RuntimeError(f"tutor-search not built ({exe}); run `cargo build --release` in {BASE}")
     lines = "".join(" ".join((q or "").split()) + "\n" for q in queries)
-    out = subprocess.run([exe, "--root", BASE, "--limit", str(limit)], input=lines,
-                         stdout=subprocess.PIPE, text=True, encoding="utf-8", check=True)
+    out = subprocess.run(
+        [exe, "--root", BASE, "--limit", str(limit)],
+        input=lines,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
     return [json.loads(line) for line in out.stdout.splitlines()]
 
 

@@ -45,7 +45,10 @@ pub struct DocMeta {
 pub fn classify(root: Root, rel: &str) -> DocMeta {
     let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
     let dirs = &parts[..parts.len().saturating_sub(1)];
-    let meta = |domain: &str, source_type| DocMeta { domain: domain.to_lowercase(), source_type };
+    let meta = |domain: &str, source_type| DocMeta {
+        domain: domain.to_lowercase(),
+        source_type,
+    };
     match root {
         Root::Notes => match dirs.first() {
             Some(domain) => meta(domain, "note"),
@@ -88,8 +91,14 @@ mod tests {
     #[test]
     fn books_and_papers_take_their_domain_folder() {
         assert_eq!(c("math/books/calculus.pdf"), ("math".into(), "book"));
-        assert_eq!(c("math/books/calculus/vol1/ch1.pdf"), ("math".into(), "book"));
-        assert_eq!(c("chemistry/papers/2024/nmr.pdf"), ("chemistry".into(), "paper"));
+        assert_eq!(
+            c("math/books/calculus/vol1/ch1.pdf"),
+            ("math".into(), "book")
+        );
+        assert_eq!(
+            c("chemistry/papers/2024/nmr.pdf"),
+            ("chemistry".into(), "paper")
+        );
         assert_eq!(c("english/papers/x.epub"), ("english".into(), "paper"));
     }
 
@@ -122,8 +131,14 @@ mod tests {
 
     #[test]
     fn stored_paths_split_into_root_and_rest() {
-        assert_eq!(split_stored("corpus/math/books/x.pdf"), Some((Root::Corpus, "math/books/x.pdf")));
-        assert_eq!(split_stored("notes/chemistry/x.md"), Some((Root::Notes, "chemistry/x.md")));
+        assert_eq!(
+            split_stored("corpus/math/books/x.pdf"),
+            Some((Root::Corpus, "math/books/x.pdf"))
+        );
+        assert_eq!(
+            split_stored("notes/chemistry/x.md"),
+            Some((Root::Notes, "chemistry/x.md"))
+        );
         assert_eq!(split_stored("other/x.md"), None);
         assert_eq!(split_stored("corpus"), None);
     }

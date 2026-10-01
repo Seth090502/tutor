@@ -132,8 +132,16 @@ mod tests {
         assert_eq!(
             e.projections,
             vec![
-                Projection { corpus_gb: 50, tokens_est: Some(12_500_000_000), pages: Some(20_000_000) },
-                Projection { corpus_gb: 250, tokens_est: Some(62_500_000_000), pages: Some(100_000_000) },
+                Projection {
+                    corpus_gb: 50,
+                    tokens_est: Some(12_500_000_000),
+                    pages: Some(20_000_000)
+                },
+                Projection {
+                    corpus_gb: 250,
+                    tokens_est: Some(62_500_000_000),
+                    pages: Some(100_000_000)
+                },
             ]
         );
     }
@@ -152,6 +160,10 @@ mod tests {
         assert_eq!(e.tokens_est_per_gb, None);
         assert_eq!(e.pages_per_gb, None);
         assert_eq!(e.projections.len(), PROJECTION_GB.len());
-        assert!(e.projections.iter().all(|p| p.tokens_est.is_none() && p.pages.is_none()));
+        assert!(
+            e.projections
+                .iter()
+                .all(|p| p.tokens_est.is_none() && p.pages.is_none())
+        );
     }
 }

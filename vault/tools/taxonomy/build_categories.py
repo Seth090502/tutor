@@ -10,22 +10,28 @@ reach the same map through arXiv, LCC and DDC crosswalks. Every lookup that name
 against the snapshot, so a typo fails the build instead of silently dropping documents.
 """
 
+from collections import Counter, defaultdict
 import json
+from pathlib import Path
 import re
 import sys
-from collections import Counter, defaultdict
-from pathlib import Path
 
 VERSION = "2026-10-01.2"
 
 # OpenAlex files these topics under subfields that misplace them for our purposes (pure mathematics under computer
 # science, geochemistry under AI). Overrides are topic-level, kept small, and each has its reason in the comment.
 TOPIC_OVERRIDES = {
-    "T11727": ("mathematics", ["cs-ai"]),       # Advanced Algebra and Logic (filed under Computational Theory)
-    "T10374": ("mathematics", ["cs-ai"]),       # Advanced Graph Theory Research
-    "T10792": ("mathematics", ["cs-ai"]),       # Matrix Theory and Algorithms
-    "T11435": ("mathematics", ["cs-ai"]),       # Polynomial and algebraic computation
-    "T12292": ("mathematics", ["cs-ai"]),       # Graph Theory and Algorithms (filed under Computer Vision)
+    "T11727": (
+        "mathematics",
+        ["cs-ai"],
+    ),  # Advanced Algebra and Logic (filed under Computational Theory)
+    "T10374": ("mathematics", ["cs-ai"]),  # Advanced Graph Theory Research
+    "T10792": ("mathematics", ["cs-ai"]),  # Matrix Theory and Algorithms
+    "T11435": ("mathematics", ["cs-ai"]),  # Polynomial and algebraic computation
+    "T12292": (
+        "mathematics",
+        ["cs-ai"],
+    ),  # Graph Theory and Algorithms (filed under Computer Vision)
     "T12157": ("natural-sciences", ["cs-ai"]),  # Geochemistry and Geologic Mapping (filed under AI)
 }
 # A work's OpenAlex primary topic counts as a category source only at or above this score; below it, the next
@@ -35,49 +41,138 @@ OPENALEX_MIN_TOPIC_SCORE = 0.5
 # ---------------------------------------------------------------------------------------------------------------
 # Vault categories, in the owner's priority order. Targets are proposals for the owner to adjust.
 CATEGORIES = [
-    dict(slug="psych-cogsci", name="Psychology and cognitive science", priority=1,
-         scope="Mind, brain and behaviour: every psychology subfield, cognitive and behavioural neuroscience, "
-               "human factors, plus cognition-related work in philosophy, linguistics, AI, economics, education "
-               "and psychiatry through the cognitive-science overlay.",
-         pilot=(3150, 350), full=(52000, 2800),
-         synonyms=["psychology", "psych", "cognitive science", "cogsci", "cognition", "neuroscience",
-                   "cognitive neuroscience", "behavioral science", "behavioural science"]),
-    dict(slug="engineering", name="Engineering", priority=2,
-         scope="All engineering disciplines, chemical engineering, materials science and energy.",
-         pilot=(630, 70), full=(17000, 1300),
-         synonyms=["engineering", "eng", "materials", "energy", "electrical", "mechanical", "civil"]),
-    dict(slug="mathematics", name="Mathematics", priority=2,
-         scope="Pure and applied mathematics, statistics and probability, theoretical computer science, and "
-               "operations research.",
-         pilot=(560, 140), full=(15000, 1600),
-         synonyms=["mathematics", "math", "maths", "statistics", "stats", "probability"]),
-    dict(slug="medicine", name="Medicine", priority=3,
-         scope="Clinical medicine, psychiatry, neurology, pharmacology, nursing, dentistry, health professions "
-               "and public health.",
-         pilot=(570, 30), full=(18000, 900),
-         synonyms=["medicine", "medical", "clinical", "health", "psychiatry", "neurology", "pharmacology"]),
-    dict(slug="cs-ai", name="Computer science and AI", priority=4,
-         scope="All computer science, including artificial intelligence and machine learning.",
-         pilot=(620, 80), full=(18000, 1300),
-         synonyms=["computer science", "cs", "ai", "artificial intelligence", "machine learning", "ml",
-                   "programming", "software"]),
-    dict(slug="natural-sciences", name="Natural sciences", priority=5,
-         scope="Physics and astronomy, chemistry, biology and the life sciences, earth and environmental "
-               "science.",
-         pilot=(450, 50), full=(18000, 1100),
-         synonyms=["natural sciences", "science", "physics", "chemistry", "biology", "earth science",
-                   "astronomy", "ecology"]),
-    dict(slug="humanities", name="Humanities", priority=6,
-         scope="Philosophy, history, languages and linguistics, literature, religion, the arts and classics.",
-         pilot=(220, 80), full=(8000, 900),
-         synonyms=["humanities", "philosophy", "history", "linguistics", "literature", "religion", "arts",
-                   "classics"]),
-    dict(slug="social-other", name="Social sciences and other", priority=7,
-         scope="Everything else (education, economics, business, law, sociology, politics). Not a gathering "
-               "target, but nothing delivered is ever left without a category.",
-         pilot=(0, 0), full=(4000, 100),
-         synonyms=["social sciences", "education", "economics", "business", "law", "sociology", "politics",
-                   "other"]),
+    dict(
+        slug="psych-cogsci",
+        name="Psychology and cognitive science",
+        priority=1,
+        scope="Mind, brain and behaviour: every psychology subfield, cognitive and behavioural neuroscience, "
+        "human factors, plus cognition-related work in philosophy, linguistics, AI, economics, education "
+        "and psychiatry through the cognitive-science overlay.",
+        pilot=(3150, 350),
+        full=(52000, 2800),
+        synonyms=[
+            "psychology",
+            "psych",
+            "cognitive science",
+            "cogsci",
+            "cognition",
+            "neuroscience",
+            "cognitive neuroscience",
+            "behavioral science",
+            "behavioural science",
+        ],
+    ),
+    dict(
+        slug="engineering",
+        name="Engineering",
+        priority=2,
+        scope="All engineering disciplines, chemical engineering, materials science and energy.",
+        pilot=(630, 70),
+        full=(17000, 1300),
+        synonyms=["engineering", "eng", "materials", "energy", "electrical", "mechanical", "civil"],
+    ),
+    dict(
+        slug="mathematics",
+        name="Mathematics",
+        priority=2,
+        scope="Pure and applied mathematics, statistics and probability, theoretical computer science, and "
+        "operations research.",
+        pilot=(560, 140),
+        full=(15000, 1600),
+        synonyms=["mathematics", "math", "maths", "statistics", "stats", "probability"],
+    ),
+    dict(
+        slug="medicine",
+        name="Medicine",
+        priority=3,
+        scope="Clinical medicine, psychiatry, neurology, pharmacology, nursing, dentistry, health professions "
+        "and public health.",
+        pilot=(570, 30),
+        full=(18000, 900),
+        synonyms=[
+            "medicine",
+            "medical",
+            "clinical",
+            "health",
+            "psychiatry",
+            "neurology",
+            "pharmacology",
+        ],
+    ),
+    dict(
+        slug="cs-ai",
+        name="Computer science and AI",
+        priority=4,
+        scope="All computer science, including artificial intelligence and machine learning.",
+        pilot=(620, 80),
+        full=(18000, 1300),
+        synonyms=[
+            "computer science",
+            "cs",
+            "ai",
+            "artificial intelligence",
+            "machine learning",
+            "ml",
+            "programming",
+            "software",
+        ],
+    ),
+    dict(
+        slug="natural-sciences",
+        name="Natural sciences",
+        priority=5,
+        scope="Physics and astronomy, chemistry, biology and the life sciences, earth and environmental "
+        "science.",
+        pilot=(450, 50),
+        full=(18000, 1100),
+        synonyms=[
+            "natural sciences",
+            "science",
+            "physics",
+            "chemistry",
+            "biology",
+            "earth science",
+            "astronomy",
+            "ecology",
+        ],
+    ),
+    dict(
+        slug="humanities",
+        name="Humanities",
+        priority=6,
+        scope="Philosophy, history, languages and linguistics, literature, religion, the arts and classics.",
+        pilot=(220, 80),
+        full=(8000, 900),
+        synonyms=[
+            "humanities",
+            "philosophy",
+            "history",
+            "linguistics",
+            "literature",
+            "religion",
+            "arts",
+            "classics",
+        ],
+    ),
+    dict(
+        slug="social-other",
+        name="Social sciences and other",
+        priority=7,
+        scope="Everything else (education, economics, business, law, sociology, politics). Not a gathering "
+        "target, but nothing delivered is ever left without a category.",
+        pilot=(0, 0),
+        full=(4000, 100),
+        synonyms=[
+            "social sciences",
+            "education",
+            "economics",
+            "business",
+            "law",
+            "sociology",
+            "politics",
+            "other",
+        ],
+    ),
 ]
 SLUGS = [c["slug"] for c in CATEGORIES]
 
@@ -86,19 +181,30 @@ SLUGS = [c["slug"] for c in CATEGORIES]
 FIELD_PRIMARY = {
     "Psychology": "psych-cogsci",
     "Neuroscience": "natural-sciences",
-    "Engineering": "engineering", "Chemical Engineering": "engineering", "Materials Science": "engineering",
+    "Engineering": "engineering",
+    "Chemical Engineering": "engineering",
+    "Materials Science": "engineering",
     "Energy": "engineering",
     "Mathematics": "mathematics",
-    "Medicine": "medicine", "Nursing": "medicine", "Health Professions": "medicine", "Dentistry": "medicine",
-    "Pharmacology, Toxicology and Pharmaceutics": "medicine", "Veterinary": "medicine",
+    "Medicine": "medicine",
+    "Nursing": "medicine",
+    "Health Professions": "medicine",
+    "Dentistry": "medicine",
+    "Pharmacology, Toxicology and Pharmaceutics": "medicine",
+    "Veterinary": "medicine",
     "Computer Science": "cs-ai",
-    "Physics and Astronomy": "natural-sciences", "Chemistry": "natural-sciences",
-    "Earth and Planetary Sciences": "natural-sciences", "Agricultural and Biological Sciences": "natural-sciences",
-    "Biochemistry, Genetics and Molecular Biology": "natural-sciences", "Environmental Science": "natural-sciences",
+    "Physics and Astronomy": "natural-sciences",
+    "Chemistry": "natural-sciences",
+    "Earth and Planetary Sciences": "natural-sciences",
+    "Agricultural and Biological Sciences": "natural-sciences",
+    "Biochemistry, Genetics and Molecular Biology": "natural-sciences",
+    "Environmental Science": "natural-sciences",
     "Immunology and Microbiology": "natural-sciences",
     "Arts and Humanities": "humanities",
-    "Social Sciences": "social-other", "Economics, Econometrics and Finance": "social-other",
-    "Business, Management and Accounting": "social-other", "Decision Sciences": "social-other",
+    "Social Sciences": "social-other",
+    "Economics, Econometrics and Finance": "social-other",
+    "Business, Management and Accounting": "social-other",
+    "Decision Sciences": "social-other",
 }
 SUBFIELD_PRIMARY = {
     ("Neuroscience", "Cognitive Neuroscience"): "psych-cogsci",
@@ -141,96 +247,414 @@ SUBFIELD_SECONDARY = {
 # Cognitive-science overlay: topics outside psych-cogsci become secondary members when their name or keywords
 # match this lexicon and their subfield is one where cognitive work actually appears.
 COGSCI_SUBFIELDS = {
-    "Artificial Intelligence", "Human-Computer Interaction", "Language and Linguistics", "Linguistics and Language",
-    "Philosophy", "Education", "Economics and Econometrics", "Psychiatry and Mental health", "Neurology",
-    "Biological Psychiatry", "Ecology, Evolution, Behavior and Systematics", "Animal Science and Zoology",
-    "Communication", "Anthropology", "Speech and Hearing", "Rehabilitation", "Cellular and Molecular Neuroscience",
-    "Physiology", "Computer Vision and Pattern Recognition", "Pediatrics, Perinatology and Child Health",
-    "Geriatrics and Gerontology", "Organizational Behavior and Human Resource Management", "Marketing",
-    "History and Philosophy of Science", "Developmental Biology", "Endocrine and Autonomic Systems",
+    "Artificial Intelligence",
+    "Human-Computer Interaction",
+    "Language and Linguistics",
+    "Linguistics and Language",
+    "Philosophy",
+    "Education",
+    "Economics and Econometrics",
+    "Psychiatry and Mental health",
+    "Neurology",
+    "Biological Psychiatry",
+    "Ecology, Evolution, Behavior and Systematics",
+    "Animal Science and Zoology",
+    "Communication",
+    "Anthropology",
+    "Speech and Hearing",
+    "Rehabilitation",
+    "Cellular and Molecular Neuroscience",
+    "Physiology",
+    "Computer Vision and Pattern Recognition",
+    "Pediatrics, Perinatology and Child Health",
+    "Geriatrics and Gerontology",
+    "Organizational Behavior and Human Resource Management",
+    "Marketing",
+    "History and Philosophy of Science",
+    "Developmental Biology",
+    "Endocrine and Autonomic Systems",
 }
 COGSCI_TERMS = [
-    r"\bcogniti", r"\bpercept", r"\battention", r"\bmemory\b", r"\bmemories", r"consciousness", r"\bemotion",
-    r"\baffect(ive)?\b", r"decision[- ]making", r"\bjudg(e)?ment", r"\breasoning\b", r"\bheuristic",
-    r"language acquisition", r"psycholinguist", r"\bbilingual", r"\breading\b", r"\bdyslexi", r"\bmind\b",
-    r"\bmental\b", r"metacogniti", r"executive function", r"working memory", r"categori[sz]ation",
-    r"theory of mind", r"\bembodi", r"\blearning and memory\b", r"human learning", r"\bmotivation",
-    r"behavio(u)?ral economics", r"\bnudg", r"(?<!artificial )\bintelligence\b", r"\bautism", r"\bschizophreni",
-    r"\bdepress", r"\banxiety", r"\bdementia", r"\balzheimer", r"\baphasi", r"\bsleep\b", r"\bpersonality",
-    r"\bsocial cognition", r"\bfear\b", r"\breward\b", r"\bhabit", r"\banimal cognition", r"\bcomparative cognition",
-    r"neural basis", r"\bbrain\b", r"\bneurocogniti", r"cognitive model", r"\bhuman behavio", r"\bperceptual",
-    r"\bvisual (system|processing|cortex)", r"\bspeech perception", r"\bfree will", r"\bphilosophy of mind",
-    r"\bintentional", r"\bmoral psychology", r"\bpsycholog",
+    r"\bcogniti",
+    r"\bpercept",
+    r"\battention",
+    r"\bmemory\b",
+    r"\bmemories",
+    r"consciousness",
+    r"\bemotion",
+    r"\baffect(ive)?\b",
+    r"decision[- ]making",
+    r"\bjudg(e)?ment",
+    r"\breasoning\b",
+    r"\bheuristic",
+    r"language acquisition",
+    r"psycholinguist",
+    r"\bbilingual",
+    r"\breading\b",
+    r"\bdyslexi",
+    r"\bmind\b",
+    r"\bmental\b",
+    r"metacogniti",
+    r"executive function",
+    r"working memory",
+    r"categori[sz]ation",
+    r"theory of mind",
+    r"\bembodi",
+    r"\blearning and memory\b",
+    r"human learning",
+    r"\bmotivation",
+    r"behavio(u)?ral economics",
+    r"\bnudg",
+    r"(?<!artificial )\bintelligence\b",
+    r"\bautism",
+    r"\bschizophreni",
+    r"\bdepress",
+    r"\banxiety",
+    r"\bdementia",
+    r"\balzheimer",
+    r"\baphasi",
+    r"\bsleep\b",
+    r"\bpersonality",
+    r"\bsocial cognition",
+    r"\bfear\b",
+    r"\breward\b",
+    r"\bhabit",
+    r"\banimal cognition",
+    r"\bcomparative cognition",
+    r"neural basis",
+    r"\bbrain\b",
+    r"\bneurocogniti",
+    r"cognitive model",
+    r"\bhuman behavio",
+    r"\bperceptual",
+    r"\bvisual (system|processing|cortex)",
+    r"\bspeech perception",
+    r"\bfree will",
+    r"\bphilosophy of mind",
+    r"\bintentional",
+    r"\bmoral psychology",
+    r"\bpsycholog",
 ]
-COGSCI_EXCLUDE = [r"\bmemory (allocation|management|systems?|hierarchy|devices?|cells?|chips?)",
-                  r"\bcache\b", r"\bflash memory", r"\bmemristor", r"\bshape memory", r"\bmachine reading",
-                  r"cognitive (radio|computing and networks)", r"\btumou?r", r"\blymphoma", r"\bsentiment"]
+COGSCI_EXCLUDE = [
+    r"\bmemory (allocation|management|systems?|hierarchy|devices?|cells?|chips?)",
+    r"\bcache\b",
+    r"\bflash memory",
+    r"\bmemristor",
+    r"\bshape memory",
+    r"\bmachine reading",
+    r"cognitive (radio|computing and networks)",
+    r"\btumou?r",
+    r"\blymphoma",
+    r"\bsentiment",
+]
 # Education and AI topic names use "learning" for both human and machine learning; for these two subfields the
 # overlay also accepts human-learning names, and the machine-learning ones are excluded.
 COGSCI_EXTRA = {
-    "Education": [r"\blearning\b", r"\bliteracy", r"\bchild development", r"\bcritical thinking",
-                  r"\bassessment and feedback", r"\bpedagog"],
-    "Artificial Intelligence": [r"intelligent tutoring", r"\bcognitive science", r"\blogic, reasoning"],
+    "Education": [
+        r"\blearning\b",
+        r"\bliteracy",
+        r"\bchild development",
+        r"\bcritical thinking",
+        r"\bassessment and feedback",
+        r"\bpedagog",
+    ],
+    "Artificial Intelligence": [
+        r"intelligent tutoring",
+        r"\bcognitive science",
+        r"\blogic, reasoning",
+    ],
 }
-COGSCI_EXTRA_EXCLUDE = [r"machine learning", r"deep learning", r"\bfew-shot", r"domain adaptation", r"federated"]
+COGSCI_EXTRA_EXCLUDE = [
+    r"machine learning",
+    r"deep learning",
+    r"\bfew-shot",
+    r"domain adaptation",
+    r"federated",
+]
 
 # Study map for psychology and cognitive science: areas a PhD-level reader navigates by. Multi-label; the primary
 # area is the one with the most matches (ties go to the earlier area).
 PSYCH_AREAS = [
-    ("perception", "Perception and psychophysics",
-     [r"\bpercept", r"\bvisual", r"\bvision\b", r"auditory", r"\bhearing\b", r"multisensory", r"\bsensory",
-      r"psychophysic", r"\btactile", r"\bolfact", r"\bmotion perception", r"\bface (perception|recognition)",
-      r"\bspeech perception", r"\bpain\b"]),
-    ("attention", "Attention, consciousness and cognitive control",
-     [r"\battention", r"consciousness", r"\bawareness", r"executive function", r"cognitive control",
-      r"\binhibition", r"\bmind[- ]wandering", r"\bvigilance"]),
-    ("memory", "Memory and learning",
-     [r"\bmemory\b", r"\bmemories", r"\bforgetting", r"\brecall\b", r"\brecognition memory", r"\bencoding",
-      r"retrieval practice", r"\bspacing\b", r"\bamnesi", r"\bimplicit learning", r"\bskill acquisition",
-      r"\bconditioning", r"\breinforcement\b", r"\bassociative learning", r"\bhabituation"]),
-    ("language", "Language and psycholinguistics",
-     [r"\blanguage\b", r"psycholinguist", r"\breading\b", r"\bspeech\b", r"\bbilingual", r"\bword\b",
-      r"\bsentence", r"\bdyslexi", r"\baphasi", r"\bsign language", r"\bliteracy"]),
-    ("thinking", "Reasoning, judgement and decision making",
-     [r"\breasoning\b", r"decision[- ]making", r"\bjudg(e)?ment", r"\bheuristic", r"problem[- ]solving",
-      r"\bcreativity", r"\bintelligence\b", r"\bbelief", r"\brisk\b", r"\bchoice\b", r"\bcategori[sz]ation",
-      r"\bconcept", r"\bnumerical cognition", r"\banalog(y|ical)"]),
-    ("emotion-motivation", "Emotion and motivation",
-     [r"\bemotion", r"\baffect(ive)?\b", r"\bmood\b", r"\bmotivation", r"\breward\b", r"\bstress\b", r"\bfear\b",
-      r"\bwell[- ]being", r"\bhappiness", r"\bself[- ]regulation", r"\bgoal"]),
-    ("developmental", "Development across the lifespan",
-     [r"\bchild", r"\binfan", r"\badolescen", r"\bdevelopment(al)?\b", r"\baging\b", r"\bageing\b",
-      r"\bolder adults", r"\blife[- ]?span", r"\bparenting", r"\battachment\b", r"\bearly childhood"]),
-    ("social", "Social and cultural psychology",
-     [r"\bsocial\b", r"\battitude", r"\bprejudice", r"\bstereotyp", r"\bgroup", r"\bculture", r"\bcultural",
-      r"\bidentity", r"\bpersuasion", r"\bcooperation", r"\bmoral", r"\bintergroup", r"\bclose relationships"]),
-    ("personality", "Personality and individual differences",
-     [r"\bpersonality", r"\btraits?\b", r"\bindividual differences", r"\bnarcissis", r"\bself[- ]esteem",
-      r"\btemperament"]),
-    ("clinical", "Clinical psychology and psychopathology",
-     [r"\banxiety", r"\bdepress", r"\bdisorder", r"\btherap", r"psychopatholog", r"\bautism", r"\badhd\b",
-      r"attention[- ]deficit", r"\bschizophreni", r"\bptsd\b", r"post[- ]?traumatic", r"\baddiction",
-      r"\bsubstance use", r"\bsuicid", r"\bpsychosis", r"\beating disorder", r"\bmental health", r"\bbipolar",
-      r"\bobsessive", r"\bdementia", r"\btrauma"]),
-    ("biological", "Biological psychology and cognitive neuroscience",
-     [r"\bbrain\b", r"\bneural\b", r"\bneuro", r"\bcortex", r"\bcortical", r"\bfmri\b", r"\beeg\b",
-      r"\bneuroimaging", r"\bhormon", r"\bsleep\b", r"\bdopamin", r"\bhippocamp", r"\bamygdala",
-      r"\bsynap", r"\boscillation", r"\bgenetic"]),
-    ("methods", "Methods, psychometrics and statistics",
-     [r"\bpsychometric", r"\bmeasurement", r"\bscale (development|validation)", r"\bvalidity",
-      r"\breliability", r"\bstatistic", r"\bmeta[- ]analys", r"\breplication", r"\bfactor analysis",
-      r"\bitem response", r"\bstructural equation", r"\bexperimental design", r"\bopen science"]),
-    ("applied", "Applied, educational, organisational and health psychology",
-     [r"\beducation", r"\bstudents?\b", r"\bteach", r"\bschool", r"\bworkplace", r"\borganizational",
-      r"\bemployee", r"\bleadership", r"\bjob\b", r"\bsport", r"\bhealth behavio", r"\bhuman factors",
-      r"\bergonomic", r"\bconsumer", r"\btraffic", r"\bdriving\b", r"\bcounsel"]),
-    ("computational", "Computational and formal models of cognition",
-     [r"\bcomputational model", r"\bcognitive model", r"\bbayesian", r"\bneural network", r"\bconnectionis",
-      r"\breinforcement learning", r"\bpredictive (processing|coding)", r"\bcognitive architecture",
-      r"\bartificial intelligence", r"\bdeep learning"]),
-    ("foundations", "History, philosophy and foundations of psychology",
-     [r"\bphilosoph", r"\bhistory of psychology", r"\bfree will", r"\bconsciousness", r"\bmind[- ]body",
-      r"\bepistemolog", r"\bintentional", r"\bphenomenolog", r"\bevolutionary psychology", r"\bevolution"]),
+    (
+        "perception",
+        "Perception and psychophysics",
+        [
+            r"\bpercept",
+            r"\bvisual",
+            r"\bvision\b",
+            r"auditory",
+            r"\bhearing\b",
+            r"multisensory",
+            r"\bsensory",
+            r"psychophysic",
+            r"\btactile",
+            r"\bolfact",
+            r"\bmotion perception",
+            r"\bface (perception|recognition)",
+            r"\bspeech perception",
+            r"\bpain\b",
+        ],
+    ),
+    (
+        "attention",
+        "Attention, consciousness and cognitive control",
+        [
+            r"\battention",
+            r"consciousness",
+            r"\bawareness",
+            r"executive function",
+            r"cognitive control",
+            r"\binhibition",
+            r"\bmind[- ]wandering",
+            r"\bvigilance",
+        ],
+    ),
+    (
+        "memory",
+        "Memory and learning",
+        [
+            r"\bmemory\b",
+            r"\bmemories",
+            r"\bforgetting",
+            r"\brecall\b",
+            r"\brecognition memory",
+            r"\bencoding",
+            r"retrieval practice",
+            r"\bspacing\b",
+            r"\bamnesi",
+            r"\bimplicit learning",
+            r"\bskill acquisition",
+            r"\bconditioning",
+            r"\breinforcement\b",
+            r"\bassociative learning",
+            r"\bhabituation",
+        ],
+    ),
+    (
+        "language",
+        "Language and psycholinguistics",
+        [
+            r"\blanguage\b",
+            r"psycholinguist",
+            r"\breading\b",
+            r"\bspeech\b",
+            r"\bbilingual",
+            r"\bword\b",
+            r"\bsentence",
+            r"\bdyslexi",
+            r"\baphasi",
+            r"\bsign language",
+            r"\bliteracy",
+        ],
+    ),
+    (
+        "thinking",
+        "Reasoning, judgement and decision making",
+        [
+            r"\breasoning\b",
+            r"decision[- ]making",
+            r"\bjudg(e)?ment",
+            r"\bheuristic",
+            r"problem[- ]solving",
+            r"\bcreativity",
+            r"\bintelligence\b",
+            r"\bbelief",
+            r"\brisk\b",
+            r"\bchoice\b",
+            r"\bcategori[sz]ation",
+            r"\bconcept",
+            r"\bnumerical cognition",
+            r"\banalog(y|ical)",
+        ],
+    ),
+    (
+        "emotion-motivation",
+        "Emotion and motivation",
+        [
+            r"\bemotion",
+            r"\baffect(ive)?\b",
+            r"\bmood\b",
+            r"\bmotivation",
+            r"\breward\b",
+            r"\bstress\b",
+            r"\bfear\b",
+            r"\bwell[- ]being",
+            r"\bhappiness",
+            r"\bself[- ]regulation",
+            r"\bgoal",
+        ],
+    ),
+    (
+        "developmental",
+        "Development across the lifespan",
+        [
+            r"\bchild",
+            r"\binfan",
+            r"\badolescen",
+            r"\bdevelopment(al)?\b",
+            r"\baging\b",
+            r"\bageing\b",
+            r"\bolder adults",
+            r"\blife[- ]?span",
+            r"\bparenting",
+            r"\battachment\b",
+            r"\bearly childhood",
+        ],
+    ),
+    (
+        "social",
+        "Social and cultural psychology",
+        [
+            r"\bsocial\b",
+            r"\battitude",
+            r"\bprejudice",
+            r"\bstereotyp",
+            r"\bgroup",
+            r"\bculture",
+            r"\bcultural",
+            r"\bidentity",
+            r"\bpersuasion",
+            r"\bcooperation",
+            r"\bmoral",
+            r"\bintergroup",
+            r"\bclose relationships",
+        ],
+    ),
+    (
+        "personality",
+        "Personality and individual differences",
+        [
+            r"\bpersonality",
+            r"\btraits?\b",
+            r"\bindividual differences",
+            r"\bnarcissis",
+            r"\bself[- ]esteem",
+            r"\btemperament",
+        ],
+    ),
+    (
+        "clinical",
+        "Clinical psychology and psychopathology",
+        [
+            r"\banxiety",
+            r"\bdepress",
+            r"\bdisorder",
+            r"\btherap",
+            r"psychopatholog",
+            r"\bautism",
+            r"\badhd\b",
+            r"attention[- ]deficit",
+            r"\bschizophreni",
+            r"\bptsd\b",
+            r"post[- ]?traumatic",
+            r"\baddiction",
+            r"\bsubstance use",
+            r"\bsuicid",
+            r"\bpsychosis",
+            r"\beating disorder",
+            r"\bmental health",
+            r"\bbipolar",
+            r"\bobsessive",
+            r"\bdementia",
+            r"\btrauma",
+        ],
+    ),
+    (
+        "biological",
+        "Biological psychology and cognitive neuroscience",
+        [
+            r"\bbrain\b",
+            r"\bneural\b",
+            r"\bneuro",
+            r"\bcortex",
+            r"\bcortical",
+            r"\bfmri\b",
+            r"\beeg\b",
+            r"\bneuroimaging",
+            r"\bhormon",
+            r"\bsleep\b",
+            r"\bdopamin",
+            r"\bhippocamp",
+            r"\bamygdala",
+            r"\bsynap",
+            r"\boscillation",
+            r"\bgenetic",
+        ],
+    ),
+    (
+        "methods",
+        "Methods, psychometrics and statistics",
+        [
+            r"\bpsychometric",
+            r"\bmeasurement",
+            r"\bscale (development|validation)",
+            r"\bvalidity",
+            r"\breliability",
+            r"\bstatistic",
+            r"\bmeta[- ]analys",
+            r"\breplication",
+            r"\bfactor analysis",
+            r"\bitem response",
+            r"\bstructural equation",
+            r"\bexperimental design",
+            r"\bopen science",
+        ],
+    ),
+    (
+        "applied",
+        "Applied, educational, organisational and health psychology",
+        [
+            r"\beducation",
+            r"\bstudents?\b",
+            r"\bteach",
+            r"\bschool",
+            r"\bworkplace",
+            r"\borganizational",
+            r"\bemployee",
+            r"\bleadership",
+            r"\bjob\b",
+            r"\bsport",
+            r"\bhealth behavio",
+            r"\bhuman factors",
+            r"\bergonomic",
+            r"\bconsumer",
+            r"\btraffic",
+            r"\bdriving\b",
+            r"\bcounsel",
+        ],
+    ),
+    (
+        "computational",
+        "Computational and formal models of cognition",
+        [
+            r"\bcomputational model",
+            r"\bcognitive model",
+            r"\bbayesian",
+            r"\bneural network",
+            r"\bconnectionis",
+            r"\breinforcement learning",
+            r"\bpredictive (processing|coding)",
+            r"\bcognitive architecture",
+            r"\bartificial intelligence",
+            r"\bdeep learning",
+        ],
+    ),
+    (
+        "foundations",
+        "History, philosophy and foundations of psychology",
+        [
+            r"\bphilosoph",
+            r"\bhistory of psychology",
+            r"\bfree will",
+            r"\bconsciousness",
+            r"\bmind[- ]body",
+            r"\bepistemolog",
+            r"\bintentional",
+            r"\bphenomenolog",
+            r"\bevolutionary psychology",
+            r"\bevolution",
+        ],
+    ),
 ]
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -241,19 +665,26 @@ ARXIV = {
     "cond-mat.stat-mech": ("Physics and Astronomy", "Statistical and Nonlinear Physics"),
     "cond-mat.dis-nn": ("Physics and Astronomy", "Statistical and Nonlinear Physics"),
     "cond-mat.mtrl-sci": ("Materials Science", "General Materials Science"),
-    "cs.AI": ("Computer Science", "Artificial Intelligence"), "cs.LG": ("Computer Science", "Artificial Intelligence"),
-    "cs.MA": ("Computer Science", "Artificial Intelligence"), "cs.NE": ("Computer Science", "Artificial Intelligence"),
+    "cs.AI": ("Computer Science", "Artificial Intelligence"),
+    "cs.LG": ("Computer Science", "Artificial Intelligence"),
+    "cs.MA": ("Computer Science", "Artificial Intelligence"),
+    "cs.NE": ("Computer Science", "Artificial Intelligence"),
     "cs.CL": ("Computer Science", "Artificial Intelligence"),
     "cs.CV": ("Computer Science", "Computer Vision and Pattern Recognition"),
     "cs.HC": ("Computer Science", "Human-Computer Interaction"),
-    "cs.IR": ("Computer Science", "Information Systems"), "cs.DB": ("Computer Science", "Information Systems"),
-    "cs.DL": ("Computer Science", "Information Systems"), "cs.SI": ("Computer Science", "Information Systems"),
+    "cs.IR": ("Computer Science", "Information Systems"),
+    "cs.DB": ("Computer Science", "Information Systems"),
+    "cs.DL": ("Computer Science", "Information Systems"),
+    "cs.SI": ("Computer Science", "Information Systems"),
     "cs.CR": ("Computer Science", "Information Systems"),
     "cs.NI": ("Computer Science", "Computer Networks and Communications"),
     "cs.DC": ("Computer Science", "Computer Networks and Communications"),
-    "cs.SE": ("Computer Science", "Software"), "cs.PL": ("Computer Science", "Software"),
-    "cs.OS": ("Computer Science", "Software"), "cs.MS": ("Computer Science", "Software"),
-    "cs.AR": ("Computer Science", "Hardware and Architecture"), "cs.ET": ("Computer Science", "Hardware and Architecture"),
+    "cs.SE": ("Computer Science", "Software"),
+    "cs.PL": ("Computer Science", "Software"),
+    "cs.OS": ("Computer Science", "Software"),
+    "cs.MS": ("Computer Science", "Software"),
+    "cs.AR": ("Computer Science", "Hardware and Architecture"),
+    "cs.ET": ("Computer Science", "Hardware and Architecture"),
     "cs.PF": ("Computer Science", "Hardware and Architecture"),
     "cs.GR": ("Computer Science", "Computer Graphics and Computer-Aided Design"),
     "cs.CG": ("Computer Science", "Computer Graphics and Computer-Aided Design"),
@@ -275,32 +706,47 @@ ARXIV = {
     "cs.GL": ("Computer Science", "Computer Science Applications"),
     "cs.OH": ("Computer Science", "Computer Science Applications"),
     "econ.*": ("Economics, Econometrics and Finance", "Economics and Econometrics"),
-    "eess.AS": ("Computer Science", "Signal Processing"), "eess.SP": ("Computer Science", "Signal Processing"),
+    "eess.AS": ("Computer Science", "Signal Processing"),
+    "eess.SP": ("Computer Science", "Signal Processing"),
     "eess.IV": ("Computer Science", "Computer Vision and Pattern Recognition"),
     "eess.SY": ("Engineering", "Control and Systems Engineering"),
     "gr-qc": ("Physics and Astronomy", "Nuclear and High Energy Physics"),
     "hep-*": ("Physics and Astronomy", "Nuclear and High Energy Physics"),
     "nucl-*": ("Physics and Astronomy", "Nuclear and High Energy Physics"),
-    "math.AC": ("Mathematics", "Algebra and Number Theory"), "math.AG": ("Mathematics", "Algebra and Number Theory"),
-    "math.NT": ("Mathematics", "Algebra and Number Theory"), "math.RA": ("Mathematics", "Algebra and Number Theory"),
-    "math.GR": ("Mathematics", "Algebra and Number Theory"), "math.RT": ("Mathematics", "Algebra and Number Theory"),
-    "math.QA": ("Mathematics", "Algebra and Number Theory"), "math.KT": ("Mathematics", "Algebra and Number Theory"),
+    "math.AC": ("Mathematics", "Algebra and Number Theory"),
+    "math.AG": ("Mathematics", "Algebra and Number Theory"),
+    "math.NT": ("Mathematics", "Algebra and Number Theory"),
+    "math.RA": ("Mathematics", "Algebra and Number Theory"),
+    "math.GR": ("Mathematics", "Algebra and Number Theory"),
+    "math.RT": ("Mathematics", "Algebra and Number Theory"),
+    "math.QA": ("Mathematics", "Algebra and Number Theory"),
+    "math.KT": ("Mathematics", "Algebra and Number Theory"),
     "math.CT": ("Mathematics", "Algebra and Number Theory"),
-    "math.AT": ("Mathematics", "Geometry and Topology"), "math.GT": ("Mathematics", "Geometry and Topology"),
-    "math.DG": ("Mathematics", "Geometry and Topology"), "math.GN": ("Mathematics", "Geometry and Topology"),
-    "math.MG": ("Mathematics", "Geometry and Topology"), "math.SG": ("Mathematics", "Geometry and Topology"),
+    "math.AT": ("Mathematics", "Geometry and Topology"),
+    "math.GT": ("Mathematics", "Geometry and Topology"),
+    "math.DG": ("Mathematics", "Geometry and Topology"),
+    "math.GN": ("Mathematics", "Geometry and Topology"),
+    "math.MG": ("Mathematics", "Geometry and Topology"),
+    "math.SG": ("Mathematics", "Geometry and Topology"),
     # OpenAlex has no analysis subfield; its analysis topics sit under Applied Mathematics.
-    "math.AP": ("Mathematics", "Applied Mathematics"), "math.CA": ("Mathematics", "Applied Mathematics"),
-    "math.CV": ("Mathematics", "Applied Mathematics"), "math.FA": ("Mathematics", "Applied Mathematics"),
-    "math.OA": ("Mathematics", "Applied Mathematics"), "math.SP": ("Mathematics", "Applied Mathematics"),
-    "math.DS": ("Mathematics", "Applied Mathematics"), "math.OC": ("Mathematics", "Applied Mathematics"),
+    "math.AP": ("Mathematics", "Applied Mathematics"),
+    "math.CA": ("Mathematics", "Applied Mathematics"),
+    "math.CV": ("Mathematics", "Applied Mathematics"),
+    "math.FA": ("Mathematics", "Applied Mathematics"),
+    "math.OA": ("Mathematics", "Applied Mathematics"),
+    "math.SP": ("Mathematics", "Applied Mathematics"),
+    "math.DS": ("Mathematics", "Applied Mathematics"),
+    "math.OC": ("Mathematics", "Applied Mathematics"),
     "math.CO": ("Mathematics", "Discrete Mathematics and Combinatorics"),
     "math.LO": ("Mathematics", "Theoretical Computer Science"),
     "math.IT": ("Mathematics", "Theoretical Computer Science"),
-    "math.PR": ("Mathematics", "Statistics and Probability"), "math.ST": ("Mathematics", "Statistics and Probability"),
+    "math.PR": ("Mathematics", "Statistics and Probability"),
+    "math.ST": ("Mathematics", "Statistics and Probability"),
     "math.NA": ("Mathematics", "Numerical Analysis"),
-    "math.MP": ("Mathematics", "Mathematical Physics"), "math-ph": ("Mathematics", "Mathematical Physics"),
-    "math.HO": "mathematics", "math.GM": "mathematics",
+    "math.MP": ("Mathematics", "Mathematical Physics"),
+    "math-ph": ("Mathematics", "Mathematical Physics"),
+    "math.HO": "mathematics",
+    "math.GM": "mathematics",
     "nlin.*": ("Physics and Astronomy", "Statistical and Nonlinear Physics"),
     "physics.acc-ph": ("Physics and Astronomy", "Nuclear and High Energy Physics"),
     "physics.plasm-ph": ("Physics and Astronomy", "Nuclear and High Energy Physics"),
@@ -320,26 +766,39 @@ ARXIV = {
     "physics.space-ph": ("Earth and Planetary Sciences", "Space and Planetary Science"),
     "physics.soc-ph": ("Physics and Astronomy", "Statistical and Nonlinear Physics"),
     "physics.ed-ph": ("Social Sciences", "Education"),
-    "physics.class-ph": "natural-sciences", "physics.comp-ph": "natural-sciences",
-    "physics.gen-ph": "natural-sciences", "physics.pop-ph": "natural-sciences",
+    "physics.class-ph": "natural-sciences",
+    "physics.comp-ph": "natural-sciences",
+    "physics.gen-ph": "natural-sciences",
+    "physics.pop-ph": "natural-sciences",
     "q-bio.BM": ("Biochemistry, Genetics and Molecular Biology", "Biochemistry"),
     "q-bio.CB": ("Biochemistry, Genetics and Molecular Biology", "Cell Biology"),
     "q-bio.SC": ("Biochemistry, Genetics and Molecular Biology", "Cell Biology"),
     "q-bio.GN": ("Biochemistry, Genetics and Molecular Biology", "Genetics"),
     "q-bio.MN": ("Biochemistry, Genetics and Molecular Biology", "Molecular Biology"),
     "q-bio.NC": ("Neuroscience", "Cognitive Neuroscience"),
-    "q-bio.PE": ("Agricultural and Biological Sciences", "Ecology, Evolution, Behavior and Systematics"),
+    "q-bio.PE": (
+        "Agricultural and Biological Sciences",
+        "Ecology, Evolution, Behavior and Systematics",
+    ),
     "q-bio.TO": ("Biochemistry, Genetics and Molecular Biology", "Physiology"),
-    "q-bio.OT": "natural-sciences", "q-bio.QM": "natural-sciences",
+    "q-bio.OT": "natural-sciences",
+    "q-bio.QM": "natural-sciences",
     "q-fin.EC": ("Economics, Econometrics and Finance", "Economics and Econometrics"),
     "q-fin.*": ("Economics, Econometrics and Finance", "Finance"),
     "quant-ph": ("Physics and Astronomy", "Atomic and Molecular Physics, and Optics"),
     "stat.ML": ("Computer Science", "Artificial Intelligence"),
     "stat.*": ("Mathematics", "Statistics and Probability"),
 }
-ARXIV_SECONDARY = {"cs.CL": ["humanities", "psych-cogsci"], "stat.ML": ["mathematics"], "cs.RO": ["cs-ai"],
-                   "cs.LG": ["mathematics"], "physics.soc-ph": ["social-other"], "math.HO": ["humanities"],
-                   "cs.CY": ["social-other"], "cs.HC": ["psych-cogsci"]}
+ARXIV_SECONDARY = {
+    "cs.CL": ["humanities", "psych-cogsci"],
+    "stat.ML": ["mathematics"],
+    "cs.RO": ["cs-ai"],
+    "cs.LG": ["mathematics"],
+    "physics.soc-ph": ["social-other"],
+    "math.HO": ["humanities"],
+    "cs.CY": ["social-other"],
+    "cs.HC": ["psych-cogsci"],
+}
 
 # Library of Congress Classification: (class letters, low, high, target, secondary). Numbers are class numbers
 # within the subclass; None means the whole subclass. The most specific match wins.
@@ -349,7 +808,13 @@ LCC = [
     ("BC", None, None, ("Arts and Humanities", "Philosophy"), ["mathematics"]),
     ("BD", None, None, ("Arts and Humanities", "Philosophy"), []),
     ("BF", None, None, ("Psychology", "General Psychology"), []),
-    ("BF", 1001, 2055, ("Arts and Humanities", "Religious studies"), []),  # parapsychology and occult sciences
+    (
+        "BF",
+        1001,
+        2055,
+        ("Arts and Humanities", "Religious studies"),
+        [],
+    ),  # parapsychology and occult sciences
     ("BH", None, None, ("Arts and Humanities", "Philosophy"), []),
     ("BJ", None, None, ("Arts and Humanities", "Philosophy"), []),
     ("BL", None, None, ("Arts and Humanities", "Religious studies"), []),
@@ -375,12 +840,30 @@ LCC = [
     ("J", None, None, ("Social Sciences", "Political Science and International Relations"), []),
     ("K", None, None, ("Social Sciences", "Law"), []),
     ("L", None, None, ("Social Sciences", "Education"), []),
-    ("LB", 1051, 1091, ("Psychology", "Developmental and Educational Psychology"), []),  # educational psychology
+    (
+        "LB",
+        1051,
+        1091,
+        ("Psychology", "Developmental and Educational Psychology"),
+        [],
+    ),  # educational psychology
     ("M", None, None, ("Arts and Humanities", "Music"), []),
-    ("ML", 3800, 3923, ("Arts and Humanities", "Music"), ["psych-cogsci"]),  # psychology and physics of music
+    (
+        "ML",
+        3800,
+        3923,
+        ("Arts and Humanities", "Music"),
+        ["psych-cogsci"],
+    ),  # psychology and physics of music
     ("N", None, None, ("Arts and Humanities", "Visual Arts and Performing Arts"), []),
     ("P", None, None, ("Arts and Humanities", "Language and Linguistics"), []),
-    ("P", 37, 37.9, ("Psychology", "Experimental and Cognitive Psychology"), ["humanities"]),  # psycholinguistics
+    (
+        "P",
+        37,
+        37.9,
+        ("Psychology", "Experimental and Cognitive Psychology"),
+        ["humanities"],
+    ),  # psycholinguistics
     ("PA", None, None, ("Arts and Humanities", "Classics"), []),
     ("PE", None, None, ("Arts and Humanities", "Language and Linguistics"), []),
     ("PN", None, None, ("Arts and Humanities", "Literature and Literary Theory"), []),
@@ -390,7 +873,13 @@ LCC = [
     ("PT", None, None, ("Arts and Humanities", "Literature and Literary Theory"), []),
     ("PL", None, None, ("Arts and Humanities", "Language and Linguistics"), []),
     ("Q", None, None, "natural-sciences", []),
-    ("Q", 334, 390, ("Computer Science", "Artificial Intelligence"), ["psych-cogsci"]),  # AI, cybernetics
+    (
+        "Q",
+        334,
+        390,
+        ("Computer Science", "Artificial Intelligence"),
+        ["psych-cogsci"],
+    ),  # AI, cybernetics
     ("QA", None, None, "mathematics", []),
     ("QA", 75, 76.95, "cs-ai", []),
     ("QA", 76.87, 76.87, ("Computer Science", "Artificial Intelligence"), []),  # neural networks
@@ -409,11 +898,22 @@ LCC = [
     ("QH", 573, 671, ("Biochemistry, Genetics and Molecular Biology", "Cell Biology"), []),
     ("QK", None, None, ("Agricultural and Biological Sciences", "Plant Science"), []),
     ("QL", None, None, ("Agricultural and Biological Sciences", "Animal Science and Zoology"), []),
-    ("QL", 750, 795, ("Agricultural and Biological Sciences", "Ecology, Evolution, Behavior and Systematics"),
-     ["psych-cogsci"]),  # animal behaviour
+    (
+        "QL",
+        750,
+        795,
+        ("Agricultural and Biological Sciences", "Ecology, Evolution, Behavior and Systematics"),
+        ["psych-cogsci"],
+    ),  # animal behaviour
     ("QM", None, None, ("Medicine", "Anatomy"), []),
     ("QP", None, None, ("Biochemistry, Genetics and Molecular Biology", "Physiology"), []),
-    ("QP", 351, 495, ("Neuroscience", "Cognitive Neuroscience"), []),  # neurophysiology, neuropsychology
+    (
+        "QP",
+        351,
+        495,
+        ("Neuroscience", "Cognitive Neuroscience"),
+        [],
+    ),  # neurophysiology, neuropsychology
     ("QR", None, None, ("Immunology and Microbiology", "Microbiology"), []),
     ("R", None, None, "medicine", []),
     ("RC", 321, 431, ("Medicine", "Neurology"), ["psych-cogsci"]),
@@ -439,28 +939,43 @@ LCC = [
 
 # Dewey Decimal Classification: (low, high, target, secondary) over the decimal class number.
 DDC = [
-    (0, 99.999, "social-other", []), (4, 6.999, "cs-ai", []),
-    (100, 149.999, ("Arts and Humanities", "Philosophy"), []), (128, 128.999, ("Arts and Humanities", "Philosophy"),
-                                                                 ["psych-cogsci"]),  # philosophy of mind
+    (0, 99.999, "social-other", []),
+    (4, 6.999, "cs-ai", []),
+    (100, 149.999, ("Arts and Humanities", "Philosophy"), []),
+    (128, 128.999, ("Arts and Humanities", "Philosophy"), ["psych-cogsci"]),  # philosophy of mind
     (150, 159.999, ("Psychology", "General Psychology"), []),
-    (160, 199.999, ("Arts and Humanities", "Philosophy"), []), (200, 299.999, ("Arts and Humanities", "Religious studies"), []),
-    (300, 399.999, "social-other", []), (330, 339.999, ("Economics, Econometrics and Finance", "Economics and Econometrics"), []),
+    (160, 199.999, ("Arts and Humanities", "Philosophy"), []),
+    (200, 299.999, ("Arts and Humanities", "Religious studies"), []),
+    (300, 399.999, "social-other", []),
+    (330, 339.999, ("Economics, Econometrics and Finance", "Economics and Econometrics"), []),
     (370, 379.999, ("Social Sciences", "Education"), []),
     (370.15, 370.159, ("Psychology", "Developmental and Educational Psychology"), []),
     (400, 499.999, ("Arts and Humanities", "Language and Linguistics"), []),
     (401.9, 401.9999, ("Psychology", "Experimental and Cognitive Psychology"), ["humanities"]),
-    (500, 509.999, "natural-sciences", []), (510, 519.999, "mathematics", []),
+    (500, 509.999, "natural-sciences", []),
+    (510, 519.999, "mathematics", []),
     (519.2, 519.599, ("Mathematics", "Statistics and Probability"), []),
-    (520, 529.999, ("Physics and Astronomy", "Astronomy and Astrophysics"), []), (530, 599.999, "natural-sciences", []),
-    (591.5, 591.599, ("Agricultural and Biological Sciences", "Ecology, Evolution, Behavior and Systematics"),
-     ["psych-cogsci"]),
-    (600, 609.999, "engineering", []), (610, 619.999, "medicine", []),
+    (520, 529.999, ("Physics and Astronomy", "Astronomy and Astrophysics"), []),
+    (530, 599.999, "natural-sciences", []),
+    (
+        591.5,
+        591.599,
+        ("Agricultural and Biological Sciences", "Ecology, Evolution, Behavior and Systematics"),
+        ["psych-cogsci"],
+    ),
+    (600, 609.999, "engineering", []),
+    (610, 619.999, "medicine", []),
     (612.8, 612.899, ("Neuroscience", "Cognitive Neuroscience"), ["medicine"]),
     (616.8, 616.899, ("Medicine", "Psychiatry and Mental health"), ["psych-cogsci"]),
-    (620, 629.999, "engineering", []), (630, 639.999, "natural-sciences", []), (640, 659.999, "social-other", []),
-    (660, 699.999, "engineering", []), (700, 789.999, "humanities", []), (790, 799.999, "social-other", []),
+    (620, 629.999, "engineering", []),
+    (630, 639.999, "natural-sciences", []),
+    (640, 659.999, "social-other", []),
+    (660, 699.999, "engineering", []),
+    (700, 789.999, "humanities", []),
+    (790, 799.999, "social-other", []),
     (800, 899.999, ("Arts and Humanities", "Literature and Literary Theory"), []),
-    (900, 999.999, ("Arts and Humanities", "History"), []), (910, 919.999, "social-other", []),
+    (900, 999.999, ("Arts and Humanities", "History"), []),
+    (910, 919.999, "social-other", []),
 ]
 
 # Category hints from manifests and inbox folder names (oa-forge domains seen so far: math, inst, textbook,
@@ -506,7 +1021,9 @@ def main():
     for key in list(SUBFIELD_PRIMARY) + list(SUBFIELD_SECONDARY):
         assert key in sf_key, f"unknown subfield key {key}"
     for s in subfields:
-        assert s["field"]["display_name"] in FIELD_PRIMARY, f"field without a category: {s['field']}"
+        assert s["field"]["display_name"] in FIELD_PRIMARY, (
+            f"field without a category: {s['field']}"
+        )
 
     cog = compile_terms(COGSCI_TERMS)
     cog_ex = compile_terms(COGSCI_EXCLUDE)
@@ -526,21 +1043,38 @@ def main():
         overlay = False
         # The overlay matches topic names only: OpenAlex keyword lists are too broad (they pulled in currency
         # recognition and quantum computing when matched).
-        if primary != "psych-cogsci" and sub in COGSCI_SUBFIELDS and not any(r.search(name) for r in cog_ex):
+        if (
+            primary != "psych-cogsci"
+            and sub in COGSCI_SUBFIELDS
+            and not any(r.search(name) for r in cog_ex)
+        ):
             hit = any(r.search(name) for r in cog) or (
                 any(r.search(name) for r in cog_extra.get(sub, []))
-                and not any(r.search(name) for r in cog_extra_ex))
+                and not any(r.search(name) for r in cog_extra_ex)
+            )
             if hit:
                 secondary = secondary + ["psych-cogsci"]
                 overlay = True
-        entry = {"name": t["display_name"], "field": field, "subfield": sub, "primary": primary,
-                 "secondary": sorted(set(secondary)), "works_count": t.get("works_count", 0)}
+        entry = {
+            "name": t["display_name"],
+            "field": field,
+            "subfield": sub,
+            "primary": primary,
+            "secondary": sorted(set(secondary)),
+            "works_count": t.get("works_count", 0),
+        }
         if overlay:
             entry["cogsci_overlay"] = True
         if primary == "psych-cogsci" or "psych-cogsci" in entry["secondary"]:
             # The topic name counts three times as much as its (broad) keyword list.
-            scored = [(3 * sum(1 for r in rx if r.search(name)) + sum(1 for r in rx if r.search(text)), i, slug)
-                      for i, (slug, _, rx) in enumerate(areas)]
+            scored = [
+                (
+                    3 * sum(1 for r in rx if r.search(name)) + sum(1 for r in rx if r.search(text)),
+                    i,
+                    slug,
+                )
+                for i, (slug, _, rx) in enumerate(areas)
+            ]
             hits = [(score, i, slug) for score, i, slug in scored if score > 0]
             hits.sort(key=lambda x: (-x[0], x[1]))
             entry["areas"] = [slug for _, _, slug in hits] or ["general"]
@@ -552,8 +1086,12 @@ def main():
         if sf is None:
             return {"category": target, "secondary": secondary}
         primary, sec = subfield_categories(sf["field"]["display_name"], sf["display_name"])
-        return {"category": primary, "secondary": sorted(set(sec + secondary) - {primary}),
-                "openalex_subfield": sf["id"].rsplit("/", 1)[-1], "subfield": sf["display_name"]}
+        return {
+            "category": primary,
+            "secondary": sorted(set(sec + secondary) - {primary}),
+            "openalex_subfield": sf["id"].rsplit("/", 1)[-1],
+            "subfield": sf["display_name"],
+        }
 
     arxiv_map, unmapped = {}, []
     for c in arxiv:
@@ -561,13 +1099,18 @@ def main():
         target = ARXIV.get(code)
         if target is None:
             prefix = code.split(".")[0] if "." in code else re.sub(r"-\w+$", "", code)
-            target = ARXIV.get(code.split(".")[0] + ".*") or ARXIV.get(prefix + "-*") or ARXIV.get(prefix + ".*")
+            target = (
+                ARXIV.get(code.split(".")[0] + ".*")
+                or ARXIV.get(prefix + "-*")
+                or ARXIV.get(prefix + ".*")
+            )
         if target is None:
             if c["active"]:
                 unmapped.append(code)
             continue
-        arxiv_map[code] = dict(target_json(target, ARXIV_SECONDARY.get(code, [])), name=c["name"],
-                               active=c["active"])
+        arxiv_map[code] = dict(
+            target_json(target, ARXIV_SECONDARY.get(code, [])), name=c["name"], active=c["active"]
+        )
     assert not unmapped, f"active arXiv categories without a mapping: {unmapped}"
 
     lcc = [dict(target_json(t, sec), cls=cls, low=lo, high=hi) for cls, lo, hi, t, sec in LCC]
@@ -587,72 +1130,130 @@ def main():
     cat_members = Counter(c for e in topic_map.values() for c in {e["primary"], *e["secondary"]})
 
     out = {
-        "format": 1, "version": VERSION,
-        "sources": {"openalex": json.loads((root / "openalex" / "topics.json").read_text(encoding="utf-8"))["fetched"],
-                    "arxiv": "github.com/arXiv/arxiv-base arxiv/taxonomy/definitions.py"},
-        "categories": [dict(slug=c["slug"], name=c["name"], priority=c["priority"], scope=c["scope"],
-                            targets={"pilot": {"papers": c["pilot"][0], "books": c["pilot"][1]},
-                                     "full": {"papers": c["full"][0], "books": c["full"][1]}},
-                            hints=c["synonyms"]) for c in CATEGORIES],
+        "format": 1,
+        "version": VERSION,
+        "sources": {
+            "openalex": json.loads((root / "openalex" / "topics.json").read_text(encoding="utf-8"))[
+                "fetched"
+            ],
+            "arxiv": "github.com/arXiv/arxiv-base arxiv/taxonomy/definitions.py",
+        },
+        "categories": [
+            dict(
+                slug=c["slug"],
+                name=c["name"],
+                priority=c["priority"],
+                scope=c["scope"],
+                targets={
+                    "pilot": {"papers": c["pilot"][0], "books": c["pilot"][1]},
+                    "full": {"papers": c["full"][0], "books": c["full"][1]},
+                },
+                hints=c["synonyms"],
+            )
+            for c in CATEGORIES
+        ],
         "non_field_hints": NON_FIELD_HINTS,
-        "psych_areas": [{"slug": s, "name": n} for s, n, _ in PSYCH_AREAS] + [{"slug": "general", "name": "General"}],
+        "psych_areas": [{"slug": s, "name": n} for s, n, _ in PSYCH_AREAS]
+        + [{"slug": "general", "name": "General"}],
         "topics": topic_map,
         "crosswalks": {"arxiv": arxiv_map, "lcc": lcc, "ddc": ddc},
-        "precedence": ["manifest_field", "openalex_primary_topic", "arxiv_primary_category", "lcc", "ddc",
-                       "inbox_folder_hint", "embedding_nearest_topic"],
+        "precedence": [
+            "manifest_field",
+            "openalex_primary_topic",
+            "arxiv_primary_category",
+            "lcc",
+            "ddc",
+            "inbox_folder_hint",
+            "embedding_nearest_topic",
+        ],
         "openalex_min_topic_score": OPENALEX_MIN_TOPIC_SCORE,
         "topic_overrides": sorted(TOPIC_OVERRIDES),
     }
-    (root / "categories.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8",
-                                          newline="\n")
-    write_markdown(root, out, sub_rows, cat_topics, cat_members, overlay_by_sub, area_examples, arxiv_map)
+    (root / "categories.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
+    )
+    write_markdown(
+        root, out, sub_rows, cat_topics, cat_members, overlay_by_sub, area_examples, arxiv_map
+    )
     print(f"topics {len(topic_map)}; primary per category {dict(cat_topics)}")
     print(f"members per category {dict(cat_members)}")
-    print(f"cogsci overlay topics {sum(overlay_by_sub.values())}: {dict(overlay_by_sub.most_common())}")
+    print(
+        f"cogsci overlay topics {sum(overlay_by_sub.values())}: {dict(overlay_by_sub.most_common())}"
+    )
     print("psych areas (primary):", {k: len(v) for k, v in sorted(area_examples.items())})
 
 
-def write_markdown(root, out, sub_rows, cat_topics, cat_members, overlay_by_sub, area_examples, arxiv_map):
+def write_markdown(
+    root, out, sub_rows, cat_topics, cat_members, overlay_by_sub, area_examples, arxiv_map
+):
     L = []
     L.append(f"# Vault category map (version {out['version']})\n")
-    L.append("Generated by `tools/taxonomy/build_categories.py` from the OpenAlex topic taxonomy "
-             f"(snapshot {out['sources']['openalex']}, CC0) and our arXiv, LCC and DDC crosswalks. "
-             "Do not edit by hand; change the generator and rebuild.\n")
+    L.append(
+        "Generated by `tools/taxonomy/build_categories.py` from the OpenAlex topic taxonomy "
+        f"(snapshot {out['sources']['openalex']}, CC0) and our arXiv, LCC and DDC crosswalks. "
+        "Do not edit by hand; change the generator and rebuild.\n"
+    )
     L.append("## How categories work\n")
-    L.append("- **Categories are metadata, never paths.** Text lives at `text/{h2}/{doc_id}.md` whatever its "
-             "category, so reclassifying a document never changes an address.")
-    L.append("- **Backbone:** OpenAlex's four-level taxonomy (domain, field, subfield, topic). OpenAlex assigns a "
-             "primary topic to every paper it knows, so most papers are classified by the metadata lookup "
-             "itself. The 4,516 topics are each mapped to one primary vault category and any number of "
-             "secondary ones.")
-    L.append("- **Every document has exactly one primary category and any number of secondary ones.** Filters "
-             "and grep scopes match primary or secondary membership; coverage counts use the primary.")
-    L.append("- **Cognitive-science overlay:** cognition-related topics outside psychology (philosophy of mind, "
-             "psycholinguistics, cognitive AI, behavioural economics, psychiatry, animal cognition) are also "
-             "members of psychology and cognitive science.")
-    L.append("- **Study map:** psychology and cognitive-science topics also carry study areas (perception, memory, "
-             "clinical, methods, and so on), so the tutor can scope a search the way a graduate curriculum is "
-             "organised.")
-    L.append("- **Books and preprints** reach the same map through crosswalks: LCC and DDC class numbers (from "
-             "the book's own Cataloging-in-Publication block, or from metadata), and arXiv categories.")
-    L.append("- **Precedence when sources disagree:** " + ", then ".join(out["precedence"]) + ". OpenAlex's "
-             f"primary topic counts only at a score of {out['openalex_min_topic_score']} or more. Every assignment "
-             "records its source and confidence; low-confidence ones are flagged in the intake report.")
-    L.append(f"- **Topic overrides:** {', '.join(out['topic_overrides'])} are re-assigned where OpenAlex files them "
-             "under a misleading subfield (for example pure algebra under computer science); see the generator.")
-    L.append("- **Unknowns are never dropped:** a document with no usable signal is classified by its nearest "
-             "OpenAlex topic in embedding space (topic name, description and keywords), flagged as such.\n")
+    L.append(
+        "- **Categories are metadata, never paths.** Text lives at `text/{h2}/{doc_id}.md` whatever its "
+        "category, so reclassifying a document never changes an address."
+    )
+    L.append(
+        "- **Backbone:** OpenAlex's four-level taxonomy (domain, field, subfield, topic). OpenAlex assigns a "
+        "primary topic to every paper it knows, so most papers are classified by the metadata lookup "
+        "itself. The 4,516 topics are each mapped to one primary vault category and any number of "
+        "secondary ones."
+    )
+    L.append(
+        "- **Every document has exactly one primary category and any number of secondary ones.** Filters "
+        "and grep scopes match primary or secondary membership; coverage counts use the primary."
+    )
+    L.append(
+        "- **Cognitive-science overlay:** cognition-related topics outside psychology (philosophy of mind, "
+        "psycholinguistics, cognitive AI, behavioural economics, psychiatry, animal cognition) are also "
+        "members of psychology and cognitive science."
+    )
+    L.append(
+        "- **Study map:** psychology and cognitive-science topics also carry study areas (perception, memory, "
+        "clinical, methods, and so on), so the tutor can scope a search the way a graduate curriculum is "
+        "organised."
+    )
+    L.append(
+        "- **Books and preprints** reach the same map through crosswalks: LCC and DDC class numbers (from "
+        "the book's own Cataloging-in-Publication block, or from metadata), and arXiv categories."
+    )
+    L.append(
+        "- **Precedence when sources disagree:** "
+        + ", then ".join(out["precedence"])
+        + ". OpenAlex's "
+        f"primary topic counts only at a score of {out['openalex_min_topic_score']} or more. Every assignment "
+        "records its source and confidence; low-confidence ones are flagged in the intake report."
+    )
+    L.append(
+        f"- **Topic overrides:** {', '.join(out['topic_overrides'])} are re-assigned where OpenAlex files them "
+        "under a misleading subfield (for example pure algebra under computer science); see the generator."
+    )
+    L.append(
+        "- **Unknowns are never dropped:** a document with no usable signal is classified by its nearest "
+        "OpenAlex topic in embedding space (topic name, description and keywords), flagged as such.\n"
+    )
 
     L.append("## Summary\n")
-    L.append("| Priority | Category | Topics (primary) | Topics (all members) | Pilot papers / books | Full-scale papers / books |")
+    L.append(
+        "| Priority | Category | Topics (primary) | Topics (all members) | Pilot papers / books | Full-scale papers / books |"
+    )
     L.append("|---|---|---|---|---|---|")
     for c in out["categories"]:
         t = c["targets"]
-        L.append(f"| {c['priority']} | **{c['name']}** (`{c['slug']}`) | {cat_topics[c['slug']]} | "
-                 f"{cat_members[c['slug']]} | {t['pilot']['papers']:,} / {t['pilot']['books']:,} | "
-                 f"{t['full']['papers']:,} / {t['full']['books']:,} |")
-    L.append("\nTargets are proposals sized to the owner's priorities and the 150,000-paper, 10,000-book goal; "
-             "adjust them freely. They steer gathering and coverage reports, never what intake accepts.\n")
+        L.append(
+            f"| {c['priority']} | **{c['name']}** (`{c['slug']}`) | {cat_topics[c['slug']]} | "
+            f"{cat_members[c['slug']]} | {t['pilot']['papers']:,} / {t['pilot']['books']:,} | "
+            f"{t['full']['papers']:,} / {t['full']['books']:,} |"
+        )
+    L.append(
+        "\nTargets are proposals sized to the owner's priorities and the 150,000-paper, 10,000-book goal; "
+        "adjust them freely. They steer gathering and coverage reports, never what intake accepts.\n"
+    )
 
     for c in out["categories"]:
         slug = c["slug"]
@@ -664,27 +1265,46 @@ def write_markdown(root, out, sub_rows, cat_topics, cat_members, overlay_by_sub,
         for role, field, sub, n in rows:
             L.append(f"| {role} | {field} | {sub} | {n} |")
         if slug == "psych-cogsci":
-            L.append(f"\n**Cognitive-science overlay** adds {sum(overlay_by_sub.values())} topics from other fields "
-                     "as secondary members: " + "; ".join(f"{k} ({v})" for k, v in overlay_by_sub.most_common())
-                     + ".\n")
-            L.append("**Study map** (primary area per topic; the largest topics by OpenAlex works count are shown "
-                     "as examples):\n")
+            L.append(
+                f"\n**Cognitive-science overlay** adds {sum(overlay_by_sub.values())} topics from other fields "
+                "as secondary members: "
+                + "; ".join(f"{k} ({v})" for k, v in overlay_by_sub.most_common())
+                + ".\n"
+            )
+            L.append(
+                "**Study map** (primary area per topic; the largest topics by OpenAlex works count are shown "
+                "as examples):\n"
+            )
             names = {a["slug"]: a["name"] for a in out["psych_areas"]}
             L.append("| Area | Topics | Examples |")
             L.append("|---|---|---|")
             for a in out["psych_areas"]:
                 ex = sorted(area_examples.get(a["slug"], []), reverse=True)
-                L.append(f"| {names[a['slug']]} (`{a['slug']}`) | {len(ex)} | "
-                         + "; ".join(n for _, n in ex[:4]) + " |")
+                L.append(
+                    f"| {names[a['slug']]} (`{a['slug']}`) | {len(ex)} | "
+                    + "; ".join(n for _, n in ex[:4])
+                    + " |"
+                )
         codes = sorted(k for k, v in arxiv_map.items() if v["category"] == slug and v["active"])
         if codes:
             L.append(f"\n**arXiv categories:** {', '.join(codes)}.")
-        lcc = sorted({x["cls"] + (f"{x['low']}-{x['high']}" if x["low"] is not None else "")
-                      for x in out["crosswalks"]["lcc"] if x["category"] == slug})
+        lcc = sorted(
+            {
+                x["cls"] + (f"{x['low']}-{x['high']}" if x["low"] is not None else "")
+                for x in out["crosswalks"]["lcc"]
+                if x["category"] == slug
+            }
+        )
         if lcc:
             L.append(f"**LCC classes:** {', '.join(lcc)}.")
-        ddc = sorted({f"{x['low']:g}-{x['high']:g}" for x in out["crosswalks"]["ddc"] if x["category"] == slug},
-                     key=lambda s: float(s.split("-")[0]))
+        ddc = sorted(
+            {
+                f"{x['low']:g}-{x['high']:g}"
+                for x in out["crosswalks"]["ddc"]
+                if x["category"] == slug
+            },
+            key=lambda s: float(s.split("-")[0]),
+        )
         if ddc:
             L.append(f"**DDC ranges:** {', '.join(ddc)}.")
         L.append(f"**Folder and manifest hints:** {', '.join(c['hints'])}.\n")

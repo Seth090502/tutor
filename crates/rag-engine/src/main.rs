@@ -36,7 +36,11 @@ use std::sync::Arc;
 const DEFAULT_PDFIUM: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/vendor/pdfium/bin");
 
 #[derive(Parser)]
-#[command(name = "rag-engine", version, about = "Corpus tools and retrieval service for the DeepTutor RAG engine")]
+#[command(
+    name = "rag-engine",
+    version,
+    about = "Corpus tools and retrieval service for the DeepTutor RAG engine"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -117,14 +121,39 @@ enum Command {
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
-        Command::Survey { root, out, pdfium } => survey::run(&root, out.as_deref(), &pdfium).map_err(Error::from),
-        Command::Serve { corpus, notes, data, port, bind, pdfium } => serve(Roots { corpus, notes }, &data, bind, port, pdfium),
-        Command::Ingest { corpus, notes, data, root, rebuild, pdfium } => {
-            run_ingest(Roots { corpus, notes }, &data, root.as_deref(), rebuild, &pdfium)
+        Command::Survey { root, out, pdfium } => {
+            survey::run(&root, out.as_deref(), &pdfium).map_err(Error::from)
         }
-        Command::Search { data, query, k, domains, source_types, mode } => {
-            run_search(&data, query, k, domains, source_types, &mode)
-        }
+        Command::Serve {
+            corpus,
+            notes,
+            data,
+            port,
+            bind,
+            pdfium,
+        } => serve(Roots { corpus, notes }, &data, bind, port, pdfium),
+        Command::Ingest {
+            corpus,
+            notes,
+            data,
+            root,
+            rebuild,
+            pdfium,
+        } => run_ingest(
+            Roots { corpus, notes },
+            &data,
+            root.as_deref(),
+            rebuild,
+            &pdfium,
+        ),
+        Command::Search {
+            data,
+            query,
+            k,
+            domains,
+            source_types,
+            mode,
+        } => run_search(&data, query, k, domains, source_types, &mode),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -136,7 +165,9 @@ fn main() -> ExitCode {
 }
 
 fn runtime() -> Result<tokio::runtime::Runtime> {
-    Ok(tokio::runtime::Builder::new_multi_thread().enable_all().build()?)
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?)
 }
 
 /// The engine with embeddings and OCR as configured by the environment.
@@ -145,15 +176,24 @@ fn open_engine(rt: &tokio::runtime::Runtime, data: &Path) -> Result<Engine> {
     let ocr = ocr::provider_from_env()?;
     let tuning = bm25::Tuning::from_env()?;
     match &embedder {
-        Some(e) => eprintln!("rag-engine: embeddings: {} / {}", e.provider_name(), e.model()),
-        None => eprintln!("rag-engine: embeddings: none (RAG_EMBED_PROVIDER unset); search runs BM25 only"),
+        Some(e) => eprintln!(
+            "rag-engine: embeddings: {} / {}",
+            e.provider_name(),
+            e.model()
+        ),
+        None => eprintln!(
+            "rag-engine: embeddings: none (RAG_EMBED_PROVIDER unset); search runs BM25 only"
+        ),
     }
     rt.block_on(Engine::open(data, embedder, ocr, tuning))
 }
 
 fn serve(roots: Roots, data: &Path, bind: IpAddr, port: u16, pdfium: PathBuf) -> Result<()> {
     // Read here rather than through clap, so the value never appears in --help.
-    let token = std::env::var("RAG_ENGINE_TOKEN").ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let token = std::env::var("RAG_ENGINE_TOKEN")
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
     server::check_bind(bind, token.as_deref())?;
     roots.check(data)?;
     let rt = runtime()?;
@@ -162,27 +202,57 @@ fn serve(roots: Roots, data: &Path, bind: IpAddr, port: u16, pdfium: PathBuf) ->
     eprintln!(
         "rag-engine: corpus {}, notes {}, data {}",
         engine::display_path(&roots.corpus),
-        roots.notes.as_deref().map_or_else(|| "none".to_string(), engine::display_path),
+        roots
+            .notes
+            .as_deref()
+            .map_or_else(|| "none".to_string(), engine::display_path),
         engine::display_path(data)
     );
-    let state =
-        Arc::new(server::AppState { engine, roots, pdfium, jobs: jobs::Jobs::default(), rt: rt.handle().clone(), token });
+    let state = Arc::new(server::AppState {
+        engine,
+        roots,
+        pdfium,
+        jobs: jobs::Jobs::default(),
+        rt: rt.handle().clone(),
+        token,
+    });
     let result = rt.block_on(server::serve(state, bind, port));
     // Do not wait for a running job: the next ingest repairs a batch it left uncommitted.
     rt.shutdown_timeout(std::time::Duration::from_secs(2));
     result
 }
 
-fn run_ingest(roots: Roots, data: &Path, root: Option<&Path>, rebuild: bool, pdfium: &Path) -> Result<()> {
+fn run_ingest(
+    roots: Roots,
+    data: &Path,
+    root: Option<&Path>,
+    rebuild: bool,
+    pdfium: &Path,
+) -> Result<()> {
     roots.check(data)?;
     let rt = runtime()?;
     let engine = open_engine(&rt, data)?;
-    let report = ingest::ingest(&engine, &roots, pdfium, root, rebuild, rt.handle(), &jobs::Progress::default())?;
+    let report = ingest::ingest(
+        &engine,
+        &roots,
+        pdfium,
+        root,
+        rebuild,
+        rt.handle(),
+        &jobs::Progress::default(),
+    )?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
 
-fn run_search(data: &Path, query: String, k: usize, domains: Vec<String>, source_types: Vec<String>, mode: &str) -> Result<()> {
+fn run_search(
+    data: &Path,
+    query: String,
+    k: usize,
+    domains: Vec<String>,
+    source_types: Vec<String>,
+    mode: &str,
+) -> Result<()> {
     if !data.join(store::DB_FILE).is_file() {
         return Err(format!("{} has no index yet; run ingest first", data.display()).into());
     }
@@ -197,12 +267,14 @@ fn run_search(data: &Path, query: String, k: usize, domains: Vec<String>, source
         source_types: (!source_types.is_empty()).then_some(source_types),
         mode: Some(mode),
     };
-    let response = rt.block_on(search::search(engine, request)).map_err(|e| match e {
-        search::SearchError::BadRequest(m)
-        | search::SearchError::Unavailable(m)
-        | search::SearchError::Provider(m)
-        | search::SearchError::Internal(m) => Error(m),
-    })?;
+    let response = rt
+        .block_on(search::search(engine, request))
+        .map_err(|e| match e {
+            search::SearchError::BadRequest(m)
+            | search::SearchError::Unavailable(m)
+            | search::SearchError::Provider(m)
+            | search::SearchError::Internal(m) => Error(m),
+        })?;
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }

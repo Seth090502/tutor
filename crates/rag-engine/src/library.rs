@@ -114,7 +114,11 @@ fn given(value: Option<String>) -> Option<String> {
 
 fn check_limit(limit: Option<u32>, default: u32) -> std::result::Result<u32, String> {
     let limit = limit.unwrap_or(default);
-    if (1..=MAX_LIMIT).contains(&limit) { Ok(limit) } else { Err(format!("limit must be between 1 and {MAX_LIMIT}")) }
+    if (1..=MAX_LIMIT).contains(&limit) {
+        Ok(limit)
+    } else {
+        Err(format!("limit must be between 1 and {MAX_LIMIT}"))
+    }
 }
 
 impl ListParams {
@@ -122,13 +126,19 @@ impl ListParams {
     pub fn parse(query: ListQuery) -> std::result::Result<ListParams, String> {
         let source_type = given(query.source_type);
         if let Some(bad) = source_type.as_deref().filter(|s| !SOURCE_TYPES.contains(s)) {
-            return Err(format!("unknown source_type {bad:?}; expected one of {SOURCE_TYPES:?}"));
+            return Err(format!(
+                "unknown source_type {bad:?}; expected one of {SOURCE_TYPES:?}"
+            ));
         }
         let sort = match given(query.sort).as_deref() {
             None | Some("title") => Sort::Title,
             Some("added") => Sort::Added,
             Some("pages") => Sort::Pages,
-            Some(other) => return Err(format!("unknown sort {other:?}; expected title, added or pages")),
+            Some(other) => {
+                return Err(format!(
+                    "unknown sort {other:?}; expected title, added or pages"
+                ));
+            }
         };
         Ok(ListParams {
             domain: given(query.domain),
@@ -143,7 +153,10 @@ impl ListParams {
 
 /// `(from, limit)` for a chunk page, or the message for a 400.
 pub fn chunk_params(query: ChunksQuery) -> std::result::Result<(u32, u32), String> {
-    Ok((query.from.unwrap_or(0), check_limit(query.limit, DEFAULT_CHUNK_LIMIT)?))
+    Ok((
+        query.from.unwrap_or(0),
+        check_limit(query.limit, DEFAULT_CHUNK_LIMIT)?,
+    ))
 }
 
 const DOC_COLUMNS: &str = "d.doc_id, d.path, d.title, d.domain, d.source_type, d.pages, d.chunks, d.bytes, d.indexed_at, \
@@ -190,25 +203,46 @@ pub fn list(conn: &Connection, p: &ListParams) -> Result<DocList> {
     }
     if let Some(q) = &p.q {
         filter.push_str(" AND (d.title LIKE ? ESCAPE '\\' OR d.path LIKE ? ESCAPE '\\')");
-        args.extend([SqlValue::Text(like_pattern(q)), SqlValue::Text(like_pattern(q))]);
+        args.extend([
+            SqlValue::Text(like_pattern(q)),
+            SqlValue::Text(like_pattern(q)),
+        ]);
     }
-    let total: i64 =
-        conn.query_row(&format!("SELECT COUNT(*) FROM documents d WHERE {filter}"), params_from_iter(&args), |r| r.get(0))?;
+    let total: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM documents d WHERE {filter}"),
+        params_from_iter(&args),
+        |r| r.get(0),
+    )?;
     let order = match p.sort {
         Sort::Title => "d.title COLLATE NOCASE, d.doc_id",
         Sort::Added => "d.indexed_at DESC, d.doc_id",
         Sort::Pages => "d.pages DESC, d.title COLLATE NOCASE, d.doc_id",
     };
-    args.extend([SqlValue::Integer(p.limit.into()), SqlValue::Integer(p.offset.min(i64::MAX as u64) as i64)]);
-    let mut stmt =
-        conn.prepare(&format!("SELECT {DOC_COLUMNS} FROM documents d WHERE {filter} ORDER BY {order} LIMIT ? OFFSET ?"))?;
-    let documents = stmt.query_map(params_from_iter(&args), doc_row)?.collect::<std::result::Result<_, _>>()?;
-    Ok(DocList { total: total as u64, documents })
+    args.extend([
+        SqlValue::Integer(p.limit.into()),
+        SqlValue::Integer(p.offset.min(i64::MAX as u64) as i64),
+    ]);
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {DOC_COLUMNS} FROM documents d WHERE {filter} ORDER BY {order} LIMIT ? OFFSET ?"
+    ))?;
+    let documents = stmt
+        .query_map(params_from_iter(&args), doc_row)?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(DocList {
+        total: total as u64,
+        documents,
+    })
 }
 
 fn find(conn: &Connection, doc_id: &str) -> Result<Option<Doc>> {
     Ok(conn
-        .query_row(&format!("SELECT {DOC_COLUMNS} FROM documents d WHERE d.doc_id = ?1 AND d.state = 'indexed'"), [doc_id], doc_row)
+        .query_row(
+            &format!(
+                "SELECT {DOC_COLUMNS} FROM documents d WHERE d.doc_id = ?1 AND d.state = 'indexed'"
+            ),
+            [doc_id],
+            doc_row,
+        )
         .optional()?)
 }
 
@@ -219,7 +253,9 @@ fn heading_path(json: &str) -> Vec<String> {
 /// The document and its outline: each distinct, non-empty heading path of its chunks, in reading
 /// order, with the first chunk under it and the pages from that chunk to the end of the run.
 pub fn document(conn: &Connection, doc_id: &str) -> Result<Option<DocDetail>> {
-    let Some(doc) = find(conn, doc_id)? else { return Ok(None) };
+    let Some(doc) = find(conn, doc_id)? else {
+        return Ok(None);
+    };
     let mut stmt = conn.prepare("SELECT chunk_id, page_start, page_end, heading_path FROM chunks WHERE doc_id = ?1 ORDER BY ordinal")?;
     let mut rows = stmt.query([doc_id])?;
     let mut outline: Vec<OutlineEntry> = Vec::new();
@@ -239,7 +275,12 @@ pub fn document(conn: &Connection, doc_id: &str) -> Result<Option<DocDetail>> {
         let heading_path = heading_path(&path);
         extending = !heading_path.is_empty() && seen.insert(path);
         if extending {
-            outline.push(OutlineEntry { heading_path, page_start, page_end, chunk_id: r.get(0)? });
+            outline.push(OutlineEntry {
+                heading_path,
+                page_start,
+                page_end,
+                chunk_id: r.get(0)?,
+            });
         }
     }
     Ok(Some(DocDetail { doc, outline }))
@@ -266,7 +307,11 @@ pub fn chunks(conn: &Connection, doc_id: &str, from: u32, limit: u32) -> Result<
             })
         })?
         .collect::<std::result::Result<_, _>>()?;
-    let next = if chunks.len() > limit as usize { chunks.pop().map(|c| c.ordinal) } else { None };
+    let next = if chunks.len() > limit as usize {
+        chunks.pop().map(|c| c.ordinal)
+    } else {
+        None
+    };
     Ok(Some(ChunkPage { chunks, next }))
 }
 
@@ -275,7 +320,15 @@ mod tests {
     use super::*;
     use crate::store::{self, temp_dir};
 
-    fn insert_doc(conn: &Connection, id: &str, title: &str, (domain, source_type): (&str, &str), pages: i64, at: f64, state: &str) {
+    fn insert_doc(
+        conn: &Connection,
+        id: &str,
+        title: &str,
+        (domain, source_type): (&str, &str),
+        pages: i64,
+        at: f64,
+        state: &str,
+    ) {
         conn.execute(
             "INSERT INTO documents(doc_id, path, kind, title, domain, source_type, bytes, state, pages, chunks, indexed_at) \
              VALUES (?1, ?2, 'pdf', ?3, ?4, ?5, 100, ?6, ?7, 0, ?8)",
@@ -284,7 +337,13 @@ mod tests {
         .unwrap();
     }
 
-    fn insert_chunk(conn: &Connection, doc: &str, ordinal: u32, pages: (Option<u32>, Option<u32>), path: &[&str]) {
+    fn insert_chunk(
+        conn: &Connection,
+        doc: &str,
+        ordinal: u32,
+        pages: (Option<u32>, Option<u32>),
+        path: &[&str],
+    ) {
         conn.execute(
             "INSERT INTO chunks(chunk_id, doc_id, ordinal, page_start, page_end, heading_path, text, tokens) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
@@ -318,40 +377,130 @@ mod tests {
     fn lists_filter_sort_and_page_indexed_documents() {
         let dir = temp_dir("library-list");
         let conn = store::open(&dir).unwrap();
-        insert_doc(&conn, "a", "calculus", ("math", "book"), 300, 3.0, "indexed");
-        insert_doc(&conn, "b", "Algebra 100%", ("math", "paper"), 20, 1.0, "indexed");
-        insert_doc(&conn, "c", "Cells", ("science", "book"), 120, 2.0, "indexed");
+        insert_doc(
+            &conn,
+            "a",
+            "calculus",
+            ("math", "book"),
+            300,
+            3.0,
+            "indexed",
+        );
+        insert_doc(
+            &conn,
+            "b",
+            "Algebra 100%",
+            ("math", "paper"),
+            20,
+            1.0,
+            "indexed",
+        );
+        insert_doc(
+            &conn,
+            "c",
+            "Cells",
+            ("science", "book"),
+            120,
+            2.0,
+            "indexed",
+        );
         insert_doc(&conn, "d", "Broken", ("math", "book"), 0, 4.0, "error");
         insert_doc(&conn, "e", "Pending", ("math", "book"), 0, 5.0, "indexing");
         conn.execute("INSERT INTO ocr_queue(doc_id, page, class, state) VALUES ('a', 1, 'scanned', 'pending'), ('a', 2, 'scanned', 'done')", [])
             .unwrap();
 
         let all = list(&conn, &query(&[])).unwrap();
-        assert_eq!((all.total, ids(&all)), (3, vec!["b", "a", "c"]), "title order ignores case; only indexed documents");
+        assert_eq!(
+            (all.total, ids(&all)),
+            (3, vec!["b", "a", "c"]),
+            "title order ignores case; only indexed documents"
+        );
         let a = &all.documents[1];
-        assert_eq!((a.path.as_str(), a.pages, a.bytes, a.added_at, a.ocr_pending), ("corpus/math/books/a.pdf", 300, 100, Some(3.0), 1));
-        assert_eq!(ids(&list(&conn, &query(&[("sort", "added")])).unwrap()), ["a", "c", "b"]);
-        assert_eq!(ids(&list(&conn, &query(&[("sort", "pages")])).unwrap()), ["a", "c", "b"]);
-        assert_eq!(ids(&list(&conn, &query(&[("domain", "MATH")])).unwrap()), ["b", "a"]);
-        assert_eq!(ids(&list(&conn, &query(&[("domain", "math"), ("source_type", "book")])).unwrap()), ["a"]);
-        assert_eq!(ids(&list(&conn, &query(&[("q", "CELL")])).unwrap()), ["c"], "title substring, any case");
-        assert_eq!(ids(&list(&conn, &query(&[("q", "science/books")])).unwrap()), ["c"], "path substring");
+        assert_eq!(
+            (a.path.as_str(), a.pages, a.bytes, a.added_at, a.ocr_pending),
+            ("corpus/math/books/a.pdf", 300, 100, Some(3.0), 1)
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("sort", "added")])).unwrap()),
+            ["a", "c", "b"]
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("sort", "pages")])).unwrap()),
+            ["a", "c", "b"]
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("domain", "MATH")])).unwrap()),
+            ["b", "a"]
+        );
+        assert_eq!(
+            ids(&list(
+                &conn,
+                &query(&[("domain", "math"), ("source_type", "book")])
+            )
+            .unwrap()),
+            ["a"]
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("q", "CELL")])).unwrap()),
+            ["c"],
+            "title substring, any case"
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("q", "science/books")])).unwrap()),
+            ["c"],
+            "path substring"
+        );
         assert_eq!(ids(&list(&conn, &query(&[("q", "100%")])).unwrap()), ["b"]);
-        assert!(list(&conn, &query(&[("q", "_")])).unwrap().documents.is_empty(), "wildcards are literal");
-        assert_eq!(ids(&list(&conn, &query(&[("domain", ""), ("q", "")])).unwrap()).len(), 3, "empty values are no filter");
+        assert!(
+            list(&conn, &query(&[("q", "_")]))
+                .unwrap()
+                .documents
+                .is_empty(),
+            "wildcards are literal"
+        );
+        assert_eq!(
+            ids(&list(&conn, &query(&[("domain", ""), ("q", "")])).unwrap()).len(),
+            3,
+            "empty values are no filter"
+        );
         let page = list(&conn, &query(&[("limit", "1"), ("offset", "1")])).unwrap();
         assert_eq!((page.total, ids(&page)), (3, vec!["a"]));
-        assert!(list(&conn, &query(&[("offset", "10")])).unwrap().documents.is_empty());
+        assert!(
+            list(&conn, &query(&[("offset", "10")]))
+                .unwrap()
+                .documents
+                .is_empty()
+        );
 
         for bad in [
-            ListQuery { limit: Some(0), ..Default::default() },
-            ListQuery { limit: Some(201), ..Default::default() },
-            ListQuery { sort: Some("size".into()), ..Default::default() },
-            ListQuery { source_type: Some("books".into()), ..Default::default() },
+            ListQuery {
+                limit: Some(0),
+                ..Default::default()
+            },
+            ListQuery {
+                limit: Some(201),
+                ..Default::default()
+            },
+            ListQuery {
+                sort: Some("size".into()),
+                ..Default::default()
+            },
+            ListQuery {
+                source_type: Some("books".into()),
+                ..Default::default()
+            },
         ] {
             assert!(ListParams::parse(bad).is_err());
         }
-        assert_eq!(ListParams::parse(ListQuery { limit: Some(200), ..Default::default() }).unwrap().limit, 200);
+        assert_eq!(
+            ListParams::parse(ListQuery {
+                limit: Some(200),
+                ..Default::default()
+            })
+            .unwrap()
+            .limit,
+            200
+        );
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -381,27 +530,53 @@ mod tests {
         };
         assert_eq!(
             detail.outline,
-            vec![entry(&["Ch 1"], 1, 3, "a:1"), entry(&["Ch 1", "1.2 Limits"], 4, 6, "a:3"), entry(&["Ch 2"], 8, 9, "a:6")],
+            vec![
+                entry(&["Ch 1"], 1, 3, "a:1"),
+                entry(&["Ch 1", "1.2 Limits"], 4, 6, "a:3"),
+                entry(&["Ch 2"], 8, 9, "a:6")
+            ],
             "distinct heading paths, first run only; the preamble without a heading is left out"
         );
         let json = serde_json::to_value(&detail).unwrap();
         assert_eq!(json["doc_id"], "a", "Doc fields sit beside the outline");
         assert!(json["outline"].is_array());
-        assert!(document(&conn, "x").unwrap().is_none(), "error documents are not browsable");
+        assert!(
+            document(&conn, "x").unwrap().is_none(),
+            "error documents are not browsable"
+        );
         assert!(document(&conn, "missing").unwrap().is_none());
 
         let first = chunks(&conn, "a", 0, 3).unwrap().unwrap();
-        assert_eq!(first.chunks.iter().map(|c| c.ordinal).collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(
+            first.chunks.iter().map(|c| c.ordinal).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
         assert_eq!(first.next, Some(3));
         assert_eq!(first.chunks[1].heading_path, ["Ch 1"]);
-        assert_eq!((first.chunks[1].page_start, first.chunks[1].page_end, first.chunks[1].text.as_str()), (Some(1), Some(2), "text 1"));
+        assert_eq!(
+            (
+                first.chunks[1].page_start,
+                first.chunks[1].page_end,
+                first.chunks[1].text.as_str()
+            ),
+            (Some(1), Some(2), "text 1")
+        );
         let last = chunks(&conn, "a", 3, 4).unwrap().unwrap();
         assert_eq!((last.chunks.len(), last.next), (4, None));
         let past = chunks(&conn, "a", 50, 20).unwrap().unwrap();
         assert_eq!((past.chunks.len(), past.next), (0, None));
         assert!(chunks(&conn, "missing", 0, 20).unwrap().is_none());
-        assert_eq!(chunk_params(ChunksQuery::default()), Ok((0, DEFAULT_CHUNK_LIMIT)));
-        assert!(chunk_params(ChunksQuery { from: None, limit: Some(0) }).is_err());
+        assert_eq!(
+            chunk_params(ChunksQuery::default()),
+            Ok((0, DEFAULT_CHUNK_LIMIT))
+        );
+        assert!(
+            chunk_params(ChunksQuery {
+                from: None,
+                limit: Some(0)
+            })
+            .is_err()
+        );
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }

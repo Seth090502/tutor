@@ -10,11 +10,10 @@ answers=None auto-marks correct (pipeline demo only, not mastery).
 import time
 
 from . import curriculum as CU
+from . import memory as ME
 from . import question_bank as QB
 from . import quiz as QZ
 from . import store as ST
-from . import memory as ME
-
 
 NODES = ("explain", "quiz", "grade", "review", "next")
 
@@ -43,8 +42,11 @@ def run_lesson(domain, state, topic=None, n=3, seed=7, answers=None):
     trace = []
     topic = resolve_topic(domain, state, topic)
     if topic is None:
-        return {"trace": [{"node": "error", "text": f"unknown domain {domain!r}"}],
-                "correct": 0, "total": 0}
+        return {
+            "trace": [{"node": "error", "text": f"unknown domain {domain!r}"}],
+            "correct": 0,
+            "total": 0,
+        }
     expl = CU.EXPLAINERS.get(topic, "")
     trace.append({"node": "explain", "topic": topic, "text": expl[:800]})
     _, items = preview_items(domain, state, topic=topic, n=n, seed=seed)
@@ -56,9 +58,18 @@ def run_lesson(domain, state, topic=None, n=3, seed=7, answers=None):
         correct += 1 if ok else 0
         ST.record_attempt(state, it["id"], domain, ok)
         if not ok:
-            ME.add_fact(state, f"missed {it['id']}: {it['prompt'][:120]}", tags=[domain, it["topic"]])
-        trace.append({"node": "grade", "item": it["id"], "correct": ok,
-                      "why": it["explanation"], "watch": it["misconception"]})
+            ME.add_fact(
+                state, f"missed {it['id']}: {it['prompt'][:120]}", tags=[domain, it["topic"]]
+            )
+        trace.append(
+            {
+                "node": "grade",
+                "item": it["id"],
+                "correct": ok,
+                "why": it["explanation"],
+                "watch": it["misconception"],
+            }
+        )
     due = sum(1 for m in state.get("items", {}).values() if m.get("due", 0) <= time.time())
     trace.append({"node": "review", "due": due})
     mastered = state.get("mastered_topics", {}).get(domain, [])

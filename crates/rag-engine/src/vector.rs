@@ -10,7 +10,9 @@ use crate::error::Result;
 use futures::TryStreamExt;
 use lancedb::DistanceType;
 use lancedb::arrow::arrow_array::types::Float32Type;
-use lancedb::arrow::arrow_array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray};
+use lancedb::arrow::arrow_array::{
+    Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray,
+};
 use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
 use lancedb::index::Index;
 use lancedb::index::vector::IvfPqIndexBuilder;
@@ -67,16 +69,26 @@ pub fn filter_sql(filter: &Filter) -> Option<String> {
 impl Vectors {
     /// Connect to (creating) the LanceDB directory and open the table if it exists.
     pub async fn open(dir: &Path) -> Result<Vectors> {
-        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-        let uri = dir.to_str().ok_or("the LanceDB path is not valid UTF-8")?.replace('\\', "/");
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        let uri = dir
+            .to_str()
+            .ok_or("the LanceDB path is not valid UTF-8")?
+            .replace('\\', "/");
         // Zero: every read sees the latest committed version, including writes by the ingest job.
-        let db = lancedb::connect(&uri).read_consistency_interval(Duration::ZERO).execute().await?;
+        let db = lancedb::connect(&uri)
+            .read_consistency_interval(Duration::ZERO)
+            .execute()
+            .await?;
         let table = if db.table_names().execute().await?.iter().any(|t| t == TABLE) {
             Some(db.open_table(TABLE).execute().await?)
         } else {
             None
         };
-        Ok(Vectors { db, table: Mutex::new(table) })
+        Ok(Vectors {
+            db,
+            table: Mutex::new(table),
+        })
     }
 
     fn table(&self) -> Option<lancedb::Table> {
@@ -91,7 +103,9 @@ impl Vectors {
     }
 
     pub async fn add(&self, rows: &[VecRow]) -> Result<()> {
-        let Some(first) = rows.first() else { return Ok(()) };
+        let Some(first) = rows.first() else {
+            return Ok(());
+        };
         let dims = first.vector.len();
         if dims == 0 || rows.iter().any(|r| r.vector.len() != dims) {
             return Err("vectors in one batch must share a non-zero dimension".into());
@@ -103,11 +117,15 @@ impl Vectors {
             Field::new("source_type", DataType::Utf8, false),
             Field::new(
                 "vector",
-                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), dims as i32),
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    dims as i32,
+                ),
                 true,
             ),
         ]));
-        let strings = |f: fn(&VecRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
+        let strings =
+            |f: fn(&VecRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
         let batch = RecordBatch::try_new(
             schema,
             vec![
@@ -115,10 +133,13 @@ impl Vectors {
                 strings(|r| &r.doc_id),
                 strings(|r| &r.domain),
                 strings(|r| &r.source_type),
-                Arc::new(FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-                    rows.iter().map(|r| Some(r.vector.iter().map(|v| Some(*v)).collect::<Vec<_>>())),
-                    dims as i32,
-                )),
+                Arc::new(
+                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                        rows.iter()
+                            .map(|r| Some(r.vector.iter().map(|v| Some(*v)).collect::<Vec<_>>())),
+                        dims as i32,
+                    ),
+                ),
             ],
         )?;
         match self.table() {
@@ -134,7 +155,9 @@ impl Vectors {
     }
 
     async fn delete_in(&self, column: &str, values: &[String]) -> Result<()> {
-        let Some(table) = self.table() else { return Ok(()) };
+        let Some(table) = self.table() else {
+            return Ok(());
+        };
         for batch in values.chunks(DELETE_BATCH) {
             table.delete(sql_in(column, batch).as_str()).await?;
         }
@@ -151,7 +174,9 @@ impl Vectors {
 
     /// Update the filter columns of a document's vectors after it moved in the corpus.
     pub async fn set_doc_meta(&self, doc_id: &str, domain: &str, source_type: &str) -> Result<()> {
-        let Some(table) = self.table() else { return Ok(()) };
+        let Some(table) = self.table() else {
+            return Ok(());
+        };
         table
             .update()
             .only_if(format!("doc_id = {}", sql_str(doc_id)))
@@ -163,8 +188,15 @@ impl Vectors {
     }
 
     /// Nearest `limit` chunks to `vector`, as `(chunk_id, cosine distance)`, closest first.
-    pub async fn search(&self, vector: &[f32], limit: usize, filter: &Filter) -> Result<Vec<(String, f32)>> {
-        let Some(table) = self.table() else { return Ok(Vec::new()) };
+    pub async fn search(
+        &self,
+        vector: &[f32],
+        limit: usize,
+        filter: &Filter,
+    ) -> Result<Vec<(String, f32)>> {
+        let Some(table) = self.table() else {
+            return Ok(Vec::new());
+        };
         let mut query = table
             .query()
             .nearest_to(vector)?
@@ -196,13 +228,22 @@ impl Vectors {
     /// Compact small fragments, prune old versions (LanceDB's default age), update indexes, and
     /// create the IVF-PQ index once the table is large enough.
     pub async fn maintain(&self) -> Result<()> {
-        let Some(table) = self.table() else { return Ok(()) };
+        let Some(table) = self.table() else {
+            return Ok(());
+        };
         let rows = table.count_rows(None).await?;
-        let indexed = table.list_indices().await?.iter().any(|i| i.columns.iter().any(|c| c == "vector"));
+        let indexed = table
+            .list_indices()
+            .await?
+            .iter()
+            .any(|i| i.columns.iter().any(|c| c == "vector"));
         if !indexed && rows >= INDEX_MIN_ROWS {
             eprintln!("vectors: building the IVF-PQ index over {rows} rows");
             table
-                .create_index(&["vector"], Index::IvfPq(IvfPqIndexBuilder::default().distance_type(DistanceType::Cosine)))
+                .create_index(
+                    &["vector"],
+                    Index::IvfPq(IvfPqIndexBuilder::default().distance_type(DistanceType::Cosine)),
+                )
                 .execute()
                 .await?;
         }
@@ -259,25 +300,66 @@ mod tests {
         let dir = temp_dir("vectors");
         let v = Vectors::open(&dir).await.unwrap();
         assert_eq!(v.count().await.unwrap(), 0);
-        assert!(v.search(&[1.0, 0.0, 0.0], 5, &Filter::default()).await.unwrap().is_empty());
+        assert!(
+            v.search(&[1.0, 0.0, 0.0], 5, &Filter::default())
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
-        v.add(&[row("a:0", "math", "book", [1.0, 0.0, 0.0]), row("a:1", "math", "book", [0.9, 0.1, 0.0])])
-            .await
-            .unwrap();
-        v.add(&[row("b:0", "chemistry", "paper", [0.0, 1.0, 0.0]), row("c:0", "math", "note", [0.7, 0.7, 0.0])])
-            .await
-            .unwrap();
+        v.add(&[
+            row("a:0", "math", "book", [1.0, 0.0, 0.0]),
+            row("a:1", "math", "book", [0.9, 0.1, 0.0]),
+        ])
+        .await
+        .unwrap();
+        v.add(&[
+            row("b:0", "chemistry", "paper", [0.0, 1.0, 0.0]),
+            row("c:0", "math", "note", [0.7, 0.7, 0.0]),
+        ])
+        .await
+        .unwrap();
         assert_eq!(v.count().await.unwrap(), 4);
 
-        let hits = v.search(&[1.0, 0.0, 0.0], 10, &Filter::default()).await.unwrap();
+        let hits = v
+            .search(&[1.0, 0.0, 0.0], 10, &Filter::default())
+            .await
+            .unwrap();
         assert_eq!(ids(&hits), vec!["a:0", "a:1", "c:0", "b:0"]);
-        assert!(hits[0].1.abs() < 1e-5, "identical direction has distance 0: {hits:?}");
-        assert_eq!(ids(&v.search(&[1.0, 0.0, 0.0], 2, &Filter::default()).await.unwrap()), vec!["a:0", "a:1"]);
-        assert_eq!(ids(&v.search(&[1.0, 0.0, 0.0], 10, &filter(&["chemistry"], &[])).await.unwrap()), vec!["b:0"]);
-        assert_eq!(ids(&v.search(&[1.0, 0.0, 0.0], 10, &filter(&["math"], &["note"])).await.unwrap()), vec!["c:0"]);
+        assert!(
+            hits[0].1.abs() < 1e-5,
+            "identical direction has distance 0: {hits:?}"
+        );
+        assert_eq!(
+            ids(&v
+                .search(&[1.0, 0.0, 0.0], 2, &Filter::default())
+                .await
+                .unwrap()),
+            vec!["a:0", "a:1"]
+        );
+        assert_eq!(
+            ids(&v
+                .search(&[1.0, 0.0, 0.0], 10, &filter(&["chemistry"], &[]))
+                .await
+                .unwrap()),
+            vec!["b:0"]
+        );
+        assert_eq!(
+            ids(&v
+                .search(&[1.0, 0.0, 0.0], 10, &filter(&["math"], &["note"]))
+                .await
+                .unwrap()),
+            vec!["c:0"]
+        );
 
         v.set_doc_meta("b", "science", "book").await.unwrap();
-        assert_eq!(ids(&v.search(&[0.0, 1.0, 0.0], 10, &filter(&["science"], &["book"])).await.unwrap()), vec!["b:0"]);
+        assert_eq!(
+            ids(&v
+                .search(&[0.0, 1.0, 0.0], 10, &filter(&["science"], &["book"]))
+                .await
+                .unwrap()),
+            vec!["b:0"]
+        );
 
         v.delete_docs(&["a".into()]).await.unwrap();
         v.delete_chunks(&["c:0".into()]).await.unwrap();
@@ -299,7 +381,11 @@ mod tests {
         let v = Vectors::open(&dir).await.unwrap();
         let mut bad = row("a:1", "math", "book", [1.0, 0.0, 0.0]);
         bad.vector.push(1.0);
-        assert!(v.add(&[row("a:0", "math", "book", [1.0, 0.0, 0.0]), bad]).await.is_err());
+        assert!(
+            v.add(&[row("a:0", "math", "book", [1.0, 0.0, 0.0]), bad])
+                .await
+                .is_err()
+        );
         drop(v);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -125,7 +125,9 @@ def validate(csv_path: Path, items: list[dict]) -> bool:
     for problem in problems:
         print(f"  mismatch: {problem}")
     if not problems:
-        print("fidelity: every row matches its source item; misconception column ignored by importer")
+        print(
+            "fidelity: every row matches its source item; misconception column ignored by importer"
+        )
     return not problems
 
 

@@ -1,4 +1,5 @@
 """Build corpus/index.json from manifest + local markdown (never deletes sources)."""
+
 import json
 import os
 import re
@@ -25,8 +26,14 @@ def main():
                     rel = os.path.relpath(fp, BASE).replace(os.sep, "/")
                     with open(fp, "r", encoding="utf-8") as fh:
                         text = fh.read()
-                    docs.append({"id": rel, "local_path": rel, "chars": len(text),
-                                 "tokens": len(tokens(text))})
+                    docs.append(
+                        {
+                            "id": rel,
+                            "local_path": rel,
+                            "chars": len(text),
+                            "tokens": len(tokens(text)),
+                        }
+                    )
     ingest = os.path.join(CORPUS, "ingest")
     if os.path.isdir(ingest):
         for f in sorted(os.listdir(ingest)):
@@ -37,15 +44,19 @@ def main():
                 rel = os.path.relpath(fp, BASE)
                 with open(fp, "r", encoding="utf-8") as fh:
                     text = fh.read()
-                docs.append({"id": rel, "local_path": rel, "chars": len(text),
-                             "tokens": len(tokens(text))})
+                docs.append(
+                    {"id": rel, "local_path": rel, "chars": len(text), "tokens": len(tokens(text))}
+                )
     manifest_n = 0
     if os.path.exists(MANIFEST):
         with open(MANIFEST, "r", encoding="utf-8") as fh:
             manifest_n = len(json.load(fh).get("sources", []))
-    out = {"version": "1.0.0", "documents": docs,
-           "manifest_sources": manifest_n,
-           "note": "Full text only for own-notes/open licenses. Manifest holds links for the rest."}
+    out = {
+        "version": "1.0.0",
+        "documents": docs,
+        "manifest_sources": manifest_n,
+        "note": "Full text only for own-notes/open licenses. Manifest holds links for the rest.",
+    }
     with open(INDEX, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=2)
     print(f"Indexed {len(docs)} local docs + {manifest_n} manifest sources -> corpus/index.json")

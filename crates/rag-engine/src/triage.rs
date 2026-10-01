@@ -112,7 +112,11 @@ pub fn page_text_stats(text: &str) -> PageTextStats {
 /// walking their page objects.
 pub fn classify(stats: &PageTextStats, has_images: impl FnOnce() -> bool) -> PageClass {
     if stats.meaningful_chars < MIN_TEXT_CHARS_PER_PAGE {
-        return if has_images() { PageClass::Scanned } else { PageClass::Empty };
+        return if has_images() {
+            PageClass::Scanned
+        } else {
+            PageClass::Empty
+        };
     }
     let math_ratio = stats.math_chars as f64 / stats.meaningful_chars as f64;
     let short_share = if stats.tokens == 0 {
@@ -141,7 +145,9 @@ mod tests {
         assert!(is_meaningful('a'));
         assert!(is_meaningful('='));
         assert!(is_meaningful('\u{03C0}'));
-        for c in [' ', '\n', '\r', '\t', '\u{00A0}', '\u{0002}', '\u{FFFD}', '\u{E001}', '\u{200B}'] {
+        for c in [
+            ' ', '\n', '\r', '\t', '\u{00A0}', '\u{0002}', '\u{FFFD}', '\u{E001}', '\u{200B}',
+        ] {
             assert!(!is_meaningful(c), "{c:?} should not be meaningful");
         }
     }
@@ -152,7 +158,8 @@ mod tests {
             assert!(is_math_signal(c), "{c:?}");
         }
         // Greek, super/subscripts, letterlike, operators, supplemental operators, math alphanumerics.
-        for c in ['α', 'Ω', '⁰', '₂', 'ℝ', '∑', '∫', '≤', '⨁', '⟨', '⦃', '𝑥'] {
+        for c in ['α', 'Ω', '⁰', '₂', 'ℝ', '∑', '∫', '≤', '⨁', '⟨', '⦃', '𝑥']
+        {
             assert!(is_math_signal(c), "{c:?}");
         }
         for c in ['a', 'Z', '7', '.', ',', '(', ')', '—', '"'] {
@@ -181,44 +188,82 @@ mod tests {
     fn prose_page_is_born_digital() {
         let stats = page_text_stats(PROSE);
         assert!(stats.meaningful_chars >= MIN_TEXT_CHARS_PER_PAGE);
-        assert_eq!(classify(&stats, || panic!("images not needed")), PageClass::BornDigital);
+        assert_eq!(
+            classify(&stats, || panic!("images not needed")),
+            PageClass::BornDigital
+        );
     }
 
     #[test]
     fn little_text_with_images_is_scanned() {
         assert_eq!(classify(&page_text_stats(""), || true), PageClass::Scanned);
         // A scanner-stamped page number is still "little text".
-        assert_eq!(classify(&page_text_stats("Page 12"), || true), PageClass::Scanned);
+        assert_eq!(
+            classify(&page_text_stats("Page 12"), || true),
+            PageClass::Scanned
+        );
     }
 
     #[test]
     fn little_text_without_images_is_empty() {
         assert_eq!(classify(&page_text_stats(""), || false), PageClass::Empty);
-        assert_eq!(classify(&page_text_stats("Chapter 3"), || false), PageClass::Empty);
+        assert_eq!(
+            classify(&page_text_stats("Chapter 3"), || false),
+            PageClass::Empty
+        );
     }
 
     #[test]
     fn text_threshold_is_inclusive() {
-        let at = PageTextStats { meaningful_chars: MIN_TEXT_CHARS_PER_PAGE, tokens: 20, ..Default::default() };
-        let below = PageTextStats { meaningful_chars: MIN_TEXT_CHARS_PER_PAGE - 1, ..at };
+        let at = PageTextStats {
+            meaningful_chars: MIN_TEXT_CHARS_PER_PAGE,
+            tokens: 20,
+            ..Default::default()
+        };
+        let below = PageTextStats {
+            meaningful_chars: MIN_TEXT_CHARS_PER_PAGE - 1,
+            ..at
+        };
         assert_eq!(classify(&at, || true), PageClass::BornDigital);
         assert_eq!(classify(&below, || true), PageClass::Scanned);
     }
 
     #[test]
     fn math_char_ratio_threshold_is_inclusive() {
-        let base = PageTextStats { meaningful_chars: 1000, math_chars: 0, tokens: 200, short_tokens: 40 };
-        let at = PageTextStats { math_chars: (1000.0 * MATH_CHAR_RATIO_MIN).round() as usize, ..base };
-        let below = PageTextStats { math_chars: at.math_chars - 1, ..base };
+        let base = PageTextStats {
+            meaningful_chars: 1000,
+            math_chars: 0,
+            tokens: 200,
+            short_tokens: 40,
+        };
+        let at = PageTextStats {
+            math_chars: (1000.0 * MATH_CHAR_RATIO_MIN).round() as usize,
+            ..base
+        };
+        let below = PageTextStats {
+            math_chars: at.math_chars - 1,
+            ..base
+        };
         assert_eq!(classify(&at, || false), PageClass::MathHeavy);
         assert_eq!(classify(&below, || false), PageClass::BornDigital);
     }
 
     #[test]
     fn short_token_share_threshold_is_inclusive() {
-        let base = PageTextStats { meaningful_chars: 1000, math_chars: 0, tokens: 100, short_tokens: 0 };
-        let at = PageTextStats { short_tokens: (100.0 * SHORT_TOKEN_SHARE_MIN).round() as usize, ..base };
-        let below = PageTextStats { short_tokens: at.short_tokens - 1, ..base };
+        let base = PageTextStats {
+            meaningful_chars: 1000,
+            math_chars: 0,
+            tokens: 100,
+            short_tokens: 0,
+        };
+        let at = PageTextStats {
+            short_tokens: (100.0 * SHORT_TOKEN_SHARE_MIN).round() as usize,
+            ..base
+        };
+        let below = PageTextStats {
+            short_tokens: at.short_tokens - 1,
+            ..base
+        };
         assert_eq!(classify(&at, || false), PageClass::MathHeavy);
         assert_eq!(classify(&below, || false), PageClass::BornDigital);
     }
@@ -254,6 +299,14 @@ mod tests {
         b.add(PageClass::MathHeavy);
         b.add(PageClass::Empty);
         a.merge(&b);
-        assert_eq!(a, TriageCounts { born_digital: 2, scanned: 1, math_heavy: 1, empty: 1 });
+        assert_eq!(
+            a,
+            TriageCounts {
+                born_digital: 2,
+                scanned: 1,
+                math_heavy: 1,
+                empty: 1
+            }
+        );
     }
 }

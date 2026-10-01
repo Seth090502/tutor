@@ -92,17 +92,26 @@ pub fn rrf(lists: &[Vec<String>], k: f64) -> Vec<(String, f64, Vec<Option<usize>
     let mut fused: HashMap<&str, (f64, Vec<Option<usize>>)> = HashMap::new();
     for (list_index, list) in lists.iter().enumerate() {
         for (i, id) in list.iter().enumerate() {
-            let entry = fused.entry(id).or_insert_with(|| (0.0, vec![None; lists.len()]));
+            let entry = fused
+                .entry(id)
+                .or_insert_with(|| (0.0, vec![None; lists.len()]));
             if entry.1[list_index].is_none() {
                 entry.0 += 1.0 / (k + (i + 1) as f64);
                 entry.1[list_index] = Some(i + 1);
             }
         }
     }
-    let mut out: Vec<(String, f64, Vec<Option<usize>>)> =
-        fused.into_iter().map(|(id, (score, ranks))| (id.to_string(), score, ranks)).collect();
-    let best = |ranks: &[Option<usize>]| ranks.iter().flatten().min().copied().unwrap_or(usize::MAX);
-    out.sort_by(|a, b| b.1.total_cmp(&a.1).then(best(&a.2).cmp(&best(&b.2))).then(a.0.cmp(&b.0)));
+    let mut out: Vec<(String, f64, Vec<Option<usize>>)> = fused
+        .into_iter()
+        .map(|(id, (score, ranks))| (id.to_string(), score, ranks))
+        .collect();
+    let best =
+        |ranks: &[Option<usize>]| ranks.iter().flatten().min().copied().unwrap_or(usize::MAX);
+    out.sort_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then(best(&a.2).cmp(&best(&b.2)))
+            .then(a.0.cmp(&b.0))
+    });
     out
 }
 
@@ -112,29 +121,48 @@ pub fn validate(req: &SearchRequest) -> std::result::Result<(usize, Filter, Mode
     }
     let k = req.k.unwrap_or(DEFAULT_K);
     if !(1..=MAX_K).contains(&k) {
-        return Err(SearchError::BadRequest(format!("k must be between 1 and {MAX_K}")));
+        return Err(SearchError::BadRequest(format!(
+            "k must be between 1 and {MAX_K}"
+        )));
     }
     let source_types = req.source_types.clone().unwrap_or_default();
-    if let Some(bad) = source_types.iter().find(|s| !SOURCE_TYPES.contains(&s.as_str())) {
-        return Err(SearchError::BadRequest(format!("unknown source_type {bad:?}; expected one of {SOURCE_TYPES:?}")));
+    if let Some(bad) = source_types
+        .iter()
+        .find(|s| !SOURCE_TYPES.contains(&s.as_str()))
+    {
+        return Err(SearchError::BadRequest(format!(
+            "unknown source_type {bad:?}; expected one of {SOURCE_TYPES:?}"
+        )));
     }
-    let filter = Filter { domains: req.domains.clone().unwrap_or_default(), source_types };
+    let filter = Filter {
+        domains: req.domains.clone().unwrap_or_default(),
+        source_types,
+    };
     Ok((k, filter, req.mode.unwrap_or(Mode::Hybrid)))
 }
 
 /// Whether vector search can run: a provider is configured and the vector store holds vectors
 /// from that provider and model.
 pub async fn vectors_ready(engine: &Engine) -> Result<bool> {
-    let (Some(embedder), Some(vectors)) = (&engine.embedder, &engine.vectors) else { return Ok(false) };
+    let (Some(embedder), Some(vectors)) = (&engine.embedder, &engine.vectors) else {
+        return Ok(false);
+    };
     let (provider, model) = {
         let conn = engine.conn();
-        (store::meta_get(&conn, EMBED_PROVIDER_KEY)?, store::meta_get(&conn, EMBED_MODEL_KEY)?)
+        (
+            store::meta_get(&conn, EMBED_PROVIDER_KEY)?,
+            store::meta_get(&conn, EMBED_MODEL_KEY)?,
+        )
     };
-    let same_model = provider.as_deref() == Some(embedder.provider_name()) && model.as_deref() == Some(embedder.model());
+    let same_model = provider.as_deref() == Some(embedder.provider_name())
+        && model.as_deref() == Some(embedder.model());
     Ok(same_model && vectors.count().await? > 0)
 }
 
-pub async fn search(engine: Arc<Engine>, req: SearchRequest) -> std::result::Result<SearchResponse, SearchError> {
+pub async fn search(
+    engine: Arc<Engine>,
+    req: SearchRequest,
+) -> std::result::Result<SearchResponse, SearchError> {
     let (k, filter, mode) = validate(&req)?;
     let ready = vectors_ready(&engine).await?;
     let mode_used = match (mode, ready) {
@@ -146,7 +174,11 @@ pub async fn search(engine: Arc<Engine>, req: SearchRequest) -> std::result::Res
         (Mode::Hybrid, false) => Mode::Bm25,
         (mode, _) => mode,
     };
-    let depth = if mode_used == Mode::Hybrid { CANDIDATES.max(k) } else { k };
+    let depth = if mode_used == Mode::Hybrid {
+        CANDIDATES.max(k)
+    } else {
+        k
+    };
 
     let bm25 = if mode_used == Mode::Vector {
         Vec::new()
@@ -159,23 +191,50 @@ pub async fn search(engine: Arc<Engine>, req: SearchRequest) -> std::result::Res
     let vector = if mode_used == Mode::Bm25 {
         Vec::new()
     } else {
-        let embedder = engine.embedder.as_ref().expect("vectors_ready checked the embedder");
+        let embedder = engine
+            .embedder
+            .as_ref()
+            .expect("vectors_ready checked the embedder");
         let out = embedder
             .embed_batch(std::slice::from_ref(&req.query), InputType::Query)
             .await
             .map_err(|e| SearchError::Provider(e.0))?;
-        store::record_spend(&engine.conn(), SpendKind::Embedding, embedder.provider_name(), embedder.model(), out.tokens, out.usd)?;
-        let vectors = engine.vectors.as_ref().expect("vectors_ready checked the vector store");
+        store::record_spend(
+            &engine.conn(),
+            SpendKind::Embedding,
+            embedder.provider_name(),
+            embedder.model(),
+            out.tokens,
+            out.usd,
+        )?;
+        let vectors = engine
+            .vectors
+            .as_ref()
+            .expect("vectors_ready checked the vector store");
         vectors.search(&out.vectors[0], depth, &filter).await?
     };
 
     // (chunk_id, score, bm25 rank, vector rank), best first.
     let ranked: Vec<(String, f64, Option<usize>, Option<usize>)> = match mode_used {
-        Mode::Bm25 => bm25.into_iter().enumerate().map(|(i, (id, s))| (id, s as f64, Some(i + 1), None)).collect(),
-        Mode::Vector => vector.into_iter().enumerate().map(|(i, (id, d))| (id, 1.0 - d as f64, None, Some(i + 1))).collect(),
+        Mode::Bm25 => bm25
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, s))| (id, s as f64, Some(i + 1), None))
+            .collect(),
+        Mode::Vector => vector
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, d))| (id, 1.0 - d as f64, None, Some(i + 1)))
+            .collect(),
         Mode::Hybrid => {
-            let lists = [bm25.into_iter().map(|(id, _)| id).collect(), vector.into_iter().map(|(id, _)| id).collect()];
-            rrf(&lists, RRF_K).into_iter().map(|(id, s, r)| (id, s, r[0], r[1])).collect()
+            let lists = [
+                bm25.into_iter().map(|(id, _)| id).collect(),
+                vector.into_iter().map(|(id, _)| id).collect(),
+            ];
+            rrf(&lists, RRF_K)
+                .into_iter()
+                .map(|(id, s, r)| (id, s, r[0], r[1]))
+                .collect()
         }
     };
     let engine2 = engine.clone();
@@ -186,7 +245,11 @@ pub async fn search(engine: Arc<Engine>, req: SearchRequest) -> std::result::Res
 }
 
 /// Fill in chunk and document fields for the first `k` ranked chunks that still exist.
-fn load_hits(engine: &Engine, ranked: Vec<(String, f64, Option<usize>, Option<usize>)>, k: usize) -> Result<Vec<Hit>> {
+fn load_hits(
+    engine: &Engine,
+    ranked: Vec<(String, f64, Option<usize>, Option<usize>)>,
+    k: usize,
+) -> Result<Vec<Hit>> {
     let ids: Vec<&str> = ranked.iter().map(|r| r.0.as_str()).collect();
     let mut rows: HashMap<String, Hit> = HashMap::new();
     if !ids.is_empty() {
@@ -211,7 +274,10 @@ fn load_hits(engine: &Engine, ranked: Vec<(String, f64, Option<usize>, Option<us
                 heading_path: serde_json::from_str(&heading_path).unwrap_or_default(),
                 text: r.get(9)?,
                 score: 0.0,
-                ranks: Ranks { bm25: None, vector: None },
+                ranks: Ranks {
+                    bm25: None,
+                    vector: None,
+                },
             })
         })?;
         for hit in found {
@@ -282,7 +348,13 @@ mod tests {
         ))
         .unwrap();
         assert_eq!((k, mode), (3, Mode::Bm25));
-        assert_eq!((filter.domains, filter.source_types), (vec!["math".to_string()], vec!["book".to_string(), "note".to_string()]));
+        assert_eq!(
+            (filter.domains, filter.source_types),
+            (
+                vec!["math".to_string()],
+                vec!["book".to_string(), "note".to_string()]
+            )
+        );
 
         for bad in [
             serde_json::json!({"query": "  "}),
@@ -290,9 +362,22 @@ mod tests {
             serde_json::json!({"query": "x", "k": 101}),
             serde_json::json!({"query": "x", "source_types": ["books"]}),
         ] {
-            assert!(matches!(validate(&request(bad)), Err(SearchError::BadRequest(_))));
+            assert!(matches!(
+                validate(&request(bad)),
+                Err(SearchError::BadRequest(_))
+            ));
         }
-        assert!(serde_json::from_value::<SearchRequest>(serde_json::json!({"query": "x", "mode": "dense"})).is_err());
-        assert!(serde_json::from_value::<SearchRequest>(serde_json::json!({"query": "x", "domain": ["math"]})).is_err());
+        assert!(
+            serde_json::from_value::<SearchRequest>(
+                serde_json::json!({"query": "x", "mode": "dense"})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<SearchRequest>(
+                serde_json::json!({"query": "x", "domain": ["math"]})
+            )
+            .is_err()
+        );
     }
 }

@@ -5,35 +5,99 @@ DOMAINS = {
         "label": "Math",
         "levels": ["foundations", "algebra", "geometry", "precalculus"],
         "topics": {
-            "arithmetic-laws": {"label": "Arithmetic laws (comm/assoc/distrib)", "prereq": [], "level": "foundations"},
-            "fractions": {"label": "Fractions, ratios, percents", "prereq": ["arithmetic-laws"], "level": "foundations"},
-            "linear-equations": {"label": "Linear equations", "prereq": ["arithmetic-laws"], "level": "algebra"},
-            "quadratics": {"label": "Quadratics (factoring, formula)", "prereq": ["linear-equations"], "level": "algebra"},
-            "functions": {"label": "Functions (domain, range, inverse)", "prereq": ["linear-equations"], "level": "algebra"},
-            "exponents-logs": {"label": "Exponents and logarithms", "prereq": ["functions"], "level": "precalculus"},
-            "geometry-basics": {"label": "Angles, triangles, Pythagoras", "prereq": ["fractions"], "level": "geometry"},
+            "arithmetic-laws": {
+                "label": "Arithmetic laws (comm/assoc/distrib)",
+                "prereq": [],
+                "level": "foundations",
+            },
+            "fractions": {
+                "label": "Fractions, ratios, percents",
+                "prereq": ["arithmetic-laws"],
+                "level": "foundations",
+            },
+            "linear-equations": {
+                "label": "Linear equations",
+                "prereq": ["arithmetic-laws"],
+                "level": "algebra",
+            },
+            "quadratics": {
+                "label": "Quadratics (factoring, formula)",
+                "prereq": ["linear-equations"],
+                "level": "algebra",
+            },
+            "functions": {
+                "label": "Functions (domain, range, inverse)",
+                "prereq": ["linear-equations"],
+                "level": "algebra",
+            },
+            "exponents-logs": {
+                "label": "Exponents and logarithms",
+                "prereq": ["functions"],
+                "level": "precalculus",
+            },
+            "geometry-basics": {
+                "label": "Angles, triangles, Pythagoras",
+                "prereq": ["fractions"],
+                "level": "geometry",
+            },
         },
     },
     "english": {
         "label": "English",
         "levels": ["foundations", "craft", "analysis"],
         "topics": {
-            "grammar-core": {"label": "Sentence core (subjects, verbs, agreement)", "prereq": [], "level": "foundations"},
-            "punctuation": {"label": "Punctuation (comma, apostrophe, colon)", "prereq": ["grammar-core"], "level": "foundations"},
-            "thesis": {"label": "Thesis + paragraph structure", "prereq": ["grammar-core"], "level": "craft"},
+            "grammar-core": {
+                "label": "Sentence core (subjects, verbs, agreement)",
+                "prereq": [],
+                "level": "foundations",
+            },
+            "punctuation": {
+                "label": "Punctuation (comma, apostrophe, colon)",
+                "prereq": ["grammar-core"],
+                "level": "foundations",
+            },
+            "thesis": {
+                "label": "Thesis + paragraph structure",
+                "prereq": ["grammar-core"],
+                "level": "craft",
+            },
             "evidence": {"label": "Evidence + citation", "prereq": ["thesis"], "level": "craft"},
-            "rhetoric": {"label": "Rhetoric (ethos/pathos/logos, fallacies)", "prereq": ["evidence"], "level": "analysis"},
+            "rhetoric": {
+                "label": "Rhetoric (ethos/pathos/logos, fallacies)",
+                "prereq": ["evidence"],
+                "level": "analysis",
+            },
         },
     },
     "science": {
         "label": "Science",
         "levels": ["foundations", "mechanisms", "systems"],
         "topics": {
-            "scientific-method": {"label": "Scientific method + units", "prereq": [], "level": "foundations"},
-            "cells": {"label": "Cells (organelles, diffusion)", "prereq": ["scientific-method"], "level": "mechanisms"},
-            "photosynthesis": {"label": "Photosynthesis + respiration", "prereq": ["cells"], "level": "mechanisms"},
-            "genetics": {"label": "Genetics (Mendel, Punnett)", "prereq": ["cells"], "level": "mechanisms"},
-            "newton": {"label": "Newton's laws + energy", "prereq": ["scientific-method"], "level": "systems"},
+            "scientific-method": {
+                "label": "Scientific method + units",
+                "prereq": [],
+                "level": "foundations",
+            },
+            "cells": {
+                "label": "Cells (organelles, diffusion)",
+                "prereq": ["scientific-method"],
+                "level": "mechanisms",
+            },
+            "photosynthesis": {
+                "label": "Photosynthesis + respiration",
+                "prereq": ["cells"],
+                "level": "mechanisms",
+            },
+            "genetics": {
+                "label": "Genetics (Mendel, Punnett)",
+                "prereq": ["cells"],
+                "level": "mechanisms",
+            },
+            "newton": {
+                "label": "Newton's laws + energy",
+                "prereq": ["scientific-method"],
+                "level": "systems",
+            },
         },
     },
     "chemistry": {
@@ -41,10 +105,26 @@ DOMAINS = {
         "levels": ["foundations", "reactions", "quantitative"],
         "topics": {
             "atoms": {"label": "Atoms, periodic table, ions", "prereq": [], "level": "foundations"},
-            "bonding": {"label": "Bonding (ionic/covalent/metallic)", "prereq": ["atoms"], "level": "foundations"},
-            "reactions": {"label": "Reaction types + balancing", "prereq": ["bonding"], "level": "reactions"},
-            "stoichiometry": {"label": "Moles + stoichiometry", "prereq": ["reactions"], "level": "quantitative"},
-            "acids-bases": {"label": "Acids, bases, pH", "prereq": ["reactions"], "level": "reactions"},
+            "bonding": {
+                "label": "Bonding (ionic/covalent/metallic)",
+                "prereq": ["atoms"],
+                "level": "foundations",
+            },
+            "reactions": {
+                "label": "Reaction types + balancing",
+                "prereq": ["bonding"],
+                "level": "reactions",
+            },
+            "stoichiometry": {
+                "label": "Moles + stoichiometry",
+                "prereq": ["reactions"],
+                "level": "quantitative",
+            },
+            "acids-bases": {
+                "label": "Acids, bases, pH",
+                "prereq": ["reactions"],
+                "level": "reactions",
+            },
         },
     },
 }

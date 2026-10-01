@@ -1,6 +1,15 @@
 """Item validation (pydantic-ai pattern, stdlib only): typed quiz items without deps."""
 
-REQUIRED = ("id", "domain", "topic", "difficulty", "prompt", "answer", "explanation", "misconception")
+REQUIRED = (
+    "id",
+    "domain",
+    "topic",
+    "difficulty",
+    "prompt",
+    "answer",
+    "explanation",
+    "misconception",
+)
 DOMAINS = ("math", "english", "science", "chemistry")
 
 

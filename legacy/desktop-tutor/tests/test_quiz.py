@@ -1,6 +1,7 @@
 import unittest
-from tutor import quiz as QZ
+
 from tutor import question_bank as QB
+from tutor import quiz as QZ
 
 
 class QuizTest(unittest.TestCase):

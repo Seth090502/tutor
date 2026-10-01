@@ -109,14 +109,19 @@ pub fn open(data_dir: &Path) -> Result<Connection> {
     std::fs::create_dir_all(data_dir)
         .map_err(|e| format!("cannot create data directory {}: {e}", data_dir.display()))?;
     let path = data_dir.join(DB_FILE);
-    let conn = Connection::open(&path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let conn =
+        Connection::open(&path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     conn.busy_timeout(Duration::from_secs(30))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "cache_size", -65_536)?; // 64 MiB page cache
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
-        return Err(format!("{} has schema version {version}; this build knows {SCHEMA_VERSION}", path.display()).into());
+        return Err(format!(
+            "{} has schema version {version}; this build knows {SCHEMA_VERSION}",
+            path.display()
+        )
+        .into());
     }
     conn.execute_batch(SCHEMA)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -127,19 +132,26 @@ pub fn open(data_dir: &Path) -> Result<Connection> {
 /// extraction thread, next to the connection that writes).
 pub fn open_read(data_dir: &Path) -> Result<Connection> {
     let path = data_dir.join(DB_FILE);
-    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
-        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let conn = Connection::open_with_flags(
+        &path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     conn.busy_timeout(Duration::from_secs(30))?;
     Ok(conn)
 }
 
 /// Seconds since the Unix epoch.
 pub fn now() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 pub fn meta_get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    Ok(conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).optional()?)
+    Ok(conn
+        .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+        .optional()?)
 }
 
 pub fn meta_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
@@ -167,7 +179,14 @@ impl SpendKind {
     }
 }
 
-pub fn record_spend(conn: &Connection, kind: SpendKind, provider: &str, model: &str, tokens: u64, usd: f64) -> Result<()> {
+pub fn record_spend(
+    conn: &Connection,
+    kind: SpendKind,
+    provider: &str,
+    model: &str,
+    tokens: u64,
+    usd: f64,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO spend(kind, provider, model, tokens, usd, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![kind.as_str(), provider, model, tokens as i64, usd, now()],
@@ -177,7 +196,11 @@ pub fn record_spend(conn: &Connection, kind: SpendKind, provider: &str, model: &
 
 /// Total USD spent on `kind`.
 pub fn spend_usd(conn: &Connection, kind: SpendKind) -> Result<f64> {
-    Ok(conn.query_row("SELECT COALESCE(SUM(usd), 0.0) FROM spend WHERE kind = ?1", [kind.as_str()], |r| r.get(0))?)
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(usd), 0.0) FROM spend WHERE kind = ?1",
+        [kind.as_str()],
+        |r| r.get(0),
+    )?)
 }
 
 #[cfg(test)]
@@ -210,8 +233,21 @@ mod tests {
             .unwrap()
             .collect::<std::result::Result<_, _>>()
             .unwrap();
-        assert_eq!(tables, ["chunks", "documents", "files", "jobs", "meta", "ocr_queue", "spend"]);
-        let mode: String = conn.pragma_query_value(None, "journal_mode", |r| r.get(0)).unwrap();
+        assert_eq!(
+            tables,
+            [
+                "chunks",
+                "documents",
+                "files",
+                "jobs",
+                "meta",
+                "ocr_queue",
+                "spend"
+            ]
+        );
+        let mode: String = conn
+            .pragma_query_value(None, "journal_mode", |r| r.get(0))
+            .unwrap();
         assert_eq!(mode, "wal");
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();

@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub fn hash_file(path: &Path) -> Result<String, String> {
     let file = File::open(path).map_err(|e| format!("cannot open file: {e}"))?;
     let mut hasher = blake3::Hasher::new();
-    hasher.update_reader(file).map_err(|e| format!("cannot read file: {e}"))?;
+    hasher
+        .update_reader(file)
+        .map_err(|e| format!("cannot read file: {e}"))?;
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -46,7 +48,10 @@ pub fn duplicate_groups(hashes: &[Option<&str>]) -> Vec<Vec<usize>> {
 
 /// Bytes removed by keeping one copy per group.
 pub fn duplicate_bytes(groups: &[Vec<usize>], bytes: &[u64]) -> u64 {
-    groups.iter().map(|g| (g.len() as u64 - 1) * bytes[g[0]]).sum()
+    groups
+        .iter()
+        .map(|g| (g.len() as u64 - 1) * bytes[g[0]])
+        .sum()
 }
 
 #[cfg(test)]
@@ -56,7 +61,16 @@ mod tests {
 
     #[test]
     fn groups_equal_hashes_in_input_order() {
-        let hashes = [Some("b"), Some("a"), None, Some("b"), Some("c"), Some("a"), Some("b"), None];
+        let hashes = [
+            Some("b"),
+            Some("a"),
+            None,
+            Some("b"),
+            Some("c"),
+            Some("a"),
+            Some("b"),
+            None,
+        ];
         assert_eq!(duplicate_groups(&hashes), vec![vec![0, 3, 6], vec![1, 5]]);
     }
 

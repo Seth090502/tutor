@@ -5,11 +5,11 @@ import random
 import sys
 import time
 
+from . import corpus as CO
 from . import curriculum as CU
 from . import question_bank as QB
 from . import quiz as QZ
 from . import store as ST
-from . import corpus as CO
 
 
 def _run_session(items, state, interactive=True, mode="quiz"):
@@ -47,7 +47,7 @@ def cmd_learn(args):
     if args.topic and args.topic in topics:
         tid = args.topic
     else:
-        mastered = (ST.load().get("mastered_topics", {}).get(args.domain, []))
+        mastered = ST.load().get("mastered_topics", {}).get(args.domain, [])
         tid = CU.next_topic(args.domain, mastered) or next(iter(topics), None)
     if not tid:
         print(f"No curriculum for domain '{args.domain}'. Try: {', '.join(CU.get_domains())}")
@@ -59,12 +59,18 @@ def cmd_learn(args):
     if expl:
         print(f"\n{expl}")
     else:
-        print("\nFirst-principles pass: define terms -> state mechanism -> work one tiny example -> 3 checks.")
+        print(
+            "\nFirst-principles pass: define terms -> state mechanism -> work one tiny example -> 3 checks."
+        )
         rel = [i for i in QB.by_domain(args.domain) if i["topic"] == tid][:3]
         for i in rel:
-            print(f"- Example check [{i['id']}]: {i['prompt']} (ans {i['answer']}; {i['explanation']})")
-    print("\nNext: run `python -m tutor.cli quiz --domain "
-          f"{args.domain} --n 5` for retrieval practice.")
+            print(
+                f"- Example check [{i['id']}]: {i['prompt']} (ans {i['answer']}; {i['explanation']})"
+            )
+    print(
+        "\nNext: run `python -m tutor.cli quiz --domain "
+        f"{args.domain} --n 5` for retrieval practice."
+    )
     return 0
 
 
@@ -83,11 +89,15 @@ def cmd_explain(args):
         print(f"# {args.topic} (from local corpus)")
         for h in hits:
             print(f"\n- {h['path']} (score {h['score']}): {h['snippet']}...")
-        print("\nSocratic checks: (1) define it in one sentence (2) give one example "
-              "(3) state one common misconception.")
+        print(
+            "\nSocratic checks: (1) define it in one sentence (2) give one example "
+            "(3) state one common misconception."
+        )
         return 0
-    print("No local explainer yet. Try topics: quadratics, photosynthesis, stoichiometry; "
-          "or `learn --domain math`.")
+    print(
+        "No local explainer yet. Try topics: quadratics, photosynthesis, stoichiometry; "
+        "or `learn --domain math`."
+    )
     return 0
 
 
@@ -137,7 +147,9 @@ def cmd_test(args):
     # mark topic progress hint
     acc = correct / max(1, len(items))
     if acc >= 0.8:
-        print("Mastery signal: >=80%. Mark topics reviewed in your notes; re-test in 7 days via `review`.")
+        print(
+            "Mastery signal: >=80%. Mark topics reviewed in your notes; re-test in 7 days via `review`."
+        )
     return 0
 
 
@@ -168,8 +180,10 @@ def cmd_progress(_args):
         return 0
     for d in sorted(acc):
         v = acc[d]
-        print(f"- {d}: {v['correct']}/{v['n']} ({100*v['acc']:.0f}%)")
-    print(f"Tracked items: {len(state.get('items', {}))} | Total attempts: {len(state.get('attempts', []))}")
+        print(f"- {d}: {v['correct']}/{v['n']} ({100 * v['acc']:.0f}%)")
+    print(
+        f"Tracked items: {len(state.get('items', {}))} | Total attempts: {len(state.get('attempts', []))}"
+    )
     weak = min(acc.items(), key=lambda kv: kv[1]["acc"])[0] if acc else None
     if weak:
         print(f"Weakest domain: {weak} -> `python -m tutor.cli quiz --domain {weak} --n 5`")
@@ -178,11 +192,14 @@ def cmd_progress(_args):
 
 def cmd_agent(args):
     from . import agents as AG
+
     state = ST.load()
     if args.non_interactive:
         res = AG.run_lesson(args.domain, state, topic=args.topic, n=args.n, seed=args.seed)
     else:
-        topic, items = AG.preview_items(args.domain, state, topic=args.topic, n=args.n, seed=args.seed)
+        topic, items = AG.preview_items(
+            args.domain, state, topic=args.topic, n=args.n, seed=args.seed
+        )
         if topic is None:
             print(f"Unknown domain '{args.domain}'. Try: {', '.join(CU.get_domains())}")
             return 1
@@ -201,7 +218,9 @@ def cmd_agent(args):
             if given.lower() == "q":
                 break
             answers.append(given)
-        res = AG.run_lesson(args.domain, state, topic=topic, n=args.n, seed=args.seed, answers=answers)
+        res = AG.run_lesson(
+            args.domain, state, topic=topic, n=args.n, seed=args.seed, answers=answers
+        )
     # interactive grading pass reuses the same session printer for feedback
     print(f"== AGENT lesson ({args.domain}/{res['trace'][0].get('topic')}) ==")
     for t in res["trace"]:
@@ -209,27 +228,31 @@ def cmd_agent(args):
             print(f"\n# explain\n{t['text']}")
         elif t["node"] == "grade":
             print(f"- {t['item']}: {'ok' if t['correct'] else 'miss'} — {t['why']}")
-    print(f"\nlesson: {res['correct']}/{res['total']} | due now: "
-          f"{[t for t in res['trace'] if t['node'] == 'review'][0]['due']} | "
-          f"next: {[t for t in res['trace'] if t['node'] == 'next'][0]['next_topic']}")
+    print(
+        f"\nlesson: {res['correct']}/{res['total']} | due now: "
+        f"{[t for t in res['trace'] if t['node'] == 'review'][0]['due']} | "
+        f"next: {[t for t in res['trace'] if t['node'] == 'next'][0]['next_topic']}"
+    )
     ST.save(state)
     return 0
 
 
 def cmd_serve(args):
     from . import api as API
+
     API.run(port=args.port)
     return 0
 
 
 def cmd_eval(args):
     from . import eval as EV
+
     ids = None
     if args.split != "all":
         train, test = EV.split_items(seed=args.seed)
         ids = train if args.split == "train" else test
     r = EV.evaluate(k=args.k, ids=ids)
-    print(f"hit@{r['k']} [{args.split}]: {r['hit']}/{r['n']} = {100*r['hit_rate']:.1f}%")
+    print(f"hit@{r['k']} [{args.split}]: {r['hit']}/{r['n']} = {100 * r['hit_rate']:.1f}%")
     for m in r["misses"]:
         print(f"  MISS {m['id']}: want {m['expected']}, got {m['got']}")
     return 0
@@ -258,8 +281,12 @@ def build_parser():
     a.add_argument("--topic", required=True)
     a.set_defaults(func=cmd_explain)
 
-    for name, fn, hlp in (("quiz", cmd_quiz, "Retrieval quiz"), ("popquiz", cmd_popquiz, "3-item surprise quiz"),
-                          ("test", cmd_test, "Graded mixed test"), ("review", cmd_review, "Due spaced items")):
+    for name, fn, hlp in (
+        ("quiz", cmd_quiz, "Retrieval quiz"),
+        ("popquiz", cmd_popquiz, "3-item surprise quiz"),
+        ("test", cmd_test, "Graded mixed test"),
+        ("review", cmd_review, "Due spaced items"),
+    ):
         a = sub.add_parser(name, help=hlp)
         a.add_argument("--domain", default="math", choices=CU.get_domains())
         a.add_argument("--n", type=int, default=5)

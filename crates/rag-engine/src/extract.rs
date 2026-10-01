@@ -28,7 +28,9 @@ static PDFIUM: Mutex<()> = Mutex::new(());
 
 pub fn pdfium_lock() -> MutexGuard<'static, ()> {
     // A panic inside PDFium work (caught by `catch_panics`) must not disable PDFium for good.
-    PDFIUM.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    PDFIUM
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Form XObjects can nest; stop looking for images below this depth.
@@ -59,7 +61,11 @@ pub fn measure_pdf(pdfium: &Pdfium, path: &Path) -> Result<Measurement, String> 
         drop(page);
         guard = yield_pdfium(guard);
     }
-    Ok(Measurement { pages: Some(pages), triage: Some(counts), size })
+    Ok(Measurement {
+        pages: Some(pages),
+        triage: Some(counts),
+        size,
+    })
 }
 
 /// Let a waiting renderer in between two pages.
@@ -95,12 +101,17 @@ pub fn open_pdf<'a>(pdfium: &'a Pdfium, path: &Path) -> Result<PdfDocument<'a>, 
 }
 
 fn page_text(page: &PdfPage, index: usize) -> Result<String, String> {
-    Ok(page.text().map_err(|e| format!("page {}: cannot read text layer: {e}", index + 1))?.all())
+    Ok(page
+        .text()
+        .map_err(|e| format!("page {}: cannot read text layer: {e}", index + 1))?
+        .all())
 }
 
 fn page_class(page: &PdfPage, page_text: &str) -> PageClass {
     let stats = triage::page_text_stats(page_text);
-    triage::classify(&stats, || page.objects().iter().any(|object| has_image(&object, 0)))
+    triage::classify(&stats, || {
+        page.objects().iter().any(|object| has_image(&object, 0))
+    })
 }
 
 pub struct PdfPageText {
@@ -128,7 +139,10 @@ pub fn pdf_text(pdfium: &Pdfium, path: &Path) -> Result<PdfText, String> {
     for (index, page) in document.pages().iter().enumerate() {
         let raw = page_text(&page, index)?;
         let class = page_class(&page, &raw);
-        pages.push(PdfPageText { text: clean_pdf_text(&raw), class });
+        pages.push(PdfPageText {
+            text: clean_pdf_text(&raw),
+            class,
+        });
         drop(page);
         guard = yield_pdfium(guard);
     }
@@ -165,13 +179,19 @@ pub fn measure_epub(path: &Path) -> Result<Measurement, String> {
         let content = content.map_err(|e| format!("cannot read EPUB content: {e}"))?;
         size += text::measure(&text::strip_markup(content.content()));
     }
-    Ok(Measurement { size, ..Default::default() })
+    Ok(Measurement {
+        size,
+        ..Default::default()
+    })
 }
 
 /// Markdown and plain text, decoded as UTF-8 with invalid sequences replaced.
 pub fn measure_plain(path: &Path) -> Result<Measurement, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read file: {e}"))?;
-    Ok(Measurement { size: text::measure(&String::from_utf8_lossy(&bytes)), ..Default::default() })
+    Ok(Measurement {
+        size: text::measure(&String::from_utf8_lossy(&bytes)),
+        ..Default::default()
+    })
 }
 
 pub struct EpubSection {
@@ -187,8 +207,20 @@ pub struct EpubText {
 
 /// Block-level closing tags after which a paragraph break is kept in the text.
 const BLOCK_ENDS: [&str; 14] = [
-    "</p>", "</div>", "</li>", "</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>", "</tr>", "</section>",
-    "</blockquote>", "<br/>", "<br />",
+    "</p>",
+    "</div>",
+    "</li>",
+    "</h1>",
+    "</h2>",
+    "</h3>",
+    "</h4>",
+    "</h5>",
+    "</h6>",
+    "</tr>",
+    "</section>",
+    "</blockquote>",
+    "<br/>",
+    "<br />",
 ];
 
 /// The text of every spine document with markup stripped and paragraph breaks kept. Each
@@ -196,14 +228,21 @@ const BLOCK_ENDS: [&str; 14] = [
 /// it; a document without an entry continues the previous one's path.
 pub fn epub_text(path: &Path) -> Result<EpubText, String> {
     let epub = rbook::Epub::open(path).map_err(|e| format!("cannot open EPUB: {e}"))?;
-    let title = epub.metadata().title().map(|t| t.value().trim().to_string()).filter(|t| !t.is_empty());
+    let title = epub
+        .metadata()
+        .title()
+        .map(|t| t.value().trim().to_string())
+        .filter(|t| !t.is_empty());
     let mut toc_paths: HashMap<String, Vec<String>> = HashMap::new();
     if let Some(root) = epub.toc().contents() {
         let mut stack: Vec<String> = Vec::new();
         for entry in root.flatten().filter(|e| e.depth() > 0) {
             stack.truncate(entry.depth() - 1);
             stack.push(entry.label().trim().to_string());
-            if let Some(key) = entry.manifest_entry().and_then(|m| m.resource().key().value().map(str::to_string)) {
+            if let Some(key) = entry
+                .manifest_entry()
+                .and_then(|m| m.resource().key().value().map(str::to_string))
+            {
                 toc_paths.entry(key).or_insert_with(|| stack.clone());
             }
         }
@@ -212,7 +251,12 @@ pub fn epub_text(path: &Path) -> Result<EpubText, String> {
     let mut heading_path = Vec::new();
     for content in epub.reader() {
         let content = content.map_err(|e| format!("cannot read EPUB content: {e}"))?;
-        let key = content.manifest_entry().resource().key().value().map(str::to_string);
+        let key = content
+            .manifest_entry()
+            .resource()
+            .key()
+            .value()
+            .map(str::to_string);
         if let Some(path) = key.and_then(|k| toc_paths.get(&k)) {
             heading_path = path.clone();
         }
@@ -220,7 +264,10 @@ pub fn epub_text(path: &Path) -> Result<EpubText, String> {
         for tag in BLOCK_ENDS {
             xhtml = xhtml.replace(tag, &format!("{tag}\n\n"));
         }
-        sections.push(EpubSection { heading_path: heading_path.clone(), text: tidy(&text::strip_markup(&xhtml)) });
+        sections.push(EpubSection {
+            heading_path: heading_path.clone(),
+            text: tidy(&text::strip_markup(&xhtml)),
+        });
     }
     Ok(EpubText { title, sections })
 }
@@ -272,8 +319,18 @@ mod tests {
         assert_eq!(epub.title.as_deref(), Some("Survey Fixture"));
         assert_eq!(epub.sections.len(), 1);
         assert_eq!(epub.sections[0].heading_path, vec!["Chapter 1"]);
-        assert!(epub.sections[0].text.contains("Plants & algae capture light energy."), "{}", epub.sections[0].text);
-        assert!(epub.sections[0].text.contains("\n\nThey store it"), "{}", epub.sections[0].text);
+        assert!(
+            epub.sections[0]
+                .text
+                .contains("Plants & algae capture light energy."),
+            "{}",
+            epub.sections[0].text
+        );
+        assert!(
+            epub.sections[0].text.contains("\n\nThey store it"),
+            "{}",
+            epub.sections[0].text
+        );
         assert!(!epub.sections[0].text.contains("margin"));
     }
 }

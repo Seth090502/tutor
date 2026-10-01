@@ -12,7 +12,8 @@
 //! refer to the normalised text; the index stores no positions or offsets.
 
 use tantivy::tokenizer::{
-    Language, LowerCaser, RemoveLongFilter, SimpleTokenStream, SimpleTokenizer, Stemmer, TextAnalyzer, Tokenizer,
+    Language, LowerCaser, RemoveLongFilter, SimpleTokenStream, SimpleTokenizer, Stemmer,
+    TextAnalyzer, Tokenizer,
 };
 use unicode_normalization::UnicodeNormalization;
 
@@ -46,8 +47,9 @@ impl Tokenizer for MathTokenizer {
 
 /// Greek letters in alphabet order from alpha (U+03B1 and U+0391); final sigma sits before sigma.
 const GREEK: [&str; 25] = [
-    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi",
-    "omicron", "pi", "rho", "sigma", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa",
+    "lambda", "mu", "nu", "xi", "omicron", "pi", "rho", "sigma", "sigma", "tau", "upsilon", "phi",
+    "chi", "psi", "omega",
 ];
 
 /// The LaTeX name of a Greek letter or maths symbol, after NFKC (which has already turned
@@ -164,9 +166,15 @@ mod tests {
         assert_eq!(terms("2π r"), ["2", "pi", "r"]);
         assert_eq!(terms("Δx and δ"), ["delta", "x", "and", "delta"]);
         assert_eq!(terms("αβ"), ["alpha", "beta"]);
-        assert_eq!(terms("ς σ Σ ω Ω"), ["sigma", "sigma", "sigma", "omega", "omega"]);
+        assert_eq!(
+            terms("ς σ Σ ω Ω"),
+            ["sigma", "sigma", "sigma", "omega", "omega"]
+        );
         // Variant forms, the micro and ohm signs, and the increment sign some fonts use for Delta.
-        assert_eq!(terms("ϑ ϕ ϵ µ Ω ∆"), ["theta", "phi", "epsilon", "mu", "omega", "delta"]);
+        assert_eq!(
+            terms("ϑ ϕ ϵ µ Ω ∆"),
+            ["theta", "phi", "epsilon", "mu", "omega", "delta"]
+        );
     }
 
     #[test]
@@ -174,7 +182,12 @@ mod tests {
         assert_eq!(terms("∑ k"), ["sum", "k"]);
         assert_eq!(terms("∫ x dx"), ["int", "x", "dx"]);
         assert_eq!(terms("∂u/∂t"), ["partial", "u", "partial", "t"]);
-        assert_eq!(terms("|x| ≤ 1, a ≠ 0, x ∈ A ⊆ B"), ["x", "leq", "1", "a", "neq", "0", "x", "in", "a", "subseteq", "b"]);
+        assert_eq!(
+            terms("|x| ≤ 1, a ≠ 0, x ∈ A ⊆ B"),
+            [
+                "x", "leq", "1", "a", "neq", "0", "x", "in", "a", "subseteq", "b"
+            ]
+        );
         assert_eq!(terms("√∆ → ∞"), ["sqrt", "delta", "to", "infti"]); // "infty" stems to "infti"
         assert_eq!(terms("ℏω"), ["hbar", "omega"]);
     }
@@ -190,8 +203,14 @@ mod tests {
 
     #[test]
     fn plain_text_and_latex_queries_meet_glyph_text() {
-        assert_eq!(normalise("plain ASCII stays as it is"), "plain ASCII stays as it is");
-        assert_eq!(terms(r"\alpha + \sum_{k} \leq \int"), terms("α + ∑_{k} ≤ ∫"));
+        assert_eq!(
+            normalise("plain ASCII stays as it is"),
+            "plain ASCII stays as it is"
+        );
+        assert_eq!(
+            terms(r"\alpha + \sum_{k} \leq \int"),
+            terms("α + ∑_{k} ≤ ∫")
+        );
         assert_eq!(terms("alpha particles"), terms("α particles"));
         // Accented letters stay composed, so words keep their accents.
         assert_eq!(terms("café"), ["café"]);

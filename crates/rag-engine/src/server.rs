@@ -44,14 +44,24 @@ pub const ALLOWED_ORIGINS: &[&str] = allowed_origins(cfg!(debug_assertions));
 fn app_origins() -> Vec<String> {
     std::env::var("RAG_APP_ORIGINS")
         .ok()
-        .map(|v| v.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect::<Vec<_>>())
+        .map(|v| {
+            v.split(',')
+                .map(|o| o.trim().to_string())
+                .filter(|o| !o.is_empty())
+                .collect::<Vec<_>>()
+        })
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect())
 }
 
 const fn allowed_origins(debug: bool) -> &'static [&'static str] {
     if debug {
-        &["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
+        &[
+            "http://localhost:1420",
+            "http://127.0.0.1:1420",
+            "http://tauri.localhost",
+            "tauri://localhost",
+        ]
     } else {
         &["http://tauri.localhost", "tauri://localhost"]
     }
@@ -94,13 +104,19 @@ fn parse_body<T: DeserializeOwned + Default>(body: &Bytes) -> ApiResult<T> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
     }
-    serde_json::from_slice(body).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid JSON body: {e}")))
+    serde_json::from_slice(body)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid JSON body: {e}")))
 }
 
 pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
     let origins = app_origins();
     let cors = CorsLayer::new()
-        .allow_origin(origins.iter().filter_map(|origin| HeaderValue::from_str(origin).ok()).collect::<Vec<_>>())
+        .allow_origin(
+            origins
+                .iter()
+                .filter_map(|origin| HeaderValue::from_str(origin).ok())
+                .collect::<Vec<_>>(),
+        )
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
     Router::new()
@@ -116,13 +132,18 @@ pub fn router(state: Arc<AppState>, hosts: Option<Vec<String>>) -> Router {
         .route("/jobs/{job_id}", get(job))
         .route("/search", post(run_search))
         .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "not found") })
-        .method_not_allowed_fallback(|| async { ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method not allowed") })
+        .method_not_allowed_fallback(|| async {
+            ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method not allowed")
+        })
         // CORS is outside the token check, so browser preflights (which carry no token) succeed
         // and 401 responses still carry CORS headers.
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         // Between the two: CORS still answers preflights, and a foreign page is refused before
         // the token check or any route sees its request.
-        .layer(middleware::from_fn_with_state(Arc::new(RequestGuard { hosts, origins }), guard_request))
+        .layer(middleware::from_fn_with_state(
+            Arc::new(RequestGuard { hosts, origins }),
+            guard_request,
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -141,8 +162,15 @@ struct RequestGuard {
 impl RequestGuard {
     fn refusal(&self, method: &Method, headers: &HeaderMap) -> Option<&'static str> {
         if let Some(hosts) = &self.hosts {
-            let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default().trim();
-            if !hosts.iter().any(|allowed| allowed.eq_ignore_ascii_case(host)) {
+            let host = headers
+                .get(header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .trim();
+            if !hosts
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(host))
+            {
                 return Some("the Host header is not an address of this service");
             }
         }
@@ -150,9 +178,19 @@ impl RequestGuard {
             return None;
         }
         match headers.get(header::ORIGIN) {
-            Some(origin) if self.origins.iter().any(|o| origin.as_bytes() == o.as_bytes()) => None,
+            Some(origin)
+                if self
+                    .origins
+                    .iter()
+                    .any(|o| origin.as_bytes() == o.as_bytes()) =>
+            {
+                None
+            }
             Some(_) => Some("the Origin is not one of the app's origins"),
-            None if headers.get("sec-fetch-site").is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site")) => {
+            None if headers
+                .get("sec-fetch-site")
+                .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site")) =>
+            {
                 Some("a cross-site request without an app Origin")
             }
             None => None,
@@ -160,9 +198,14 @@ impl RequestGuard {
     }
 }
 
-async fn guard_request(State(guard): State<Arc<RequestGuard>>, request: Request, next: Next) -> Response {
+async fn guard_request(
+    State(guard): State<Arc<RequestGuard>>,
+    request: Request,
+    next: Next,
+) -> Response {
     match guard.refusal(request.method(), request.headers()) {
-        Some(reason) => ApiError::new(StatusCode::FORBIDDEN, format!("request refused: {reason}")).into_response(),
+        Some(reason) => ApiError::new(StatusCode::FORBIDDEN, format!("request refused: {reason}"))
+            .into_response(),
         None => next.run(request).await,
     }
 }
@@ -175,7 +218,10 @@ fn allowed_hosts(bind: IpAddr, port: u16) -> Option<Vec<String>> {
     if bind.is_unspecified() {
         return None;
     }
-    let mut hosts: Vec<String> = ["127.0.0.1", "localhost", "[::1]"].iter().map(|name| format!("{name}:{port}")).collect();
+    let mut hosts: Vec<String> = ["127.0.0.1", "localhost", "[::1]"]
+        .iter()
+        .map(|name| format!("{name}:{port}"))
+        .collect();
     let bound = SocketAddr::new(bind, port).to_string();
     if !hosts.contains(&bound) {
         hosts.push(bound);
@@ -184,8 +230,14 @@ fn allowed_hosts(bind: IpAddr, port: u16) -> Option<Vec<String>> {
 }
 
 /// With a token configured, refuse every request but `GET /health` that does not carry it.
-async fn require_token(State(state): State<Arc<AppState>>, request: Request, next: Next) -> Response {
-    let Some(token) = &state.token else { return next.run(request).await };
+async fn require_token(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(token) = &state.token else {
+        return next.run(request).await;
+    };
     if request.method() == Method::GET && request.uri().path() == "/health" {
         return next.run(request).await;
     }
@@ -198,10 +250,15 @@ async fn require_token(State(state): State<Arc<AppState>>, request: Request, nex
         .map(|(_, credentials)| credentials.trim());
     // Comparing BLAKE3 digests is constant-time (blake3::Hash's equality) and hides the length.
     match presented {
-        Some(p) if blake3::hash(p.as_bytes()) == blake3::hash(token.as_bytes()) => next.run(request).await,
+        Some(p) if blake3::hash(p.as_bytes()) == blake3::hash(token.as_bytes()) => {
+            next.run(request).await
+        }
         Some(_) => ApiError::new(StatusCode::UNAUTHORIZED, "invalid bearer token").into_response(),
-        None => ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token: send Authorization: Bearer <RAG_ENGINE_TOKEN>")
-            .into_response(),
+        None => ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "missing bearer token: send Authorization: Bearer <RAG_ENGINE_TOKEN>",
+        )
+        .into_response(),
     }
 }
 
@@ -258,8 +315,10 @@ fn status_json(state: &AppState, vectors_ready: bool) -> Result<Value> {
     let engine = &state.engine;
     let conn = engine.conn();
     let mut by_domain: BTreeMap<String, u64> = BTreeMap::new();
-    let mut by_source_type: BTreeMap<String, u64> = SOURCE_TYPES.iter().map(|s| (s.to_string(), 0)).collect();
-    let (mut documents, mut pages, mut born_digital, mut scanned, mut math_heavy, mut empty) = (0, 0, 0, 0, 0, 0);
+    let mut by_source_type: BTreeMap<String, u64> =
+        SOURCE_TYPES.iter().map(|s| (s.to_string(), 0)).collect();
+    let (mut documents, mut pages, mut born_digital, mut scanned, mut math_heavy, mut empty) =
+        (0, 0, 0, 0, 0, 0);
     let mut stmt = conn.prepare(
         "SELECT domain, source_type, COUNT(*), SUM(pages), SUM(born_digital), SUM(scanned), SUM(math_heavy), SUM(empty) \
          FROM documents WHERE state = 'indexed' GROUP BY domain, source_type",
@@ -268,7 +327,15 @@ fn status_json(state: &AppState, vectors_ready: bool) -> Result<Value> {
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,
-            [r.get::<_, i64>(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?].map(|n| n as u64),
+            [
+                r.get::<_, i64>(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ]
+            .map(|n| n as u64),
         ))
     })?;
     for row in rows {
@@ -283,9 +350,20 @@ fn status_json(state: &AppState, vectors_ready: bool) -> Result<Value> {
         empty += em;
     }
     drop(stmt);
-    let chunks: i64 = conn.query_row("SELECT COALESCE(SUM(chunks), 0) FROM documents WHERE state <> 'error'", [], |r| r.get(0))?;
-    let unembedded: i64 = conn.query_row("SELECT COUNT(*) FROM chunks WHERE embedded <> 1", [], |r| r.get(0))?;
-    let errors: i64 = conn.query_row("SELECT COUNT(*) FROM documents WHERE state = 'error'", [], |r| r.get(0))?;
+    let chunks: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(chunks), 0) FROM documents WHERE state <> 'error'",
+        [],
+        |r| r.get(0),
+    )?;
+    let unembedded: i64 =
+        conn.query_row("SELECT COUNT(*) FROM chunks WHERE embedded <> 1", [], |r| {
+            r.get(0)
+        })?;
+    let errors: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM documents WHERE state = 'error'",
+        [],
+        |r| r.get(0),
+    )?;
     let (ocr_pending, ocr_done) = ocr::counts(&conn)?;
     let embedding = match &engine.embedder {
         Some(e) => {
@@ -332,8 +410,13 @@ struct IngestRequest {
 
 fn started(result: std::result::Result<String, String>) -> ApiResult<Response> {
     match result {
-        Ok(job_id) => Ok((StatusCode::ACCEPTED, axum::Json(json!({"job_id": job_id}))).into_response()),
-        Err(running) => Err(ApiError::new(StatusCode::CONFLICT, format!("job {running} is still running"))),
+        Ok(job_id) => {
+            Ok((StatusCode::ACCEPTED, axum::Json(json!({"job_id": job_id}))).into_response())
+        }
+        Err(running) => Err(ApiError::new(
+            StatusCode::CONFLICT,
+            format!("job {running} is still running"),
+        )),
     }
 }
 
@@ -341,17 +424,30 @@ async fn start_survey(State(state): State<Arc<AppState>>, body: Bytes) -> ApiRes
     let req: SurveyRequest = parse_body(&body)?;
     // A survey reads every file under its root, so only a folder of the library may be named.
     if let Some(root) = &req.root {
-        ingest::targets(&state.roots, Some(root)).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.0))?;
+        ingest::targets(&state.roots, Some(root))
+            .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.0))?;
     }
     let root = req.root.unwrap_or_else(|| state.roots.corpus.clone());
     if !root.is_dir() {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, format!("root {} is not a directory", root.display())));
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("root {} is not a directory", root.display()),
+        ));
     }
-    let (pdfium, out) = (state.pdfium.clone(), state.engine.data_dir.join(SURVEY_FILE));
-    started(state.jobs.start(JobKind::Survey, state.engine.shared_conn(), move |progress| {
-        let report = survey::build(&root, &pdfium, |done, total| progress.set(done as u64, total as u64))?;
-        write_atomically(&out, &serde_json::to_string_pretty(&report)?)
-    }))
+    let (pdfium, out) = (
+        state.pdfium.clone(),
+        state.engine.data_dir.join(SURVEY_FILE),
+    );
+    started(state.jobs.start(
+        JobKind::Survey,
+        state.engine.shared_conn(),
+        move |progress| {
+            let report = survey::build(&root, &pdfium, |done, total| {
+                progress.set(done as u64, total as u64)
+            })?;
+            write_atomically(&out, &serde_json::to_string_pretty(&report)?)
+        },
+    ))
 }
 
 fn write_atomically(path: &Path, text: &str) -> Result<()> {
@@ -367,33 +463,63 @@ async fn survey_latest(State(state): State<Arc<AppState>>) -> ApiResult<Response
     let path = state.engine.data_dir.join(SURVEY_FILE);
     match tokio::fs::read(&path).await {
         Ok(bytes) => Ok(([(header::CONTENT_TYPE, "application/json")], bytes).into_response()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(ApiError::new(StatusCode::NOT_FOUND, "no survey has been run yet")),
-        Err(e) => Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("cannot read {}: {e}", path.display()))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "no survey has been run yet",
+        )),
+        Err(e) => Err(ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("cannot read {}: {e}", path.display()),
+        )),
     }
 }
 
 async fn start_ingest(State(state): State<Arc<AppState>>, body: Bytes) -> ApiResult<Response> {
     let req: IngestRequest = parse_body(&body)?;
     if let Some(root) = &req.root {
-        ingest::targets(&state.roots, Some(root)).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.0))?;
+        ingest::targets(&state.roots, Some(root))
+            .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.0))?;
     }
     let job_state = state.clone();
-    started(state.jobs.start(JobKind::Ingest, state.engine.shared_conn(), move |progress| {
-        let s = &job_state;
-        ingest::ingest(&s.engine, &s.roots, &s.pdfium, req.root.as_deref(), req.rebuild, &s.rt, progress).map(|_| ())
-    }))
+    started(state.jobs.start(
+        JobKind::Ingest,
+        state.engine.shared_conn(),
+        move |progress| {
+            let s = &job_state;
+            ingest::ingest(
+                &s.engine,
+                &s.roots,
+                &s.pdfium,
+                req.root.as_deref(),
+                req.rebuild,
+                &s.rt,
+                progress,
+            )
+            .map(|_| ())
+        },
+    ))
 }
 
-async fn job(State(state): State<Arc<AppState>>, UrlPath(job_id): UrlPath<String>) -> ApiResult<Response> {
+async fn job(
+    State(state): State<Arc<AppState>>,
+    UrlPath(job_id): UrlPath<String>,
+) -> ApiResult<Response> {
     match state.jobs.get(&state.engine.shared_conn(), &job_id)? {
         Some(view) => Ok(axum::Json(view).into_response()),
-        None => Err(ApiError::new(StatusCode::NOT_FOUND, format!("no job {job_id}"))),
+        None => Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no job {job_id}"),
+        )),
     }
 }
 
 async fn run_search(State(state): State<Arc<AppState>>, body: Bytes) -> ApiResult<Response> {
-    let req: SearchRequest =
-        serde_json::from_slice(&body).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid search request: {e}")))?;
+    let req: SearchRequest = serde_json::from_slice(&body).map_err(|e| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("invalid search request: {e}"),
+        )
+    })?;
     match search::search(state.engine.clone(), req).await {
         Ok(response) => Ok(axum::Json(response).into_response()),
         Err(SearchError::BadRequest(m)) => Err(ApiError::new(StatusCode::BAD_REQUEST, m)),
@@ -409,29 +535,43 @@ async fn read_db<T: Send + 'static>(
     read: impl FnOnce(&rusqlite::Connection) -> Result<T> + Send + 'static,
 ) -> ApiResult<T> {
     let state = state.clone();
-    Ok(tokio::task::spawn_blocking(move || read(&state.engine.conn()))
-        .await
-        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??)
+    Ok(
+        tokio::task::spawn_blocking(move || read(&state.engine.conn()))
+            .await
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??,
+    )
 }
 
 fn query_params<T>(query: std::result::Result<Query<T>, QueryRejection>) -> ApiResult<T> {
-    query.map(|Query(q)| q).map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid query: {}", e.body_text())))
+    query.map(|Query(q)| q).map_err(|e| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("invalid query: {}", e.body_text()),
+        )
+    })
 }
 
 async fn documents(
     State(state): State<Arc<AppState>>,
     query: std::result::Result<Query<ListQuery>, QueryRejection>,
 ) -> ApiResult<Response> {
-    let params = ListParams::parse(query_params(query)?).map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
+    let params = ListParams::parse(query_params(query)?)
+        .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
     let list = read_db(&state, move |conn| library::list(conn, &params)).await?;
     Ok(axum::Json(list).into_response())
 }
 
-async fn document(State(state): State<Arc<AppState>>, UrlPath(doc_id): UrlPath<String>) -> ApiResult<Response> {
+async fn document(
+    State(state): State<Arc<AppState>>,
+    UrlPath(doc_id): UrlPath<String>,
+) -> ApiResult<Response> {
     let id = doc_id.clone();
     match read_db(&state, move |conn| library::document(conn, &id)).await? {
         Some(detail) => Ok(axum::Json(detail).into_response()),
-        None => Err(ApiError::new(StatusCode::NOT_FOUND, format!("no document {doc_id}"))),
+        None => Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no document {doc_id}"),
+        )),
     }
 }
 
@@ -440,11 +580,15 @@ async fn document_chunks(
     UrlPath(doc_id): UrlPath<String>,
     query: std::result::Result<Query<ChunksQuery>, QueryRejection>,
 ) -> ApiResult<Response> {
-    let (from, limit) = library::chunk_params(query_params(query)?).map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
+    let (from, limit) = library::chunk_params(query_params(query)?)
+        .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
     let id = doc_id.clone();
     match read_db(&state, move |conn| library::chunks(conn, &id, from, limit)).await? {
         Some(page) => Ok(axum::Json(page).into_response()),
-        None => Err(ApiError::new(StatusCode::NOT_FOUND, format!("no document {doc_id}"))),
+        None => Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no document {doc_id}"),
+        )),
     }
 }
 
@@ -463,38 +607,69 @@ async fn page_image(
     query: std::result::Result<Query<PageQuery>, QueryRejection>,
 ) -> ApiResult<Response> {
     let not_found = |message: String| ApiError::new(StatusCode::NOT_FOUND, message);
-    let number: u32 =
-        page.strip_suffix(".png").and_then(|n| n.parse().ok()).ok_or_else(|| not_found("not found".into()))?;
+    let number: u32 = page
+        .strip_suffix(".png")
+        .and_then(|n| n.parse().ok())
+        .ok_or_else(|| not_found("not found".into()))?;
     let query = query_params(query)?;
-    let (width, highlight) = (pages::clamp_width(query.w), query.highlight.filter(|h| !h.trim().is_empty()));
+    let (width, highlight) = (
+        pages::clamp_width(query.w),
+        query.highlight.filter(|h| !h.trim().is_empty()),
+    );
     let id = doc_id.clone();
     let doc = read_db(&state, move |conn| {
         Ok(conn
-            .query_row("SELECT path, kind, pages FROM documents WHERE doc_id = ?1 AND state = 'indexed'", [&id], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
-            })
+            .query_row(
+                "SELECT path, kind, pages FROM documents WHERE doc_id = ?1 AND state = 'indexed'",
+                [&id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
+            )
             .optional()?)
     })
     .await?;
-    let Some((path, kind, page_count)) = doc else { return Err(not_found(format!("no document {doc_id}"))) };
+    let Some((path, kind, page_count)) = doc else {
+        return Err(not_found(format!("no document {doc_id}")));
+    };
     if kind != "pdf" {
         return Err(not_found(format!("document {doc_id} is not a PDF")));
     }
     if number == 0 || i64::from(number) > page_count {
-        return Err(not_found(format!("document {doc_id} has no page {number} (pages 1-{page_count})")));
+        return Err(not_found(format!(
+            "document {doc_id} has no page {number} (pages 1-{page_count})"
+        )));
     }
-    let file = state.roots.resolve(&path).filter(|f| f.is_file()).ok_or_else(|| not_found(format!("{path} is no longer in the library")))?;
+    let file = state
+        .roots
+        .resolve(&path)
+        .filter(|f| f.is_file())
+        .ok_or_else(|| not_found(format!("{path} is no longer in the library")))?;
     let lib = state.pdfium.clone();
-    let rendered = tokio::task::spawn_blocking(move || pages::render(&lib, &file, number, width, highlight.as_deref()))
-        .await
-        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let rendered = tokio::task::spawn_blocking(move || {
+        pages::render(&lib, &file, number, width, highlight.as_deref())
+    })
+    .await
+    .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     match rendered {
         // The document id is a content hash, so a page image never changes.
-        Ok(Some((png, _marked))) => {
-            Ok(([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "private, max-age=86400")], png).into_response())
-        }
+        Ok(Some((png, _marked))) => Ok((
+            [
+                (header::CONTENT_TYPE, "image/png"),
+                (header::CACHE_CONTROL, "private, max-age=86400"),
+            ],
+            png,
+        )
+            .into_response()),
         Ok(None) => Err(not_found(format!("document {doc_id} has no page {number}"))),
-        Err(e) => Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{path}: {e}"))),
+        Err(e) => Err(ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("{path}: {e}"),
+        )),
     }
 }
 
@@ -512,27 +687,60 @@ mod tests {
     use super::*;
 
     fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
-        pairs.iter().map(|&(name, value)| (header::HeaderName::from_static(name), HeaderValue::from_static(value))).collect()
+        pairs
+            .iter()
+            .map(|&(name, value)| {
+                (
+                    header::HeaderName::from_static(name),
+                    HeaderValue::from_static(value),
+                )
+            })
+            .collect()
     }
 
     #[test]
     fn release_builds_trust_only_the_built_app() {
-        assert_eq!(allowed_origins(false), ["http://tauri.localhost", "tauri://localhost"]);
+        assert_eq!(
+            allowed_origins(false),
+            ["http://tauri.localhost", "tauri://localhost"]
+        );
         assert_eq!(
             allowed_origins(true),
-            ["http://localhost:1420", "http://127.0.0.1:1420", "http://tauri.localhost", "tauri://localhost"]
+            [
+                "http://localhost:1420",
+                "http://127.0.0.1:1420",
+                "http://tauri.localhost",
+                "tauri://localhost"
+            ]
         );
         assert_eq!(ALLOWED_ORIGINS, allowed_origins(cfg!(debug_assertions)));
     }
 
     #[test]
     fn hosts_are_the_loopback_names_on_the_port_plus_the_bind_address() {
-        let loopback = ["127.0.0.1:8811", "localhost:8811", "[::1]:8811"].map(String::from).to_vec();
-        assert_eq!(allowed_hosts("127.0.0.1".parse().unwrap(), 8811), Some(loopback.clone()));
-        assert_eq!(allowed_hosts("::1".parse().unwrap(), 8811), Some(loopback.clone()));
+        let loopback = ["127.0.0.1:8811", "localhost:8811", "[::1]:8811"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            allowed_hosts("127.0.0.1".parse().unwrap(), 8811),
+            Some(loopback.clone())
+        );
+        assert_eq!(
+            allowed_hosts("::1".parse().unwrap(), 8811),
+            Some(loopback.clone())
+        );
         let lan = allowed_hosts("192.168.1.20".parse().unwrap(), 8811).unwrap();
-        assert_eq!(lan, [loopback.clone(), vec!["192.168.1.20:8811".into()]].concat());
-        assert_eq!(allowed_hosts("fe80::1".parse().unwrap(), 9000).unwrap().last().unwrap(), "[fe80::1]:9000");
+        assert_eq!(
+            lan,
+            [loopback.clone(), vec!["192.168.1.20:8811".into()]].concat()
+        );
+        assert_eq!(
+            allowed_hosts("fe80::1".parse().unwrap(), 9000)
+                .unwrap()
+                .last()
+                .unwrap(),
+            "[fe80::1]:9000"
+        );
         assert_eq!(allowed_hosts("0.0.0.0".parse().unwrap(), 8811), None);
         assert_eq!(allowed_hosts("::".parse().unwrap(), 8811), None);
     }
@@ -540,7 +748,10 @@ mod tests {
     #[test]
     fn guard_refuses_foreign_hosts_and_foreign_state_changes() {
         let origins: Vec<String> = ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect();
-        let guard = RequestGuard { hosts: allowed_hosts("127.0.0.1".parse().unwrap(), 8811), origins: origins.clone() };
+        let guard = RequestGuard {
+            hosts: allowed_hosts("127.0.0.1".parse().unwrap(), 8811),
+            origins: origins.clone(),
+        };
         let app = "tauri://localhost";
         let refused = |method: Method, extra: &[(&'static str, &'static str)]| {
             let mut all = headers(&[("host", "127.0.0.1:8811")]);
@@ -548,32 +759,72 @@ mod tests {
             guard.refusal(&method, &all).is_some()
         };
         // Host: another name (DNS rebinding) or port is refused; case does not matter.
-        for host in ["evil.example:8811", "127.0.0.1:8812", "127.0.0.1", "0.0.0.0:8811"] {
+        for host in [
+            "evil.example:8811",
+            "127.0.0.1:8812",
+            "127.0.0.1",
+            "0.0.0.0:8811",
+        ] {
             assert!(refused(Method::GET, &[("host", host)]), "{host}");
         }
         assert!(!refused(Method::GET, &[("host", "LOCALHOST:8811")]));
-        assert!(guard.refusal(&Method::GET, &HeaderMap::new()).is_some(), "no Host");
+        assert!(
+            guard.refusal(&Method::GET, &HeaderMap::new()).is_some(),
+            "no Host"
+        );
         // A state-changing request from a foreign page, with or without its Origin.
         assert!(refused(Method::POST, &[("origin", "http://evil.example")]));
         assert!(refused(Method::POST, &[("origin", "null")]));
         assert!(refused(Method::POST, &[("sec-fetch-site", "cross-site")]));
         // The app (cross-site to 127.0.0.1, with its Origin), native clients, and reads pass.
-        assert!(!refused(Method::POST, &[("origin", app), ("sec-fetch-site", "cross-site")]));
+        assert!(!refused(
+            Method::POST,
+            &[("origin", app), ("sec-fetch-site", "cross-site")]
+        ));
         assert!(!refused(Method::POST, &[]));
-        assert!(!refused(Method::GET, &[("origin", "http://evil.example"), ("sec-fetch-site", "cross-site")]));
+        assert!(!refused(
+            Method::GET,
+            &[
+                ("origin", "http://evil.example"),
+                ("sec-fetch-site", "cross-site")
+            ]
+        ));
         // Listening on every address: any Host, same Origin rules.
-        let open = RequestGuard { hosts: None, origins };
-        assert!(open.refusal(&Method::GET, &headers(&[("host", "library-pc:8811")])).is_none());
-        assert!(open.refusal(&Method::POST, &headers(&[("origin", "http://evil.example")])).is_some());
+        let open = RequestGuard {
+            hosts: None,
+            origins,
+        };
+        assert!(
+            open.refusal(&Method::GET, &headers(&[("host", "library-pc:8811")]))
+                .is_none()
+        );
+        assert!(
+            open.refusal(
+                &Method::POST,
+                &headers(&[("origin", "http://evil.example")])
+            )
+            .is_some()
+        );
     }
 
     #[test]
     fn the_shell_can_name_the_app_origins() {
         // One test owns the variable, so no other test sees it set.
-        unsafe { std::env::set_var("RAG_APP_ORIGINS", " http://localhost:1420 ,tauri://localhost,") };
+        unsafe {
+            std::env::set_var(
+                "RAG_APP_ORIGINS",
+                " http://localhost:1420 ,tauri://localhost,",
+            )
+        };
         let named = app_origins();
         unsafe { std::env::remove_var("RAG_APP_ORIGINS") };
         assert_eq!(named, ["http://localhost:1420", "tauri://localhost"]);
-        assert_eq!(app_origins(), ALLOWED_ORIGINS.iter().map(|o| o.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            app_origins(),
+            ALLOWED_ORIGINS
+                .iter()
+                .map(|o| o.to_string())
+                .collect::<Vec<_>>()
+        );
     }
 }

@@ -3,7 +3,9 @@
 import json
 import os
 
-DEFAULT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "progress.json")
+DEFAULT_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "progress.json"
+)
 
 
 def _blank():
@@ -33,9 +35,11 @@ def save(state, path=DEFAULT_PATH):
 
 
 def record_attempt(state, item_id, domain, correct, quality=None):
-    from .spaced import sm2, due_ts
+    from .spaced import due_ts, sm2
 
-    item = state["items"].get(item_id, {"reps": 0, "interval": 0, "ef": 2.5, "due": 0, "seen": 0, "correct": 0})
+    item = state["items"].get(
+        item_id, {"reps": 0, "interval": 0, "ef": 2.5, "due": 0, "seen": 0, "correct": 0}
+    )
     item["seen"] = item.get("seen", 0) + 1
     item["correct"] = item.get("correct", 0) + (1 if correct else 0)
     q = 5 if correct else 2
@@ -54,4 +58,7 @@ def accuracy_by_domain(state):
         d = out.setdefault(a["domain"], {"n": 0, "c": 0})
         d["n"] += 1
         d["c"] += 1 if a["correct"] else 0
-    return {k: {"n": v["n"], "correct": v["c"], "acc": (v["c"] / v["n"] if v["n"] else 0)} for k, v in out.items()}
+    return {
+        k: {"n": v["n"], "correct": v["c"], "acc": (v["c"] / v["n"] if v["n"] else 0)}
+        for k, v in out.items()
+    }

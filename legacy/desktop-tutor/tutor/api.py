@@ -8,10 +8,10 @@ POST /attempt {item_id, answer} -> {saved, correct, answer, explanation, misconc
      (graded server-side against the key; clients never assert correctness)
 """
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 VERSION = "1.1.0"
 
@@ -45,14 +45,21 @@ class Handler(BaseHTTPRequestHandler):
             return _send(self, 200, {"hits": hits})
         if u.path == "/quiz":
             pool = QB.by_domain(qs.get("domain", ["math"])[0])
-            items = QZ.select(pool, n=int(qs.get("n", ["5"])[0]),
-                              seed=int(qs.get("seed", ["7"])[0]))
-            pub = [{k: i[k] for k in ("id", "domain", "topic", "difficulty", "prompt", "choices")} for i in items]
+            items = QZ.select(
+                pool, n=int(qs.get("n", ["5"])[0]), seed=int(qs.get("seed", ["7"])[0])
+            )
+            pub = [
+                {k: i[k] for k in ("id", "domain", "topic", "difficulty", "prompt", "choices")}
+                for i in items
+            ]
             return _send(self, 200, {"items": pub})
         if u.path == "/progress":
             st = ST.load()
-            return _send(self, 200, {"accuracy": ST.accuracy_by_domain(st),
-                                     "tracked": len(st.get("items", {}))})
+            return _send(
+                self,
+                200,
+                {"accuracy": ST.accuracy_by_domain(st), "tracked": len(st.get("items", {}))},
+            )
         return _send(self, 404, {"error": "unknown route"})
 
     def do_POST(self):
@@ -77,9 +84,17 @@ class Handler(BaseHTTPRequestHandler):
             st = ST.load()
             ST.record_attempt(st, item["id"], item["domain"], ok)
             ST.save(st)
-            return _send(self, 200, {"saved": True, "correct": ok, "answer": item["answer"],
-                                     "explanation": item["explanation"],
-                                     "misconception": item["misconception"]})
+            return _send(
+                self,
+                200,
+                {
+                    "saved": True,
+                    "correct": ok,
+                    "answer": item["answer"],
+                    "explanation": item["explanation"],
+                    "misconception": item["misconception"],
+                },
+            )
         except Exception as e:
             return _send(self, 400, {"error": str(e)[:200]})
 

@@ -1,8 +1,9 @@
 import json
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
-from unittest import mock
+
 from tutor import api as API
 from tutor import store as ST
 
@@ -28,8 +29,11 @@ class ApiTest(unittest.TestCase):
         srv, base = API.start_in_thread(port=0)
 
         def post(body):
-            req = urllib.request.Request(base + "/attempt", data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(
+                base + "/attempt",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+            )
             try:
                 with urllib.request.urlopen(req, timeout=5) as r:
                     return r.status, json.load(r)
@@ -46,8 +50,11 @@ class ApiTest(unittest.TestCase):
                 self.assertEqual((code, bad["correct"]), (200, False))
                 self.assertIn("misconception", bad)
                 self.assertEqual([a["correct"] for a in state["attempts"]], [True, False])
-                for body in ({"item_id": "math-01"}, {"item_id": "math-01", "answer": "absolutely"},
-                             {"item_id": "nope", "answer": "A"}):
+                for body in (
+                    {"item_id": "math-01"},
+                    {"item_id": "math-01", "answer": "absolutely"},
+                    {"item_id": "nope", "answer": "A"},
+                ):
                     self.assertEqual(post(body)[0], 400)
                 self.assertEqual(len(state["attempts"]), 2)
         finally:

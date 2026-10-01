@@ -49,11 +49,14 @@ def evaluate(k=3, ids=None):
     from . import corpus as CO
 
     want = set(ids) if ids is not None else None
-    items = [it for it in QB.ITEMS
-             if (want is None or it["id"] in want) and it["topic"] in TOPIC_DOC]
+    items = [
+        it for it in QB.ITEMS if (want is None or it["id"] in want) and it["topic"] in TOPIC_DOC
+    ]
     n = hit = 0
     misses = []
-    for it, hits in zip(items, CO.search_many([it["prompt"] for it in items], limit=k), strict=True):
+    for it, hits in zip(
+        items, CO.search_many([it["prompt"] for it in items], limit=k), strict=True
+    ):
         expected = TOPIC_DOC[it["topic"]]
         n += 1
         paths = [h["path"].replace("\\", "/") for h in hits]
@@ -61,5 +64,4 @@ def evaluate(k=3, ids=None):
             hit += 1
         else:
             misses.append({"id": it["id"], "expected": expected, "got": paths})
-    return {"n": n, "hit": hit, "k": k,
-            "hit_rate": (hit / n if n else 0), "misses": misses}
+    return {"n": n, "hit": hit, "k": k, "hit_rate": (hit / n if n else 0), "misses": misses}

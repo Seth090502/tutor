@@ -8,8 +8,18 @@ manifest at <models>/manifest.json recording what was verified.
 Usage: python fetch_assets.py [--tag b11310] [--models DIR] [--bright DIR] [--only llama|models|bright]
 Stdlib only.
 """
-import argparse, hashlib, json, os, shutil, sys, threading, time, urllib.request, zipfile
+
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
+import json
+import os
+import shutil
+import sys
+import threading
+import time
+import urllib.request
+import zipfile
 
 UA = {"User-Agent": "vault-model-bench-prep"}
 MAX_TOTAL_BYTES = 40 * 10**9
@@ -80,7 +90,7 @@ def download(url, dest, size, attempts=8):
             log(f"retry {attempt + 1}/{attempts} {os.path.basename(dest)}: {e!r}")
             if attempt == attempts - 1:
                 raise
-            time.sleep(min(30, 2 ** attempt))
+            time.sleep(min(30, 2**attempt))
     if os.path.getsize(part) != size:
         raise RuntimeError(f"size mismatch for {dest}: got {os.path.getsize(part)} want {size}")
     os.replace(part, dest)
@@ -107,8 +117,13 @@ def fetch_one(job, manifest, mpath):
     """job: dict(key,url,dest,size,algo,expected,source). Verifies and records."""
     dest, key = job["dest"], job["key"]
     prev = manifest["files"].get(key)
-    if prev and prev.get("verified") and os.path.exists(dest) and os.path.getsize(dest) == job["size"] \
-            and prev.get("expected") == job["expected"]:
+    if (
+        prev
+        and prev.get("verified")
+        and os.path.exists(dest)
+        and os.path.getsize(dest) == job["size"]
+        and prev.get("expected") == job["expected"]
+    ):
         log(f"skip (already verified) {key}")
         return key
     if not (os.path.exists(dest) and os.path.getsize(dest) == job["size"]):
@@ -116,11 +131,22 @@ def fetch_one(job, manifest, mpath):
         download(job["url"], dest, job["size"])
     got = sha256_file(dest) if job["algo"] == "sha256" else git_blob_sha1(dest)
     ok = got == job["expected"]
-    record(manifest, mpath, key, {
-        "path": dest, "size": os.path.getsize(dest), "algo": job["algo"], "expected": job["expected"],
-        "actual": got, "verified": ok, "source": job["source"], "url": job["url"],
-        "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    })
+    record(
+        manifest,
+        mpath,
+        key,
+        {
+            "path": dest,
+            "size": os.path.getsize(dest),
+            "algo": job["algo"],
+            "expected": job["expected"],
+            "actual": got,
+            "verified": ok,
+            "source": job["source"],
+            "url": job["url"],
+            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        },
+    )
     if not ok:
         raise RuntimeError(f"HASH MISMATCH {key}: expected {job['expected']} got {got}")
     log(f"verified {key} {job['algo']}={got[:16]}...")
@@ -140,10 +166,18 @@ def llama_jobs(tag, root):
     for name, folder in want.items():
         a = assets[name]
         assert a["digest"].startswith("sha256:"), a
-        jobs.append(dict(key=f"llama.cpp/{tag}/{name}", url=a["browser_download_url"],
-                         dest=os.path.join(root, "llama.cpp", "_zips", name), size=a["size"], algo="sha256",
-                         expected=a["digest"][7:], source=f"github.com/ggml-org/llama.cpp release {tag}",
-                         unzip_to=os.path.join(root, "llama.cpp", folder)))
+        jobs.append(
+            dict(
+                key=f"llama.cpp/{tag}/{name}",
+                url=a["browser_download_url"],
+                dest=os.path.join(root, "llama.cpp", "_zips", name),
+                size=a["size"],
+                algo="sha256",
+                expected=a["digest"][7:],
+                source=f"github.com/ggml-org/llama.cpp release {tag}",
+                unzip_to=os.path.join(root, "llama.cpp", folder),
+            )
+        )
     return jobs
 
 
@@ -152,7 +186,10 @@ def hf_jobs(root):
     for sub, repo, fname in HF_MODELS:
         if repo not in revs:
             info = jget(f"https://huggingface.co/api/models/{repo}")
-            revs[repo] = (info["sha"], {t["path"]: t for t in jget(f"https://huggingface.co/api/models/{repo}/tree/main")})
+            revs[repo] = (
+                info["sha"],
+                {t["path"]: t for t in jget(f"https://huggingface.co/api/models/{repo}/tree/main")},
+            )
         sha, tree = revs[repo]
         t = tree[fname]
         if t.get("lfs"):
@@ -160,8 +197,17 @@ def hf_jobs(root):
         else:
             algo, expected, size = "gitsha1", t["oid"], t["size"]
         dest = os.path.join(root, sub, repo.replace("/", "__") + "__" + fname)
-        jobs.append(dict(key=f"hf/{repo}/{fname}", url=f"https://huggingface.co/{repo}/resolve/{sha}/{fname}",
-                         dest=dest, size=size, algo=algo, expected=expected, source=f"huggingface.co/{repo}@{sha}"))
+        jobs.append(
+            dict(
+                key=f"hf/{repo}/{fname}",
+                url=f"https://huggingface.co/{repo}/resolve/{sha}/{fname}",
+                dest=dest,
+                size=size,
+                algo=algo,
+                expected=expected,
+                source=f"huggingface.co/{repo}@{sha}",
+            )
+        )
     return jobs
 
 
@@ -170,13 +216,24 @@ def bright_jobs(root):
     sha = info["sha"]
     jobs = []
     for kind in ("documents", "examples"):
-        tree = {t["path"]: t for t in jget(f"https://huggingface.co/api/datasets/xlangai/BRIGHT/tree/main/{kind}")}
+        tree = {
+            t["path"]: t
+            for t in jget(f"https://huggingface.co/api/datasets/xlangai/BRIGHT/tree/main/{kind}")
+        }
         for s in BRIGHT_SPLITS:
             p = f"{kind}/{s}-00000-of-00001.parquet"
             t = tree[p]
-            jobs.append(dict(key=f"bright/{p}", url=f"https://huggingface.co/datasets/xlangai/BRIGHT/resolve/{sha}/{p}",
-                             dest=os.path.join(root, "raw", kind, f"{s}.parquet"), size=t["lfs"]["size"], algo="sha256",
-                             expected=t["lfs"]["oid"], source=f"huggingface.co/datasets/xlangai/BRIGHT@{sha}"))
+            jobs.append(
+                dict(
+                    key=f"bright/{p}",
+                    url=f"https://huggingface.co/datasets/xlangai/BRIGHT/resolve/{sha}/{p}",
+                    dest=os.path.join(root, "raw", kind, f"{s}.parquet"),
+                    size=t["lfs"]["size"],
+                    algo="sha256",
+                    expected=t["lfs"]["oid"],
+                    source=f"huggingface.co/datasets/xlangai/BRIGHT@{sha}",
+                )
+            )
     return jobs, sha
 
 

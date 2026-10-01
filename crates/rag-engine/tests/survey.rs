@@ -31,7 +31,10 @@ fn survey_of_fixtures_matches_expected_triage_and_duplicates() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(run.status.success(), "survey failed:\n{stderr}");
-    assert!(stderr.contains("measured 6/6"), "missing final progress line:\n{stderr}");
+    assert!(
+        stderr.contains("measured 6/6"),
+        "missing final progress line:\n{stderr}"
+    );
 
     let report: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
     std::fs::remove_dir_all(&out_dir).unwrap();
@@ -43,28 +46,46 @@ fn survey_of_fixtures_matches_expected_triage_and_duplicates() {
     assert_eq!(totals["by_type"]["pdf"]["files"], 5);
     assert_eq!(totals["by_type"]["epub"]["files"], 1);
     assert_eq!(totals["by_type"]["md"]["files"], 1);
-    assert_eq!(totals["other_by_extension"], json!({ "py": { "files": 1, "bytes": std::fs::metadata(fixtures.join("make_fixtures.py")).unwrap().len() } }));
+    assert_eq!(
+        totals["other_by_extension"],
+        json!({ "py": { "files": 1, "bytes": std::fs::metadata(fixtures.join("make_fixtures.py")).unwrap().len() } })
+    );
 
     // Dedup: dup/text.pdf is a byte copy of text.pdf.
     assert_eq!(totals["unique_files"], 6);
     assert_eq!(totals["duplicate_groups"], 1);
     assert_eq!(totals["duplicate_files"], 1);
     assert_eq!(totals["duplicate_bytes"], text_pdf_bytes);
-    assert_eq!(report["duplicate_groups"][0]["paths"], json!(["dup/text.pdf", "text.pdf"]));
-    assert_eq!(record(&report, "text.pdf")["duplicate_of"], json!("dup/text.pdf"));
+    assert_eq!(
+        report["duplicate_groups"][0]["paths"],
+        json!(["dup/text.pdf", "text.pdf"])
+    );
+    assert_eq!(
+        record(&report, "text.pdf")["duplicate_of"],
+        json!("dup/text.pdf")
+    );
     assert_eq!(record(&report, "dup/text.pdf")["duplicate_of"], Value::Null);
 
     // Triage over unique PDFs: text.pdf 2 born_digital + 1 empty; scanned.pdf 1; math.pdf 1.
-    assert_eq!(totals["pages_by_class"], json!({ "born_digital": 2, "scanned": 1, "math_heavy": 1, "empty": 1 }));
+    assert_eq!(
+        totals["pages_by_class"],
+        json!({ "born_digital": 2, "scanned": 1, "math_heavy": 1, "empty": 1 })
+    );
     assert_eq!(totals["pages"], 5);
     assert_eq!(record(&report, "scanned.pdf")["triage"]["scanned"], 1);
     assert_eq!(record(&report, "math.pdf")["triage"]["math_heavy"], 1);
-    assert_eq!(record(&report, "text.pdf")["triage"], record(&report, "dup/text.pdf")["triage"]);
+    assert_eq!(
+        record(&report, "text.pdf")["triage"],
+        record(&report, "dup/text.pdf")["triage"]
+    );
 
     // The encrypted PDF is an error, never opened with a password; the run continued.
     assert_eq!(totals["errors"], 1);
     let encrypted = record(&report, "encrypted.pdf");
-    assert!(encrypted["error"].as_str().unwrap().contains("encrypted"), "{encrypted}");
+    assert!(
+        encrypted["error"].as_str().unwrap().contains("encrypted"),
+        "{encrypted}"
+    );
     assert_eq!(encrypted["pages"], Value::Null);
 
     // EPUB and Markdown text were measured; tokens_est = characters / 4.
@@ -75,10 +96,14 @@ fn survey_of_fixtures_matches_expected_triage_and_duplicates() {
         assert_eq!(r["tokens_est"].as_u64().unwrap(), chars / 4, "{path}");
         assert_eq!(r["error"], Value::Null, "{path}");
     }
-    assert_eq!(totals["tokens_est"].as_u64().unwrap(), totals["characters"].as_u64().unwrap() / 4);
+    assert_eq!(
+        totals["tokens_est"].as_u64().unwrap(),
+        totals["characters"].as_u64().unwrap() / 4
+    );
 
     // Extrapolation uses unique bytes measured without error.
-    let measured = totals["unique_bytes"].as_u64().unwrap() - totals["error_bytes"].as_u64().unwrap();
+    let measured =
+        totals["unique_bytes"].as_u64().unwrap() - totals["error_bytes"].as_u64().unwrap();
     assert_eq!(report["extrapolation"]["measured_bytes"], measured);
     assert_eq!(report["extrapolation"]["projections"][1]["corpus_gb"], 250);
 }

@@ -95,7 +95,12 @@ impl Target {
 }
 
 fn join_path(parts: &[&str]) -> String {
-    parts.iter().filter(|p| !p.is_empty()).copied().collect::<Vec<_>>().join("/")
+    parts
+        .iter()
+        .filter(|p| !p.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Folders to walk: both roots, or only `scope`, which must be inside one of them.
@@ -105,7 +110,14 @@ pub fn targets(roots: &Roots, scope: Option<&Path>) -> Result<Vec<Target>> {
         all.push((Root::Notes, notes.clone()));
     }
     let Some(scope) = scope else {
-        return Ok(all.into_iter().map(|(root, dir)| Target { root, dir, rel_prefix: String::new() }).collect());
+        return Ok(all
+            .into_iter()
+            .map(|(root, dir)| Target {
+                root,
+                dir,
+                rel_prefix: String::new(),
+            })
+            .collect());
     };
     if !scope.is_dir() {
         return Err(format!("root {} is not a directory", scope.display()).into());
@@ -113,11 +125,23 @@ pub fn targets(roots: &Roots, scope: Option<&Path>) -> Result<Vec<Target>> {
     let scope_c = scope.canonicalize()?;
     for (root, dir) in all {
         if let Ok(rel) = scope_c.strip_prefix(dir.canonicalize()?) {
-            let rel_prefix = rel.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>().join("/");
-            return Ok(vec![Target { root, dir: scope.to_path_buf(), rel_prefix }]);
+            let rel_prefix = rel
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            return Ok(vec![Target {
+                root,
+                dir: scope.to_path_buf(),
+                rel_prefix,
+            }]);
         }
     }
-    Err(format!("root {} is not inside the corpus or notes folder", scope.display()).into())
+    Err(format!(
+        "root {} is not inside the corpus or notes folder",
+        scope.display()
+    )
+    .into())
 }
 
 struct Found {
@@ -158,7 +182,16 @@ pub fn ingest(
     rt: &Handle,
     progress: &Progress,
 ) -> Result<IngestReport> {
-    ingest_with(engine, roots, pdfium_lib, scope, rebuild, rt, progress, default_workers())
+    ingest_with(
+        engine,
+        roots,
+        pdfium_lib,
+        scope,
+        rebuild,
+        rt,
+        progress,
+        default_workers(),
+    )
 }
 
 /// [`ingest`] with `workers` chunking threads; 1 prepares and stores each document in turn on
@@ -220,15 +253,26 @@ fn ingest_with(
     }
     let walk_complete = report.walk_errors.is_empty();
     report.files = found.len() as u64;
-    eprintln!("ingest: {} files found under {} folder(s)", found.len(), targets.len());
+    eprintln!(
+        "ingest: {} files found under {} folder(s)",
+        found.len(),
+        targets.len()
+    );
 
     // 2. Hash what changed and record the file table.
     let known = known_files(&conn, &targets)?;
     let changed: Vec<&Found> = found
         .iter()
-        .filter(|f| known.get(&f.path).is_none_or(|(bytes, mtime, _)| *bytes != f.bytes || *mtime != f.mtime_ns))
+        .filter(|f| {
+            known
+                .get(&f.path)
+                .is_none_or(|(bytes, mtime, _)| *bytes != f.bytes || *mtime != f.mtime_ns)
+        })
         .collect();
-    let hashes = dedup::hash_all(&changed.iter().map(|f| f.abs.as_path()).collect::<Vec<_>>(), |_| {});
+    let hashes = dedup::hash_all(
+        &changed.iter().map(|f| f.abs.as_path()).collect::<Vec<_>>(),
+        |_| {},
+    );
     let tx = conn.transaction()?;
     {
         let mut upsert = tx.prepare_cached(
@@ -250,7 +294,10 @@ fn ingest_with(
                 delete.execute([path])?;
             }
         } else {
-            eprintln!("ingest: {} walk error(s); nothing is removed this time", report.walk_errors.len());
+            eprintln!(
+                "ingest: {} walk error(s); nothing is removed this time",
+                report.walk_errors.len()
+            );
         }
     }
     tx.commit()?;
@@ -259,7 +306,11 @@ fn ingest_with(
     let live = live_docs(&conn)?;
     let existing = existing_docs(&conn)?;
     let live_ids: HashSet<&str> = live.iter().map(|d| d.doc_id.as_str()).collect();
-    let removed: Vec<String> = existing.keys().filter(|id| !live_ids.contains(id.as_str())).cloned().collect();
+    let removed: Vec<String> = existing
+        .keys()
+        .filter(|id| !live_ids.contains(id.as_str()))
+        .cloned()
+        .collect();
     if !removed.is_empty() {
         for id in &removed {
             writer.delete_doc(id);
@@ -292,9 +343,15 @@ fn ingest_with(
     }
     let mut refiled = Vec::new();
     for (doc, m, old) in &moved {
-        if old.state == "indexed" && (old.domain.as_str(), old.source_type.as_str()) != (m.domain.as_str(), m.source_type) {
+        if old.state == "indexed"
+            && (old.domain.as_str(), old.source_type.as_str()) != (m.domain.as_str(), m.source_type)
+        {
             writer.delete_doc(&doc.doc_id);
-            let title: String = conn.query_row("SELECT title FROM documents WHERE doc_id = ?1", [&doc.doc_id], |r| r.get(0))?;
+            let title: String = conn.query_row(
+                "SELECT title FROM documents WHERE doc_id = ?1",
+                [&doc.doc_id],
+                |r| r.get(0),
+            )?;
             for (chunk_id, heading_path, text) in chunk_rows(&conn, &doc.doc_id)? {
                 writer.add(&Entry {
                     chunk_id: &chunk_id,
@@ -336,9 +393,17 @@ fn ingest_with(
             Some(old) if old.path == doc.path => report.unchanged += 1,
             Some(_) => {}
             None => {
-                let abs = roots.resolve(&doc.path).ok_or(format!("no root for {}", doc.path))?;
-                let kind = discover::doc_kind(&abs).ok_or(format!("{} is not a document type", doc.path))?;
-                new_docs.push(NewDoc { doc, meta: doc_meta(&doc.path)?, abs, kind });
+                let abs = roots
+                    .resolve(&doc.path)
+                    .ok_or(format!("no root for {}", doc.path))?;
+                let kind = discover::doc_kind(&abs)
+                    .ok_or(format!("{} is not a document type", doc.path))?;
+                new_docs.push(NewDoc {
+                    doc,
+                    meta: doc_meta(&doc.path)?,
+                    abs,
+                    kind,
+                });
                 continue;
             }
         }
@@ -348,7 +413,9 @@ fn ingest_with(
     let mut batch_chunks = 0;
     let mut seen = live.len() - new_docs.len();
     let mut store_one = |new: &NewDoc, prepared: Prepared| -> Result<()> {
-        match store_doc(&mut conn, &writer, new.doc, &new.meta, new.kind, prepared, false)? {
+        match store_doc(
+            &mut conn, &writer, new.doc, &new.meta, new.kind, prepared, false,
+        )? {
             Some(n) => {
                 report.indexed += 1;
                 report.chunks_added += n;
@@ -363,7 +430,11 @@ fn ingest_with(
         progress.add_done(1);
         seen += 1;
         if seen.is_multiple_of(LOG_EVERY) || seen == live.len() {
-            eprintln!("ingest: documents {seen}/{} (last: {})", live.len(), new.doc.path);
+            eprintln!(
+                "ingest: documents {seen}/{} (last: {})",
+                live.len(),
+                new.doc.path
+            );
         }
         Ok(())
     };
@@ -385,8 +456,13 @@ fn ingest_with(
         let (pending, _) = ocr::counts(&conn)?;
         progress.add_total(pending);
         let pdf_path = |doc_id: &str| -> Option<PathBuf> {
-            let path: String =
-                conn.query_row("SELECT path FROM documents WHERE doc_id = ?1", [doc_id], |r| r.get(0)).ok()?;
+            let path: String = conn
+                .query_row(
+                    "SELECT path FROM documents WHERE doc_id = ?1",
+                    [doc_id],
+                    |r| r.get(0),
+                )
+                .ok()?;
             roots.resolve(&path)
         };
         match ocr::process(&conn, provider.as_ref(), pdf_path, || progress.add_done(1)) {
@@ -400,20 +476,35 @@ fn ingest_with(
                 [doc_id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
-            let doc = LiveDoc { doc_id: doc_id.clone(), path, bytes: bytes as u64 };
-            let abs = roots.resolve(&doc.path).ok_or(format!("no root for {}", doc.path))?;
+            let doc = LiveDoc {
+                doc_id: doc_id.clone(),
+                path,
+                bytes: bytes as u64,
+            };
+            let abs = roots
+                .resolve(&doc.path)
+                .ok_or(format!("no root for {}", doc.path))?;
             if let Some(v) = &engine.vectors {
                 rt.block_on(v.delete_docs(std::slice::from_ref(doc_id)))?;
                 vectors_changed = true;
             }
-            let kind = discover::doc_kind(&abs).ok_or(format!("{} is not a document type", doc.path))?;
-            let new = NewDoc { doc: &doc, meta: doc_meta(&doc.path)?, abs, kind };
+            let kind =
+                discover::doc_kind(&abs).ok_or(format!("{} is not a document type", doc.path))?;
+            let new = NewDoc {
+                doc: &doc,
+                meta: doc_meta(&doc.path)?,
+                abs,
+                kind,
+            };
             let prepared = prepare(&new, pdfs.extract_if_pdf(&new)?);
             store_doc(&mut conn, &writer, &doc, &new.meta, kind, prepared, true)?;
         }
         if !reindex.is_empty() {
             commit(&conn, &mut writer, engine)?;
-            eprintln!("ingest: re-indexed {} document(s) with OCR text", reindex.len());
+            eprintln!(
+                "ingest: re-indexed {} document(s) with OCR text",
+                reindex.len()
+            );
         }
     }
     writer.finish()?;
@@ -454,17 +545,30 @@ fn ingest_with(
 }
 
 fn doc_meta(stored: &str) -> Result<DocMeta> {
-    let (root, rel) = meta::split_stored(stored).ok_or(format!("stored path without a root: {stored}"))?;
+    let (root, rel) =
+        meta::split_stored(stored).ok_or(format!("stored path without a root: {stored}"))?;
     Ok(meta::classify(root, rel))
 }
 
-fn known_files(conn: &Connection, targets: &[Target]) -> Result<HashMap<String, (u64, i64, String)>> {
+fn known_files(
+    conn: &Connection,
+    targets: &[Target],
+) -> Result<HashMap<String, (u64, i64, String)>> {
     let mut known = HashMap::new();
-    let mut stmt = conn.prepare("SELECT path, bytes, mtime_ns, doc_id FROM files WHERE path >= ?1 AND path < ?2")?;
+    let mut stmt = conn.prepare(
+        "SELECT path, bytes, mtime_ns, doc_id FROM files WHERE path >= ?1 AND path < ?2",
+    )?;
     for t in targets {
         let (lo, hi) = t.path_range();
         let rows = stmt.query_map([lo, hi], |r| {
-            Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)))
+            Ok((
+                r.get::<_, String>(0)?,
+                (
+                    r.get::<_, i64>(1)? as u64,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, String>(3)?,
+                ),
+            ))
         })?;
         for row in rows {
             let (path, value) = row?;
@@ -480,22 +584,41 @@ fn live_docs(conn: &Connection) -> Result<Vec<LiveDoc>> {
          JOIN (SELECT doc_id, MIN(path) AS path FROM files GROUP BY doc_id) c ON c.doc_id = f.doc_id AND c.path = f.path \
          ORDER BY f.path",
     )?;
-    let rows = stmt.query_map([], |r| Ok(LiveDoc { doc_id: r.get(0)?, path: r.get(1)?, bytes: r.get::<_, i64>(2)? as u64 }))?;
+    let rows = stmt.query_map([], |r| {
+        Ok(LiveDoc {
+            doc_id: r.get(0)?,
+            path: r.get(1)?,
+            bytes: r.get::<_, i64>(2)? as u64,
+        })
+    })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
 fn existing_docs(conn: &Connection) -> Result<HashMap<String, ExistingDoc>> {
-    let mut stmt = conn.prepare("SELECT doc_id, path, domain, source_type, state FROM documents")?;
+    let mut stmt =
+        conn.prepare("SELECT doc_id, path, domain, source_type, state FROM documents")?;
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, ExistingDoc { path: r.get(1)?, domain: r.get(2)?, source_type: r.get(3)?, state: r.get(4)? }))
+        Ok((
+            r.get::<_, String>(0)?,
+            ExistingDoc {
+                path: r.get(1)?,
+                domain: r.get(2)?,
+                source_type: r.get(3)?,
+                state: r.get(4)?,
+            },
+        ))
     })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
 /// A document's chunks as `(chunk_id, heading_path, text)`.
 fn chunk_rows(conn: &Connection, doc_id: &str) -> Result<Vec<(String, Vec<String>, String)>> {
-    let mut stmt = conn.prepare("SELECT chunk_id, heading_path, text FROM chunks WHERE doc_id = ?1 ORDER BY ordinal")?;
-    let rows = stmt.query_map([doc_id], |r| Ok((r.get(0)?, heading_path(&r.get::<_, String>(1)?), r.get(2)?)))?;
+    let mut stmt = conn.prepare(
+        "SELECT chunk_id, heading_path, text FROM chunks WHERE doc_id = ?1 ORDER BY ordinal",
+    )?;
+    let rows = stmt.query_map([doc_id], |r| {
+        Ok((r.get(0)?, heading_path(&r.get::<_, String>(1)?), r.get(2)?))
+    })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
@@ -535,7 +658,8 @@ fn reindex_if_stale(conn: &Connection, writer: &mut Bm25Writer, engine: &Engine)
     let mut added = 0usize;
     while let Some(r) = rows.next()? {
         let get = |i: usize| r.get::<_, String>(i);
-        let (chunk_id, doc_id, domain, source_type, title, text) = (get(0)?, get(1)?, get(2)?, get(3)?, get(4)?, get(6)?);
+        let (chunk_id, doc_id, domain, source_type, title, text) =
+            (get(0)?, get(1)?, get(2)?, get(3)?, get(4)?, get(6)?);
         let heading_path = heading_path(&get(5)?);
         writer.add(&Entry {
             chunk_id: &chunk_id,
@@ -564,12 +688,20 @@ fn reindex_if_stale(conn: &Connection, writer: &mut Bm25Writer, engine: &Engine)
 fn commit(conn: &Connection, writer: &mut Bm25Writer, engine: &Engine) -> Result<()> {
     writer.commit()?;
     engine.bm25.reload()?;
-    conn.execute("UPDATE documents SET state = 'indexed' WHERE state = 'indexing'", [])?;
+    conn.execute(
+        "UPDATE documents SET state = 'indexed' WHERE state = 'indexing'",
+        [],
+    )?;
     Ok(())
 }
 
 /// Undo documents left `indexing` by an interrupted ingest, so they are indexed again.
-fn recover_interrupted(conn: &mut Connection, writer: &mut Bm25Writer, engine: &Engine, rt: &Handle) -> Result<()> {
+fn recover_interrupted(
+    conn: &mut Connection,
+    writer: &mut Bm25Writer,
+    engine: &Engine,
+    rt: &Handle,
+) -> Result<()> {
     let stale: Vec<String> = conn
         .prepare("SELECT doc_id FROM documents WHERE state = 'indexing'")?
         .query_map([], |r| r.get(0))?
@@ -577,7 +709,10 @@ fn recover_interrupted(conn: &mut Connection, writer: &mut Bm25Writer, engine: &
     if stale.is_empty() {
         return Ok(());
     }
-    eprintln!("ingest: repairing {} document(s) from an interrupted ingest", stale.len());
+    eprintln!(
+        "ingest: repairing {} document(s) from an interrupted ingest",
+        stale.len()
+    );
     for id in &stale {
         writer.delete_doc(id);
     }
@@ -604,36 +739,77 @@ struct Extracted {
 /// Page texts (OCR text replacing the text layer where a page has it), page classes, and the
 /// PDF heading heuristic.
 fn pdf_extracted(pdf: PdfText, ocr_texts: &HashMap<u32, String>) -> Extracted {
-    let page_classes: Vec<(u32, PageClass)> = pdf.pages.iter().enumerate().map(|(i, p)| (i as u32 + 1, p.class)).collect();
+    let page_classes: Vec<(u32, PageClass)> = pdf
+        .pages
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (i as u32 + 1, p.class))
+        .collect();
     let mut text = DocText::from_pages(pdf.pages.iter().enumerate().map(|(i, p)| {
         let number = i as u32 + 1;
-        (number, ocr_texts.get(&number).map_or(p.text.as_str(), String::as_str))
+        (
+            number,
+            ocr_texts
+                .get(&number)
+                .map_or(p.text.as_str(), String::as_str),
+        )
     }));
     text.sections = headings::pdf(&text.page_slices());
-    Extracted { title: pdf.title, text, page_classes }
+    Extracted {
+        title: pdf.title,
+        text,
+        page_classes,
+    }
 }
 
 fn epub_extracted(path: &Path) -> std::result::Result<Extracted, String> {
     let epub = extract::epub_text(path)?;
     let mut text = DocText::default();
-    for section in epub.sections.into_iter().filter(|s| !s.text.trim().is_empty()) {
+    for section in epub
+        .sections
+        .into_iter()
+        .filter(|s| !s.text.trim().is_empty())
+    {
         if !text.text.is_empty() {
             text.text.push_str(chunk::PAGE_SEPARATOR);
         }
-        text.sections.push(Section { offset: text.text.len(), path: section.heading_path });
+        text.sections.push(Section {
+            offset: text.text.len(),
+            path: section.heading_path,
+        });
         text.text.push_str(&section.text);
     }
-    Ok(Extracted { title: epub.title, text, page_classes: Vec::new() })
+    Ok(Extracted {
+        title: epub.title,
+        text,
+        page_classes: Vec::new(),
+    })
 }
 
 fn plain_extracted(path: &Path, markdown: bool) -> std::result::Result<Extracted, String> {
     let body = extract::plain_text(path)?;
     let title = markdown
-        .then(|| body.lines().find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string())))
+        .then(|| {
+            body.lines()
+                .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
+        })
         .flatten()
         .filter(|t| !t.is_empty());
-    let sections = if markdown { headings::markdown(&body) } else { Vec::new() };
-    Ok(Extracted { title, text: DocText { text: body, pages: Vec::new(), sections, markdown }, page_classes: Vec::new() })
+    let sections = if markdown {
+        headings::markdown(&body)
+    } else {
+        Vec::new()
+    };
+    Ok(Extracted {
+        title,
+        text: DocText {
+            text: body,
+            pages: Vec::new(),
+            sections,
+            markdown,
+        },
+        page_classes: Vec::new(),
+    })
 }
 
 /// A document to extract, chunk and store.
@@ -674,7 +850,12 @@ struct PdfExtractor<'a> {
 
 impl<'a> PdfExtractor<'a> {
     fn new(lib: &'a Path, data_dir: &'a Path) -> PdfExtractor<'a> {
-        PdfExtractor { lib, data_dir, pdfium: None, db: None }
+        PdfExtractor {
+            lib,
+            data_dir,
+            pdfium: None,
+            db: None,
+        }
     }
 
     /// `None` for documents that are not PDFs; workers extract those.
@@ -690,8 +871,16 @@ impl<'a> PdfExtractor<'a> {
         }
         let ocr_texts = ocr::done_texts(self.db.as_ref().expect("opened above"), &new.doc.doc_id)?;
         let pdfium = self.pdfium.as_ref().expect("bound above");
-        let text = extract::catch_panics(|| Ok(pdf_extracted(extract::pdf_text(pdfium, &new.abs)?, &ocr_texts)));
-        Ok(Some(PdfExtracted { ocr_pages: ocr_texts.len(), text }))
+        let text = extract::catch_panics(|| {
+            Ok(pdf_extracted(
+                extract::pdf_text(pdfium, &new.abs)?,
+                &ocr_texts,
+            ))
+        });
+        Ok(Some(PdfExtracted {
+            ocr_pages: ocr_texts.len(),
+            text,
+        }))
     }
 }
 
@@ -711,14 +900,23 @@ fn prepare(new: &NewDoc, pdf: Option<PdfExtracted>) -> Prepared {
         ),
     };
     let content = extracted.and_then(|x| {
-        extract::catch_panics(|| Ok(Chunked { chunks: chunk::chunk(&x.text), title: x.title, page_classes: x.page_classes }))
+        extract::catch_panics(|| {
+            Ok(Chunked {
+                chunks: chunk::chunk(&x.text),
+                title: x.title,
+                page_classes: x.page_classes,
+            })
+        })
     });
     Prepared { ocr_pages, content }
 }
 
 /// Default number of chunking threads: the cores left after the writer and the PDF thread.
 fn default_workers() -> usize {
-    std::thread::available_parallelism().map_or(1, |n| n.get()).saturating_sub(2).clamp(1, MAX_WORKERS)
+    std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .saturating_sub(2)
+        .clamp(1, MAX_WORKERS)
 }
 
 /// Prepare `docs` on `workers` threads and hand each to `store` in order, on this thread. PDFs
@@ -734,7 +932,9 @@ fn prepare_parallel(
     let window = 2 * workers;
     let (permit_tx, permit_rx) = mpsc::sync_channel::<()>(window);
     for _ in 0..window {
-        permit_tx.send(()).expect("the permit channel has room for the window");
+        permit_tx
+            .send(())
+            .expect("the permit channel has room for the window");
     }
     let (job_tx, job_rx) = mpsc::channel::<(usize, Option<PdfExtracted>)>();
     let job_rx = Mutex::new(job_rx);
@@ -782,7 +982,9 @@ fn prepare_parallel(
                 if let Some(p) = early.remove(&i) {
                     break p;
                 }
-                let (j, p) = done_rx.recv().map_err(|_| "ingest: a document worker stopped unexpectedly")?;
+                let (j, p) = done_rx
+                    .recv()
+                    .map_err(|_| "ingest: a document worker stopped unexpectedly")?;
                 early.insert(j, p);
             };
             store(new, prepared?)?;
@@ -803,12 +1005,22 @@ fn store_doc(
     prepared: Prepared,
     reindex: bool,
 ) -> Result<Option<u64>> {
-    let stem = Path::new(&doc.path).file_stem().map_or_else(|| doc.path.clone(), |s| s.to_string_lossy().into_owned());
-    let kind_name = serde_json::to_value(kind)?.as_str().unwrap_or_default().to_string();
+    let stem = Path::new(&doc.path)
+        .file_stem()
+        .map_or_else(|| doc.path.clone(), |s| s.to_string_lossy().into_owned());
+    let kind_name = serde_json::to_value(kind)?
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
 
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM chunks WHERE doc_id = ?1", [&doc.doc_id])?;
-    let upsert_doc = |state: &str, error: Option<&str>, title: &str, counts: &TriageCounts, pages: usize, chunks: usize| {
+    let upsert_doc = |state: &str,
+                      error: Option<&str>,
+                      title: &str,
+                      counts: &TriageCounts,
+                      pages: usize,
+                      chunks: usize| {
         tx.execute(
             "INSERT INTO documents(doc_id, path, kind, title, domain, source_type, bytes, state, error, pages, \
              born_digital, scanned, math_heavy, empty, chunks, ocr_pages, indexed_at) \
@@ -852,7 +1064,14 @@ fn store_doc(
                 counts.add(*class);
             }
             let title = x.title.unwrap_or(stem);
-            upsert_doc("indexing", None, &title, &counts, x.page_classes.len(), chunks.len())?;
+            upsert_doc(
+                "indexing",
+                None,
+                &title,
+                &counts,
+                x.page_classes.len(),
+                chunks.len(),
+            )?;
             let mut insert = tx.prepare_cached(
                 "INSERT INTO chunks(chunk_id, doc_id, ordinal, page_start, page_end, heading_path, text, tokens) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -878,7 +1097,9 @@ fn store_doc(
     if reindex {
         writer.delete_doc(&doc.doc_id);
     }
-    let Some((chunks, title)) = chunks else { return Ok(None) };
+    let Some((chunks, title)) = chunks else {
+        return Ok(None);
+    };
     for c in &chunks {
         writer.add(&Entry {
             chunk_id: &chunk_id(&doc.doc_id, c.ordinal),
@@ -899,7 +1120,13 @@ pub fn chunk_id(doc_id: &str, ordinal: u32) -> String {
 
 /// Embed every chunk not yet in the vector store. Chunks are marked `2` while their vectors
 /// are being written; a run interrupted there removes and redoes them next time.
-fn embed_pending(conn: &Connection, embedder: &Embedder, vectors: &Vectors, rt: &Handle, progress: &Progress) -> Result<u64> {
+fn embed_pending(
+    conn: &Connection,
+    embedder: &Embedder,
+    vectors: &Vectors,
+    rt: &Handle,
+    progress: &Progress,
+) -> Result<u64> {
     let stored_provider = store::meta_get(conn, EMBED_PROVIDER_KEY)?;
     let stored_model = store::meta_get(conn, EMBED_MODEL_KEY)?;
     if let (Some(provider), Some(model)) = (&stored_provider, &stored_model)
@@ -930,9 +1157,15 @@ fn embed_pending(conn: &Connection, embedder: &Embedder, vectors: &Vectors, rt: 
         return Ok(0);
     }
     if !embedder.is_priced() {
-        eprintln!("embed: RAG_EMBED_PRICE_PER_MTOK is not set; tokens are recorded but spend shows $0");
+        eprintln!(
+            "embed: RAG_EMBED_PRICE_PER_MTOK is not set; tokens are recorded but spend shows $0"
+        );
     }
-    eprintln!("embed: {pending} chunks with {}/{}", embedder.provider_name(), embedder.model());
+    eprintln!(
+        "embed: {pending} chunks with {}/{}",
+        embedder.provider_name(),
+        embedder.model()
+    );
     progress.add_total(pending as u64);
 
     let mut select = conn.prepare(
@@ -943,7 +1176,9 @@ fn embed_pending(conn: &Connection, embedder: &Embedder, vectors: &Vectors, rt: 
     let mut done = 0u64;
     loop {
         let batch: Vec<(String, String, String, String, String)> = select
-            .query_map([embed::BATCH_SIZE as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .query_map([embed::BATCH_SIZE as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
             .collect::<std::result::Result<_, _>>()?;
         if batch.is_empty() {
             break;
@@ -958,9 +1193,24 @@ fn embed_pending(conn: &Connection, embedder: &Embedder, vectors: &Vectors, rt: 
                 return Err(e);
             }
         };
-        store::record_spend(conn, SpendKind::Embedding, embedder.provider_name(), embedder.model(), out.tokens, out.usd)?;
-        for ((chunk_id, doc_id, _, domain, source_type), vector) in batch.into_iter().zip(out.vectors) {
-            buffer.push(VecRow { chunk_id, doc_id, domain, source_type, vector });
+        store::record_spend(
+            conn,
+            SpendKind::Embedding,
+            embedder.provider_name(),
+            embedder.model(),
+            out.tokens,
+            out.usd,
+        )?;
+        for ((chunk_id, doc_id, _, domain, source_type), vector) in
+            batch.into_iter().zip(out.vectors)
+        {
+            buffer.push(VecRow {
+                chunk_id,
+                doc_id,
+                domain,
+                source_type,
+                vector,
+            });
         }
         done += texts.len() as u64;
         progress.add_done(texts.len() as u64);
@@ -974,10 +1224,15 @@ fn embed_pending(conn: &Connection, embedder: &Embedder, vectors: &Vectors, rt: 
     Ok(done)
 }
 
-fn set_embedded<'a>(conn: &Connection, chunk_ids: impl Iterator<Item = &'a str>, state: i64) -> Result<()> {
+fn set_embedded<'a>(
+    conn: &Connection,
+    chunk_ids: impl Iterator<Item = &'a str>,
+    state: i64,
+) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
-        let mut update = tx.prepare_cached("UPDATE chunks SET embedded = ?2 WHERE chunk_id = ?1")?;
+        let mut update =
+            tx.prepare_cached("UPDATE chunks SET embedded = ?2 WHERE chunk_id = ?1")?;
         for id in chunk_ids {
             update.execute(params![id, state])?;
         }
@@ -986,8 +1241,16 @@ fn set_embedded<'a>(conn: &Connection, chunk_ids: impl Iterator<Item = &'a str>,
     Ok(())
 }
 
-fn flush(conn: &Connection, vectors: &Vectors, buffer: &mut Vec<VecRow>, embedder: &Embedder, rt: &Handle) -> Result<()> {
-    let Some(first) = buffer.first() else { return Ok(()) };
+fn flush(
+    conn: &Connection,
+    vectors: &Vectors,
+    buffer: &mut Vec<VecRow>,
+    embedder: &Embedder,
+    rt: &Handle,
+) -> Result<()> {
+    let Some(first) = buffer.first() else {
+        return Ok(());
+    };
     if store::meta_get(conn, EMBED_MODEL_KEY)?.is_none() {
         store::meta_set(conn, EMBED_PROVIDER_KEY, embedder.provider_name())?;
         store::meta_set(conn, EMBED_MODEL_KEY, embedder.model())?;
@@ -1017,12 +1280,30 @@ mod tests {
     impl Fixture {
         fn new(name: &str, embedder: Option<Embedder>) -> Fixture {
             let dir = temp_dir(name);
-            let roots = Roots { corpus: dir.join("corpus"), notes: Some(dir.join("notes")) };
+            let roots = Roots {
+                corpus: dir.join("corpus"),
+                notes: Some(dir.join("notes")),
+            };
             fs::create_dir_all(&roots.corpus).unwrap();
             fs::create_dir_all(roots.notes.as_ref().unwrap()).unwrap();
-            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-            let engine = rt.block_on(Engine::open(&dir.join("data"), embedder, None, Tuning::default())).unwrap();
-            Fixture { dir, roots, engine, rt }
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let engine = rt
+                .block_on(Engine::open(
+                    &dir.join("data"),
+                    embedder,
+                    None,
+                    Tuning::default(),
+                ))
+                .unwrap();
+            Fixture {
+                dir,
+                roots,
+                engine,
+                rt,
+            }
         }
 
         fn write(&self, rel: &str, text: &str) {
@@ -1053,8 +1334,17 @@ mod tests {
         }
 
         fn search(&self, q: &str, domains: &[&str]) -> Vec<String> {
-            let filter = Filter { domains: domains.iter().map(|s| s.to_string()).collect(), source_types: vec![] };
-            self.engine.bm25.search(q, 10, &filter).unwrap().into_iter().map(|(id, _)| id).collect()
+            let filter = Filter {
+                domains: domains.iter().map(|s| s.to_string()).collect(),
+                source_types: vec![],
+            };
+            self.engine
+                .bm25
+                .search(q, 10, &filter)
+                .unwrap()
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect()
         }
 
         fn docs(&self) -> Vec<(String, String, String, String)> {
@@ -1080,7 +1370,12 @@ mod tests {
     }
 
     fn doc(path: &str, domain: &str, source_type: &str) -> (String, String, String, String) {
-        (path.into(), domain.into(), source_type.into(), "indexed".into())
+        (
+            path.into(),
+            domain.into(),
+            source_type.into(),
+            "indexed".into(),
+        )
     }
 
     #[test]
@@ -1088,10 +1383,19 @@ mod tests {
         let f = Fixture::new("ingest-targets", None);
         fs::create_dir_all(f.roots.corpus.join("math/books")).unwrap();
         let t = targets(&f.roots, Some(&f.roots.corpus.join("math/books"))).unwrap();
-        assert_eq!((t[0].root, t[0].rel_prefix.as_str()), (Root::Corpus, "math/books"));
-        assert_eq!(t[0].path_range(), ("corpus/math/books/".into(), "corpus/math/books0".into()));
+        assert_eq!(
+            (t[0].root, t[0].rel_prefix.as_str()),
+            (Root::Corpus, "math/books")
+        );
+        assert_eq!(
+            t[0].path_range(),
+            ("corpus/math/books/".into(), "corpus/math/books0".into())
+        );
         assert_eq!(targets(&f.roots, None).unwrap().len(), 2);
-        assert_eq!(targets(&f.roots, None).unwrap()[0].path_range(), ("corpus/".into(), "corpus0".into()));
+        assert_eq!(
+            targets(&f.roots, None).unwrap()[0].path_range(),
+            ("corpus/".into(), "corpus0".into())
+        );
         let err = targets(&f.roots, Some(&f.dir)).unwrap_err().0;
         assert!(err.contains("not inside"), "{err}");
     }
@@ -1099,15 +1403,30 @@ mod tests {
     #[test]
     fn incremental_ingest_handles_unchanged_changed_moved_and_deleted_documents() {
         let f = Fixture::new("ingest-incremental", None);
-        f.write("corpus/math/books/limits.md", "# Limits\n\nA limit describes where a function is heading.\n");
+        f.write(
+            "corpus/math/books/limits.md",
+            "# Limits\n\nA limit describes where a function is heading.\n",
+        );
         f.write("corpus/inbox/redox.txt", "Oxidation is loss of electrons.");
-        f.write("corpus/science/papers/cells.md", "Mitochondria release energy in cells.");
-        f.write("notes/chemistry/acids.md", "# Acids\n\nAcids donate protons.");
+        f.write(
+            "corpus/science/papers/cells.md",
+            "Mitochondria release energy in cells.",
+        );
+        f.write(
+            "notes/chemistry/acids.md",
+            "# Acids\n\nAcids donate protons.",
+        );
         // A byte-identical copy is the same document; the first sorted path is canonical.
-        f.write("corpus/science/papers/copy-of-cells.md", "Mitochondria release energy in cells.");
+        f.write(
+            "corpus/science/papers/copy-of-cells.md",
+            "Mitochondria release energy in cells.",
+        );
 
         let first = f.ingest();
-        assert_eq!((first.files, first.documents, first.indexed, first.unchanged), (5, 4, 4, 0));
+        assert_eq!(
+            (first.files, first.documents, first.indexed, first.unchanged),
+            (5, 4, 4, 0)
+        );
         assert_eq!(
             f.docs(),
             vec![
@@ -1122,19 +1441,37 @@ mod tests {
 
         // Nothing changed: nothing is re-indexed.
         let second = f.ingest();
-        assert_eq!((second.indexed, second.unchanged, second.moved, second.removed), (0, 4, 0, 0));
+        assert_eq!(
+            (
+                second.indexed,
+                second.unchanged,
+                second.moved,
+                second.removed
+            ),
+            (0, 4, 0, 0)
+        );
         assert_eq!(f.search("oxidation electrons", &[]), redox_chunks);
 
         // Changed content is a new document; the old one and its chunks are gone.
-        f.write("corpus/math/books/limits.md", "# Limits\n\nContinuity means no jumps.\n");
+        f.write(
+            "corpus/math/books/limits.md",
+            "# Limits\n\nContinuity means no jumps.\n",
+        );
         // Moved out of the inbox: same chunks, new metadata in both stores.
         fs::create_dir_all(f.dir.join("corpus/chemistry/books")).unwrap();
-        fs::rename(f.dir.join("corpus/inbox/redox.txt"), f.dir.join("corpus/chemistry/books/redox.txt")).unwrap();
+        fs::rename(
+            f.dir.join("corpus/inbox/redox.txt"),
+            f.dir.join("corpus/chemistry/books/redox.txt"),
+        )
+        .unwrap();
         // Deleted.
         fs::remove_file(f.dir.join("notes/chemistry/acids.md")).unwrap();
 
         let third = f.ingest();
-        assert_eq!((third.indexed, third.unchanged, third.moved, third.removed), (1, 1, 1, 2));
+        assert_eq!(
+            (third.indexed, third.unchanged, third.moved, third.removed),
+            (1, 1, 1, 2)
+        );
         assert_eq!(
             f.docs(),
             vec![
@@ -1143,18 +1480,33 @@ mod tests {
                 doc("corpus/science/papers/cells.md", "science", "paper"),
             ]
         );
-        assert!(f.search("function heading", &[]).is_empty(), "old version of limits.md is still indexed");
+        assert!(
+            f.search("function heading", &[]).is_empty(),
+            "old version of limits.md is still indexed"
+        );
         assert_eq!(f.search("continuity jumps", &["math"]).len(), 1);
-        assert_eq!(f.search("oxidation electrons", &["chemistry"]), redox_chunks);
+        assert_eq!(
+            f.search("oxidation electrons", &["chemistry"]),
+            redox_chunks
+        );
         assert!(f.search("oxidation electrons", &["unsorted"]).is_empty());
         assert!(f.search("acids protons", &[]).is_empty());
-        assert_eq!(f.count("SELECT COUNT(*) FROM chunks WHERE doc_id NOT IN (SELECT doc_id FROM documents)"), 0);
+        assert_eq!(
+            f.count(
+                "SELECT COUNT(*) FROM chunks WHERE doc_id NOT IN (SELECT doc_id FROM documents)"
+            ),
+            0
+        );
 
         // Removing the canonical copy makes the other copy canonical.
         fs::remove_file(f.dir.join("corpus/science/papers/cells.md")).unwrap();
         let fourth = f.ingest();
         assert_eq!((fourth.moved, fourth.removed, fourth.indexed), (1, 0, 0));
-        assert!(f.docs().contains(&doc("corpus/science/papers/copy-of-cells.md", "science", "paper")));
+        assert!(f.docs().contains(&doc(
+            "corpus/science/papers/copy-of-cells.md",
+            "science",
+            "paper"
+        )));
     }
 
     #[test]
@@ -1167,7 +1519,11 @@ mod tests {
         f.write("corpus/math/books/c.md", "Gamma rays.");
         let report = f.ingest_scoped(Some(&f.dir.join("corpus/math")));
         assert_eq!((report.files, report.indexed, report.removed), (2, 1, 0));
-        assert_eq!(f.search("beta decay", &[]).len(), 1, "a deletion outside the scope is not applied yet");
+        assert_eq!(
+            f.search("beta decay", &[]).len(),
+            1,
+            "a deletion outside the scope is not applied yet"
+        );
         let full = f.ingest();
         assert_eq!(full.removed, 1);
     }
@@ -1181,7 +1537,15 @@ mod tests {
         fs::remove_dir_all(f.roots.notes.as_ref().unwrap()).unwrap();
         fs::remove_file(f.dir.join("corpus/math/books/a.md")).unwrap();
         let progress = Progress::default();
-        let result = ingest(&f.engine, &f.roots, Path::new("x"), None, false, f.rt.handle(), &progress);
+        let result = ingest(
+            &f.engine,
+            &f.roots,
+            Path::new("x"),
+            None,
+            false,
+            f.rt.handle(),
+            &progress,
+        );
         assert!(result.unwrap_err().0.contains("not a directory"));
         assert_eq!(f.search("alpha", &[]).len(), 1);
     }
@@ -1192,19 +1556,31 @@ mod tests {
         f.write("corpus/math/books/a.md", "Alpha particles.");
         f.ingest();
         // Simulate a crash after the database write but before the BM25 commit.
-        f.engine.conn().execute("UPDATE documents SET state = 'indexing'", []).unwrap();
+        f.engine
+            .conn()
+            .execute("UPDATE documents SET state = 'indexing'", [])
+            .unwrap();
         let report = f.ingest();
         assert_eq!((report.indexed, report.unchanged), (1, 0));
-        assert_eq!(f.docs(), vec![doc("corpus/math/books/a.md", "math", "book")]);
+        assert_eq!(
+            f.docs(),
+            vec![doc("corpus/math/books/a.md", "math", "book")]
+        );
         assert_eq!(f.search("alpha", &[]).len(), 1, "exactly one copy in BM25");
     }
 
     #[test]
     fn an_older_bm25_index_is_rebuilt_from_the_database_by_the_next_ingest() {
         let mut f = Fixture::new("ingest-schema", None);
-        f.write("corpus/math/books/limits.md", "# Limits\n\n## One-sided limits\n\nA function approaches a value from the left.\n");
+        f.write(
+            "corpus/math/books/limits.md",
+            "# Limits\n\n## One-sided limits\n\nA function approaches a value from the left.\n",
+        );
         // Title "organelles" (the file name) appears only in the title field.
-        f.write("corpus/science/books/organelles.txt", "Mitochondria release energy.");
+        f.write(
+            "corpus/science/books/organelles.txt",
+            "Mitochondria release energy.",
+        );
         assert_eq!(f.ingest().indexed, 2);
         let version = |f: &Fixture| store::meta_get(&f.engine.conn(), bm25::SCHEMA_KEY).unwrap();
         assert_eq!(version(&f).as_deref(), Some(bm25::SCHEMA_VERSION));
@@ -1213,7 +1589,14 @@ mod tests {
         // Put back the index an older build left: chunk text only, tantivy's en_stem analyzer,
         // and no version in the database. The engine is closed first (its files are mapped).
         let data = f.dir.join("data");
-        let scratch = f.rt.block_on(Engine::open(&f.dir.join("scratch"), None, None, Tuning::default())).unwrap();
+        let scratch =
+            f.rt.block_on(Engine::open(
+                &f.dir.join("scratch"),
+                None,
+                None,
+                Tuning::default(),
+            ))
+            .unwrap();
         drop(std::mem::replace(&mut f.engine, scratch));
         let bm25_dir = data.join(crate::engine::BM25_DIR);
         fs::remove_dir_all(&bm25_dir).unwrap();
@@ -1228,14 +1611,20 @@ mod tests {
             let text = builder.add_text_field("text", TEXT);
             let old = tantivy::Index::create_in_dir(&bm25_dir, builder.build()).unwrap();
             let mut w: tantivy::IndexWriter = old.writer_with_num_threads(1, 50 << 20).unwrap();
-            w.add_document(tantivy::doc!(chunk_id => "old:0", text => "mitochondria")).unwrap();
+            w.add_document(tantivy::doc!(chunk_id => "old:0", text => "mitochondria"))
+                .unwrap();
             w.commit().unwrap();
         }
         store::meta_delete(&store::open(&data).unwrap(), bm25::SCHEMA_KEY).unwrap();
 
-        let reopened = f.rt.block_on(Engine::open(&data, None, None, Tuning::default())).unwrap();
+        let reopened =
+            f.rt.block_on(Engine::open(&data, None, None, Tuning::default()))
+                .unwrap();
         drop(std::mem::replace(&mut f.engine, reopened));
-        assert!(f.search("mitochondria", &[]).is_empty(), "the old index is cleared when the engine opens");
+        assert!(
+            f.search("mitochondria", &[]).is_empty(),
+            "the old index is cleared when the engine opens"
+        );
 
         // The next ingest re-indexes every stored chunk, titles and headings included, without
         // extracting any document again.
@@ -1245,8 +1634,16 @@ mod tests {
         assert_eq!(f.search("mitochondria energy", &["science"]).len(), 1);
         assert_eq!(f.search("organelles", &[]).len(), 1);
         assert_eq!(f.search("function approaches", &["math"]).len(), 1);
-        assert_eq!(f.ingest().indexed, 0, "a current index is not re-indexed again");
-        assert_eq!(f.search("mitochondria", &[]).len(), 1, "exactly one copy in BM25");
+        assert_eq!(
+            f.ingest().indexed,
+            0,
+            "a current index is not re-indexed again"
+        );
+        assert_eq!(
+            f.search("mitochondria", &[]).len(),
+            1,
+            "exactly one copy in BM25"
+        );
     }
 
     #[test]
@@ -1255,7 +1652,16 @@ mod tests {
         f.write("corpus/math/books/a.md", "Alpha particles.");
         f.ingest();
         let progress = Progress::default();
-        let report = ingest(&f.engine, &f.roots, Path::new("x"), None, true, f.rt.handle(), &progress).unwrap();
+        let report = ingest(
+            &f.engine,
+            &f.roots,
+            Path::new("x"),
+            None,
+            true,
+            f.rt.handle(),
+            &progress,
+        )
+        .unwrap();
         assert_eq!((report.indexed, report.unchanged), (1, 0));
         assert_eq!(f.search("alpha", &[]).len(), 1);
     }
@@ -1266,8 +1672,13 @@ mod tests {
         f.write("corpus/math/books/broken.epub", "not a zip");
         let report = f.ingest();
         assert_eq!((report.documents, report.errors, report.indexed), (1, 1, 0));
-        let (state, error): (String, String) =
-            f.engine.conn().query_row("SELECT state, error FROM documents", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let (state, error): (String, String) = f
+            .engine
+            .conn()
+            .query_row("SELECT state, error FROM documents", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
         assert_eq!(state, "error");
         assert!(error.contains("EPUB"), "{error}");
         // Unchanged errors are not retried.
@@ -1279,16 +1690,38 @@ mod tests {
         let pdf = PdfText {
             title: Some("T".into()),
             pages: vec![
-                PdfPageText { text: "Born digital page text.".into(), class: PageClass::BornDigital },
-                PdfPageText { text: "x = y".into(), class: PageClass::MathHeavy },
-                PdfPageText { text: String::new(), class: PageClass::Scanned },
+                PdfPageText {
+                    text: "Born digital page text.".into(),
+                    class: PageClass::BornDigital,
+                },
+                PdfPageText {
+                    text: "x = y".into(),
+                    class: PageClass::MathHeavy,
+                },
+                PdfPageText {
+                    text: String::new(),
+                    class: PageClass::Scanned,
+                },
             ],
         };
         let ocr = HashMap::from([(3, "Recognised scan text.".to_string())]);
         let x = pdf_extracted(pdf, &ocr);
-        assert_eq!(x.text.text, "Born digital page text.\n\nx = y\n\nRecognised scan text.");
-        assert_eq!(x.text.pages.iter().map(|p| p.1).collect::<Vec<_>>(), vec![1, 2, 3]);
-        assert_eq!(x.page_classes, vec![(1, PageClass::BornDigital), (2, PageClass::MathHeavy), (3, PageClass::Scanned)]);
+        assert_eq!(
+            x.text.text,
+            "Born digital page text.\n\nx = y\n\nRecognised scan text."
+        );
+        assert_eq!(
+            x.text.pages.iter().map(|p| p.1).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            x.page_classes,
+            vec![
+                (1, PageClass::BornDigital),
+                (2, PageClass::MathHeavy),
+                (3, PageClass::Scanned)
+            ]
+        );
         assert_eq!(x.title.as_deref(), Some("T"));
     }
 
@@ -1312,7 +1745,10 @@ mod tests {
 
     /// A Markdown document with `sections` sections of distinct sentences.
     fn synthetic_markdown(seed: usize, sections: usize) -> String {
-        let words = ["limit", "series", "vector", "enzyme", "photon", "syntax", "reagent", "matrix", "orbital", "clause"];
+        let words = [
+            "limit", "series", "vector", "enzyme", "photon", "syntax", "reagent", "matrix",
+            "orbital", "clause",
+        ];
         let mut text = format!("# Topic {seed}\n\n");
         for s in 0..sections {
             text.push_str(&format!("## Part {seed}.{s}\n\n"));
@@ -1334,12 +1770,18 @@ mod tests {
         let conn = f.engine.conn();
         let mut stmt = conn.prepare(sql).unwrap();
         let columns = stmt.column_count();
-        stmt.query_map([], |r| (0..columns).map(|i| r.get(i)).collect()).unwrap().collect::<std::result::Result<_, _>>().unwrap()
+        stmt.query_map([], |r| (0..columns).map(|i| r.get(i)).collect())
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap()
     }
 
     #[test]
     fn parallel_and_serial_ingest_store_identical_chunks() {
-        let fixtures = [Fixture::new("ingest-serial", None), Fixture::new("ingest-parallel", None)];
+        let fixtures = [
+            Fixture::new("ingest-serial", None),
+            Fixture::new("ingest-parallel", None),
+        ];
         let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/library");
         for f in &fixtures {
             // Every document type (PDFs with OCR pages, an encrypted PDF, EPUB, Markdown, text), and
@@ -1347,7 +1789,10 @@ mod tests {
             copy_dir(&library.join("corpus"), &f.roots.corpus);
             copy_dir(&library.join("notes"), f.roots.notes.as_ref().unwrap());
             for i in 0..48 {
-                f.write(&format!("corpus/science/books/gen-{i:02}.md"), &synthetic_markdown(i, 1 + (i * 7) % 23));
+                f.write(
+                    &format!("corpus/science/books/gen-{i:02}.md"),
+                    &synthetic_markdown(i, 1 + (i * 7) % 23),
+                );
             }
         }
         let reports: Vec<IngestReport> = fixtures
@@ -1355,17 +1800,31 @@ mod tests {
             .zip([1, 6])
             .map(|(f, workers)| {
                 let progress = Progress::default();
-                let report =
-                    ingest_with(&f.engine, &f.roots, &pdfium_lib(), None, false, f.rt.handle(), &progress, workers).unwrap();
+                let report = ingest_with(
+                    &f.engine,
+                    &f.roots,
+                    &pdfium_lib(),
+                    None,
+                    false,
+                    f.rt.handle(),
+                    &progress,
+                    workers,
+                )
+                .unwrap();
                 let (done, total) = progress.get();
                 assert_eq!(done, total, "progress ends complete");
                 report
             })
             .collect();
-        let summary = |r: &IngestReport| (r.files, r.documents, r.indexed, r.errors, r.chunks_added);
+        let summary =
+            |r: &IngestReport| (r.files, r.documents, r.indexed, r.errors, r.chunks_added);
         assert_eq!(summary(&reports[0]), summary(&reports[1]));
         assert_eq!(reports[0].errors, 1, "the encrypted PDF");
-        assert!(reports[0].chunks_added > 100, "{} chunks", reports[0].chunks_added);
+        assert!(
+            reports[0].chunks_added > 100,
+            "{} chunks",
+            reports[0].chunks_added
+        );
 
         for sql in [
             "SELECT chunk_id, doc_id, ordinal, page_start, page_end, heading_path, text, tokens, embedded FROM chunks ORDER BY chunk_id",
@@ -1375,9 +1834,18 @@ mod tests {
         ] {
             assert_eq!(rows(&fixtures[0], sql), rows(&fixtures[1], sql), "{sql}");
         }
-        for query in ["limit series", "enzyme photon", "mitochondrion energy", "plants algae"] {
+        for query in [
+            "limit series",
+            "enzyme photon",
+            "mitochondrion energy",
+            "plants algae",
+        ] {
             let hits = |f: &Fixture| {
-                let mut ids = f.engine.bm25.search(query, 1000, &Filter::default()).unwrap();
+                let mut ids = f
+                    .engine
+                    .bm25
+                    .search(query, 1000, &Filter::default())
+                    .unwrap();
                 ids.sort_by(|a, b| a.0.cmp(&b.0));
                 ids
             };
@@ -1392,7 +1860,11 @@ mod tests {
             .map(|i| {
                 let path = format!("corpus/math/books/gen-{i:02}.md");
                 fs::write(dir.join(format!("gen-{i:02}.md")), synthetic_markdown(i, 4)).unwrap();
-                LiveDoc { doc_id: i.to_string(), path, bytes: 0 }
+                LiveDoc {
+                    doc_id: i.to_string(),
+                    path,
+                    bytes: 0,
+                }
             })
             .collect();
         let docs: Vec<NewDoc> = live
@@ -1409,37 +1881,70 @@ mod tests {
         let err = prepare_parallel(&docs, Path::new("unused"), &dir, 3, |new, prepared| {
             assert!(prepared.content.is_ok());
             stored.push(new.doc.doc_id.clone());
-            if stored.len() == 5 { Err("disk full".into()) } else { Ok(()) }
+            if stored.len() == 5 {
+                Err("disk full".into())
+            } else {
+                Ok(())
+            }
         })
         .unwrap_err();
         assert_eq!(err.0, "disk full");
-        assert_eq!(stored, ["0", "1", "2", "3", "4"], "stored in order, and nothing after the failure");
+        assert_eq!(
+            stored,
+            ["0", "1", "2", "3", "4"],
+            "stored in order, and nothing after the failure"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn embeddings_are_added_incrementally_and_follow_moves_and_deletes() {
         let f = Fixture::new("ingest-embed", Some(Embedder::mock(16, Some(1.0), vec![])));
-        f.write("corpus/math/books/a.md", "Alpha particles are helium nuclei.");
+        f.write(
+            "corpus/math/books/a.md",
+            "Alpha particles are helium nuclei.",
+        );
         f.write("corpus/inbox/b.md", "Beta decay emits electrons.");
         let first = f.ingest();
         assert_eq!(first.embedded_chunks, 2);
         let vectors = f.engine.vectors.as_ref().unwrap();
         assert_eq!(f.rt.block_on(vectors.count()).unwrap(), 2);
-        assert_eq!(f.count("SELECT COUNT(*) FROM chunks WHERE embedded <> 1"), 0);
+        assert_eq!(
+            f.count("SELECT COUNT(*) FROM chunks WHERE embedded <> 1"),
+            0
+        );
         // Spend: the mock bills one token per word (5 + 4) at $1 per million tokens.
         let usd = store::spend_usd(&f.engine.conn(), SpendKind::Embedding).unwrap();
         assert!((usd - 9.0 / 1e6).abs() < 1e-12, "{usd}");
-        assert_eq!(store::meta_get(&f.engine.conn(), EMBED_DIMS_KEY).unwrap().as_deref(), Some("16"));
+        assert_eq!(
+            store::meta_get(&f.engine.conn(), EMBED_DIMS_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("16")
+        );
 
-        assert_eq!(f.ingest().embedded_chunks, 0, "unchanged chunks are not embedded again");
+        assert_eq!(
+            f.ingest().embedded_chunks,
+            0,
+            "unchanged chunks are not embedded again"
+        );
 
         fs::create_dir_all(f.dir.join("corpus/science/books")).unwrap();
-        fs::rename(f.dir.join("corpus/inbox/b.md"), f.dir.join("corpus/science/books/b.md")).unwrap();
+        fs::rename(
+            f.dir.join("corpus/inbox/b.md"),
+            f.dir.join("corpus/science/books/b.md"),
+        )
+        .unwrap();
         fs::remove_file(f.dir.join("corpus/math/books/a.md")).unwrap();
         let third = f.ingest();
-        assert_eq!((third.moved, third.removed, third.embedded_chunks), (1, 1, 0));
-        let science = Filter { domains: vec!["science".into()], source_types: vec!["book".into()] };
+        assert_eq!(
+            (third.moved, third.removed, third.embedded_chunks),
+            (1, 1, 0)
+        );
+        let science = Filter {
+            domains: vec!["science".into()],
+            source_types: vec!["book".into()],
+        };
         let query = embed::mock_vector("Beta decay emits electrons.", 16);
         let hits = f.rt.block_on(vectors.search(&query, 5, &science)).unwrap();
         assert_eq!(hits.len(), 1);
@@ -1449,10 +1954,23 @@ mod tests {
     #[test]
     fn a_failed_embedding_batch_is_retried_by_the_next_ingest() {
         let fatal = embed::ProviderError::Fatal("HTTP 401".into());
-        let f = Fixture::new("ingest-embed-fail", Some(Embedder::mock(8, None, vec![fatal])));
+        let f = Fixture::new(
+            "ingest-embed-fail",
+            Some(Embedder::mock(8, None, vec![fatal])),
+        );
         f.write("corpus/math/books/a.md", "Alpha particles.");
         let progress = Progress::default();
-        let err = ingest(&f.engine, &f.roots, Path::new("x"), None, false, f.rt.handle(), &progress).unwrap_err().0;
+        let err = ingest(
+            &f.engine,
+            &f.roots,
+            Path::new("x"),
+            None,
+            false,
+            f.rt.handle(),
+            &progress,
+        )
+        .unwrap_err()
+        .0;
         assert!(err.contains("401"), "{err}");
         assert_eq!(f.search("alpha", &[]).len(), 1, "text indexing is kept");
         assert_eq!(f.count("SELECT COUNT(*) FROM chunks WHERE embedded = 0"), 1);
@@ -1466,9 +1984,28 @@ mod tests {
         store::meta_set(&f.engine.conn(), EMBED_PROVIDER_KEY, "voyage").unwrap();
         store::meta_set(&f.engine.conn(), EMBED_MODEL_KEY, "voyage-3").unwrap();
         let progress = Progress::default();
-        let err = ingest(&f.engine, &f.roots, Path::new("x"), None, false, f.rt.handle(), &progress).unwrap_err().0;
+        let err = ingest(
+            &f.engine,
+            &f.roots,
+            Path::new("x"),
+            None,
+            false,
+            f.rt.handle(),
+            &progress,
+        )
+        .unwrap_err()
+        .0;
         assert!(err.contains("rebuild=true"), "{err}");
-        let report = ingest(&f.engine, &f.roots, Path::new("x"), None, true, f.rt.handle(), &progress).unwrap();
+        let report = ingest(
+            &f.engine,
+            &f.roots,
+            Path::new("x"),
+            None,
+            true,
+            f.rt.handle(),
+            &progress,
+        )
+        .unwrap();
         assert_eq!(report.embedded_chunks, 1);
     }
 }

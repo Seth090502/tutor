@@ -1,4 +1,5 @@
 """Print keyword-search hit@k (zoomcamp-style eval with train/test split)."""
+
 import argparse
 import os
 import sys
@@ -19,7 +20,7 @@ def main():
         train, test = split_items(seed=args.seed)
         ids = train if args.split == "train" else test
     r = evaluate(k=args.k, ids=ids)
-    print(f"hit@{r['k']} [{args.split}]: {r['hit']}/{r['n']} = {100*r['hit_rate']:.1f}%")
+    print(f"hit@{r['k']} [{args.split}]: {r['hit']}/{r['n']} = {100 * r['hit_rate']:.1f}%")
     for m in r["misses"]:
         print(f"  MISS {m['id']}: want {m['expected']}, got {m['got']}")
 

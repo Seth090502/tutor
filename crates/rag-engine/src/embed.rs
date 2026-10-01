@@ -44,7 +44,10 @@ pub struct Embeddings {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderError {
-    Retryable { message: String, retry_after: Option<Duration> },
+    Retryable {
+        message: String,
+        retry_after: Option<Duration>,
+    },
     Fatal(String),
 }
 
@@ -52,7 +55,11 @@ pub enum ProviderError {
 pub trait Provider: Send + Sync {
     fn name(&self) -> &'static str;
     fn model(&self) -> &str;
-    fn embed<'a>(&'a self, texts: &'a [String], input: InputType) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>>;
+    fn embed<'a>(
+        &'a self,
+        texts: &'a [String],
+        input: InputType,
+    ) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>>;
 }
 
 #[derive(Deserialize)]
@@ -87,10 +94,19 @@ impl HttpEmbeddings {
             .timeout(REQUEST_TIMEOUT)
             .connect_timeout(Duration::from_secs(10))
             .build()?;
-        Ok(HttpEmbeddings { client, url: format!("{}/embeddings", base_url.trim_end_matches('/')), key, model })
+        Ok(HttpEmbeddings {
+            client,
+            url: format!("{}/embeddings", base_url.trim_end_matches('/')),
+            key,
+            model,
+        })
     }
 
-    async fn post(&self, body: serde_json::Value, texts: &[String]) -> std::result::Result<Embeddings, ProviderError> {
+    async fn post(
+        &self,
+        body: serde_json::Value,
+        texts: &[String],
+    ) -> std::result::Result<Embeddings, ProviderError> {
         let mut request = self.client.post(&self.url).json(&body);
         if let Some(key) = &self.key {
             request = request.bearer_auth(key);
@@ -107,26 +123,47 @@ impl HttpEmbeddings {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.trim().parse::<u64>().ok())
                 .map(Duration::from_secs);
-            let body: String = response.text().await.unwrap_or_default().chars().take(300).collect();
+            let body: String = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect();
             let message = format!("{} returned HTTP {status}: {body}", self.url);
             return Err(if status.as_u16() == 429 || status.is_server_error() {
-                ProviderError::Retryable { message, retry_after }
+                ProviderError::Retryable {
+                    message,
+                    retry_after,
+                }
             } else {
                 ProviderError::Fatal(message)
             });
         }
-        let parsed: ApiResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::Fatal(format!("unexpected response from {}: {e}", self.url)))?;
-        let mut items: Vec<(usize, Vec<f32>)> =
-            parsed.data.into_iter().enumerate().map(|(i, item)| (item.index.unwrap_or(i), item.embedding)).collect();
+        let parsed: ApiResponse = response.json().await.map_err(|e| {
+            ProviderError::Fatal(format!("unexpected response from {}: {e}", self.url))
+        })?;
+        let mut items: Vec<(usize, Vec<f32>)> = parsed
+            .data
+            .into_iter()
+            .enumerate()
+            .map(|(i, item)| (item.index.unwrap_or(i), item.embedding))
+            .collect();
         items.sort_by_key(|(i, _)| *i);
         // Providers report billed tokens; if one does not, cl100k gives an estimate.
-        let tokens = parsed.usage.and_then(|u| u.total_tokens.or(u.prompt_tokens)).unwrap_or_else(|| {
-            texts.iter().map(|t| crate::chunk::tokenizer().encode_ordinary(t).len() as u64).sum()
-        });
-        Ok(Embeddings { vectors: items.into_iter().map(|(_, v)| v).collect(), tokens })
+        let tokens = parsed
+            .usage
+            .and_then(|u| u.total_tokens.or(u.prompt_tokens))
+            .unwrap_or_else(|| {
+                texts
+                    .iter()
+                    .map(|t| crate::chunk::tokenizer().encode_ordinary(t).len() as u64)
+                    .sum()
+            });
+        Ok(Embeddings {
+            vectors: items.into_iter().map(|(_, v)| v).collect(),
+            tokens,
+        })
     }
 }
 
@@ -139,12 +176,19 @@ impl Provider for Voyage {
     fn model(&self) -> &str {
         &self.0.model
     }
-    fn embed<'a>(&'a self, texts: &'a [String], input: InputType) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
+    fn embed<'a>(
+        &'a self,
+        texts: &'a [String],
+        input: InputType,
+    ) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
         let input_type = match input {
             InputType::Document => "document",
             InputType::Query => "query",
         };
-        Box::pin(self.0.post(json!({"input": texts, "model": self.0.model, "input_type": input_type}), texts))
+        Box::pin(self.0.post(
+            json!({"input": texts, "model": self.0.model, "input_type": input_type}),
+            texts,
+        ))
     }
 }
 
@@ -157,8 +201,15 @@ impl Provider for OpenAiCompat {
     fn model(&self) -> &str {
         &self.0.model
     }
-    fn embed<'a>(&'a self, texts: &'a [String], _input: InputType) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
-        Box::pin(self.0.post(json!({"input": texts, "model": self.0.model}), texts))
+    fn embed<'a>(
+        &'a self,
+        texts: &'a [String],
+        _input: InputType,
+    ) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
+        Box::pin(
+            self.0
+                .post(json!({"input": texts, "model": self.0.model}), texts),
+        )
     }
 }
 
@@ -177,24 +228,38 @@ pub struct Embedder {
 
 impl Embedder {
     pub fn new(provider: Box<dyn Provider>, price_per_mtok: Option<f64>) -> Embedder {
-        Embedder { provider, price_per_mtok, base_delay: BASE_DELAY }
+        Embedder {
+            provider,
+            price_per_mtok,
+            base_delay: BASE_DELAY,
+        }
     }
 
     /// The embedder described by the environment, or `None` when `RAG_EMBED_PROVIDER` is unset.
     pub fn from_env() -> Result<Option<Embedder>> {
-        Self::from_vars(|name| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()))
+        Self::from_vars(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
     }
 
     fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Option<Embedder>> {
-        let Some(provider) = var("RAG_EMBED_PROVIDER") else { return Ok(None) };
-        let model = var("RAG_EMBED_MODEL").ok_or("RAG_EMBED_MODEL is required when RAG_EMBED_PROVIDER is set")?;
+        let Some(provider) = var("RAG_EMBED_PROVIDER") else {
+            return Ok(None);
+        };
+        let model = var("RAG_EMBED_MODEL")
+            .ok_or("RAG_EMBED_MODEL is required when RAG_EMBED_PROVIDER is set")?;
         let price = match var("RAG_EMBED_PRICE_PER_MTOK") {
             None => None,
             Some(v) => Some(
                 v.parse::<f64>()
                     .ok()
                     .filter(|p| p.is_finite() && *p >= 0.0)
-                    .ok_or(format!("RAG_EMBED_PRICE_PER_MTOK must be a non-negative number, got {v:?}"))?,
+                    .ok_or(format!(
+                        "RAG_EMBED_PRICE_PER_MTOK must be a non-negative number, got {v:?}"
+                    ))?,
             ),
         };
         let provider: Box<dyn Provider> = match provider.as_str() {
@@ -206,10 +271,20 @@ impl Embedder {
                 Box::new(Voyage(HttpEmbeddings::new(&base, Some(key), model)?))
             }
             "openai_compat" => {
-                let base = var("RAG_EMBED_BASE_URL").ok_or("openai_compat needs RAG_EMBED_BASE_URL")?;
-                Box::new(OpenAiCompat(HttpEmbeddings::new(&base, var("RAG_EMBED_API_KEY"), model)?))
+                let base =
+                    var("RAG_EMBED_BASE_URL").ok_or("openai_compat needs RAG_EMBED_BASE_URL")?;
+                Box::new(OpenAiCompat(HttpEmbeddings::new(
+                    &base,
+                    var("RAG_EMBED_API_KEY"),
+                    model,
+                )?))
             }
-            other => return Err(format!("RAG_EMBED_PROVIDER must be voyage or openai_compat, got {other:?}").into()),
+            other => {
+                return Err(format!(
+                    "RAG_EMBED_PROVIDER must be voyage or openai_compat, got {other:?}"
+                )
+                .into());
+            }
         };
         Ok(Some(Embedder::new(provider, price)))
     }
@@ -232,29 +307,52 @@ impl Embedder {
 
     /// One request for up to [`BATCH_SIZE`] texts, retried on throttling and server errors.
     pub async fn embed_batch(&self, texts: &[String], input: InputType) -> Result<EmbedOutput> {
-        assert!(texts.len() <= BATCH_SIZE, "embed_batch takes at most {BATCH_SIZE} texts");
+        assert!(
+            texts.len() <= BATCH_SIZE,
+            "embed_batch takes at most {BATCH_SIZE} texts"
+        );
         if texts.is_empty() {
-            return Ok(EmbedOutput { vectors: Vec::new(), tokens: 0, usd: 0.0 });
+            return Ok(EmbedOutput {
+                vectors: Vec::new(),
+                tokens: 0,
+                usd: 0.0,
+            });
         }
         let name = self.provider.name();
         let mut attempt = 0;
         let embeddings = loop {
             match self.provider.embed(texts, input).await {
                 Ok(e) => break e,
-                Err(ProviderError::Retryable { message, retry_after }) if attempt + 1 < MAX_ATTEMPTS => {
-                    let delay = retry_after.unwrap_or(self.base_delay * 2u32.pow(attempt)).min(MAX_DELAY);
+                Err(ProviderError::Retryable {
+                    message,
+                    retry_after,
+                }) if attempt + 1 < MAX_ATTEMPTS => {
+                    let delay = retry_after
+                        .unwrap_or(self.base_delay * 2u32.pow(attempt))
+                        .min(MAX_DELAY);
                     attempt += 1;
-                    eprintln!("embed: {message}; retry {attempt}/{} in {delay:?}", MAX_ATTEMPTS - 1);
+                    eprintln!(
+                        "embed: {message}; retry {attempt}/{} in {delay:?}",
+                        MAX_ATTEMPTS - 1
+                    );
                     tokio::time::sleep(delay).await;
                 }
                 Err(ProviderError::Retryable { message, .. }) => {
-                    return Err(format!("{name} embeddings failed after {MAX_ATTEMPTS} attempts: {message}").into());
+                    return Err(format!(
+                        "{name} embeddings failed after {MAX_ATTEMPTS} attempts: {message}"
+                    )
+                    .into());
                 }
-                Err(ProviderError::Fatal(message)) => return Err(format!("{name} embeddings failed: {message}").into()),
+                Err(ProviderError::Fatal(message)) => {
+                    return Err(format!("{name} embeddings failed: {message}").into());
+                }
             }
         };
         let dims = embeddings.vectors.first().map_or(0, Vec::len);
-        if embeddings.vectors.len() != texts.len() || dims == 0 || embeddings.vectors.iter().any(|v| v.len() != dims) {
+        if embeddings.vectors.len() != texts.len()
+            || dims == 0
+            || embeddings.vectors.iter().any(|v| v.len() != dims)
+        {
             return Err(format!(
                 "{name} returned {} vectors (dimensions {dims}) for {} texts",
                 embeddings.vectors.len(),
@@ -262,7 +360,11 @@ impl Embedder {
             )
             .into());
         }
-        Ok(EmbedOutput { usd: self.usd(embeddings.tokens), vectors: embeddings.vectors, tokens: embeddings.tokens })
+        Ok(EmbedOutput {
+            usd: self.usd(embeddings.tokens),
+            vectors: embeddings.vectors,
+            tokens: embeddings.tokens,
+        })
     }
 }
 
@@ -271,8 +373,16 @@ impl Embedder {
 #[cfg(test)]
 pub fn mock_vector(text: &str, dims: usize) -> Vec<f32> {
     let mut v = vec![0f32; dims];
-    for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
-        let hash = word.to_lowercase().bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    for word in text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        let hash = word
+            .to_lowercase()
+            .bytes()
+            .fold(0xcbf29ce484222325u64, |h, b| {
+                (h ^ b as u64).wrapping_mul(0x100000001b3)
+            });
         v[(hash % dims as u64) as usize] += 1.0;
     }
     let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -295,7 +405,11 @@ pub struct MockProvider {
 #[cfg(test)]
 impl MockProvider {
     pub fn new(dims: usize, failures: Vec<ProviderError>) -> MockProvider {
-        MockProvider { dims, failures: std::sync::Mutex::new(failures.into()), calls: Default::default() }
+        MockProvider {
+            dims,
+            failures: std::sync::Mutex::new(failures.into()),
+            calls: Default::default(),
+        }
     }
 }
 
@@ -307,7 +421,11 @@ impl Provider for MockProvider {
     fn model(&self) -> &str {
         "mock-model"
     }
-    fn embed<'a>(&'a self, texts: &'a [String], _input: InputType) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
+    fn embed<'a>(
+        &'a self,
+        texts: &'a [String],
+        _input: InputType,
+    ) -> BoxFuture<'a, std::result::Result<Embeddings, ProviderError>> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let failure = self.failures.lock().unwrap().pop_front();
         Box::pin(async move {
@@ -316,7 +434,10 @@ impl Provider for MockProvider {
             }
             Ok(Embeddings {
                 vectors: texts.iter().map(|t| mock_vector(t, self.dims)).collect(),
-                tokens: texts.iter().map(|t| t.split_whitespace().count() as u64).sum(),
+                tokens: texts
+                    .iter()
+                    .map(|t| t.split_whitespace().count() as u64)
+                    .sum(),
             })
         })
     }
@@ -324,7 +445,11 @@ impl Provider for MockProvider {
 
 #[cfg(test)]
 impl Embedder {
-    pub fn mock(dims: usize, price_per_mtok: Option<f64>, failures: Vec<ProviderError>) -> Embedder {
+    pub fn mock(
+        dims: usize,
+        price_per_mtok: Option<f64>,
+        failures: Vec<ProviderError>,
+    ) -> Embedder {
         Embedder {
             provider: Box::new(MockProvider::new(dims, failures)),
             price_per_mtok,
@@ -349,7 +474,10 @@ mod tests {
     }
 
     fn vars(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let map: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         move |k| map.get(k).cloned()
     }
 
@@ -360,10 +488,17 @@ mod tests {
 
     #[test]
     fn env_configuration_is_validated() {
-        let e = Embedder::from_vars(vars(&[("RAG_EMBED_PROVIDER", "voyage"), ("RAG_EMBED_MODEL", "voyage-4"), ("VOYAGE_API_KEY", "k")]))
-            .unwrap()
-            .unwrap();
-        assert_eq!((e.provider_name(), e.model(), e.is_priced()), ("voyage", "voyage-4", false));
+        let e = Embedder::from_vars(vars(&[
+            ("RAG_EMBED_PROVIDER", "voyage"),
+            ("RAG_EMBED_MODEL", "voyage-4"),
+            ("VOYAGE_API_KEY", "k"),
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            (e.provider_name(), e.model(), e.is_priced()),
+            ("voyage", "voyage-4", false)
+        );
 
         let e = Embedder::from_vars(vars(&[
             ("RAG_EMBED_PROVIDER", "openai_compat"),
@@ -377,15 +512,35 @@ mod tests {
 
         for (pairs, needle) in [
             (vec![("RAG_EMBED_PROVIDER", "voyage")], "RAG_EMBED_MODEL"),
-            (vec![("RAG_EMBED_PROVIDER", "voyage"), ("RAG_EMBED_MODEL", "m")], "VOYAGE_API_KEY"),
-            (vec![("RAG_EMBED_PROVIDER", "openai_compat"), ("RAG_EMBED_MODEL", "m")], "RAG_EMBED_BASE_URL"),
-            (vec![("RAG_EMBED_PROVIDER", "cohere"), ("RAG_EMBED_MODEL", "m")], "voyage or openai_compat"),
             (
-                vec![("RAG_EMBED_PROVIDER", "voyage"), ("RAG_EMBED_MODEL", "m"), ("VOYAGE_API_KEY", "k"), ("RAG_EMBED_PRICE_PER_MTOK", "-1")],
+                vec![("RAG_EMBED_PROVIDER", "voyage"), ("RAG_EMBED_MODEL", "m")],
+                "VOYAGE_API_KEY",
+            ),
+            (
+                vec![
+                    ("RAG_EMBED_PROVIDER", "openai_compat"),
+                    ("RAG_EMBED_MODEL", "m"),
+                ],
+                "RAG_EMBED_BASE_URL",
+            ),
+            (
+                vec![("RAG_EMBED_PROVIDER", "cohere"), ("RAG_EMBED_MODEL", "m")],
+                "voyage or openai_compat",
+            ),
+            (
+                vec![
+                    ("RAG_EMBED_PROVIDER", "voyage"),
+                    ("RAG_EMBED_MODEL", "m"),
+                    ("VOYAGE_API_KEY", "k"),
+                    ("RAG_EMBED_PRICE_PER_MTOK", "-1"),
+                ],
                 "non-negative",
             ),
         ] {
-            let err = Embedder::from_vars(vars(&pairs)).err().expect("should fail").0;
+            let err = Embedder::from_vars(vars(&pairs))
+                .err()
+                .expect("should fail")
+                .0;
             assert!(err.contains(needle), "{err}");
         }
     }
@@ -401,7 +556,10 @@ mod tests {
     #[tokio::test]
     async fn batches_report_tokens_and_usd() {
         let e = Embedder::mock(8, Some(2.0), vec![]);
-        let out = e.embed_batch(&texts(&["one two three", "four five"]), InputType::Document).await.unwrap();
+        let out = e
+            .embed_batch(&texts(&["one two three", "four five"]), InputType::Document)
+            .await
+            .unwrap();
         assert_eq!(out.vectors.len(), 2);
         assert_eq!(out.vectors[0].len(), 8);
         assert_eq!(out.tokens, 5);
@@ -410,20 +568,34 @@ mod tests {
 
     #[tokio::test]
     async fn throttling_and_server_errors_are_retried() {
-        let retry = |m: &str| ProviderError::Retryable { message: m.into(), retry_after: None };
+        let retry = |m: &str| ProviderError::Retryable {
+            message: m.into(),
+            retry_after: None,
+        };
         let e = Embedder::mock(4, None, vec![retry("429"), retry("503")]);
-        let out = e.embed_batch(&texts(&["a"]), InputType::Query).await.unwrap();
+        let out = e
+            .embed_batch(&texts(&["a"]), InputType::Query)
+            .await
+            .unwrap();
         assert_eq!(out.vectors.len(), 1);
 
         let e = Embedder::mock(4, None, (0..MAX_ATTEMPTS).map(|_| retry("503")).collect());
-        let err = e.embed_batch(&texts(&["a"]), InputType::Query).await.unwrap_err().0;
+        let err = e
+            .embed_batch(&texts(&["a"]), InputType::Query)
+            .await
+            .unwrap_err()
+            .0;
         assert!(err.contains("after 6 attempts"), "{err}");
     }
 
     #[tokio::test]
     async fn other_errors_fail_without_retry() {
         let e = Embedder::mock(4, None, vec![ProviderError::Fatal("HTTP 401".into())]);
-        let err = e.embed_batch(&texts(&["a"]), InputType::Query).await.unwrap_err().0;
+        let err = e
+            .embed_batch(&texts(&["a"]), InputType::Query)
+            .await
+            .unwrap_err()
+            .0;
         assert!(err.contains("401"), "{err}");
     }
 
@@ -438,8 +610,14 @@ mod tests {
         statuses: Arc<Mutex<Vec<u16>>>,
     }
 
-    async fn fake_embeddings(State(fake): State<Fake>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
-        let auth = headers.get("authorization").map(|v| v.to_str().unwrap().to_string());
+    async fn fake_embeddings(
+        State(fake): State<Fake>,
+        headers: HeaderMap,
+        Json(body): Json<serde_json::Value>,
+    ) -> Response {
+        let auth = headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap().to_string());
         fake.requests.lock().unwrap().push((auth, body.clone()));
         let status = fake.statuses.lock().unwrap().pop();
         if let Some(code) = status {
@@ -450,13 +628,17 @@ mod tests {
             .iter()
             .enumerate()
             .rev()
-            .map(|(i, t)| json!({"object": "embedding", "index": i, "embedding": mock_vector(t, 6)}))
+            .map(
+                |(i, t)| json!({"object": "embedding", "index": i, "embedding": mock_vector(t, 6)}),
+            )
             .collect();
         Json(json!({"object": "list", "data": data, "model": body["model"], "usage": {"total_tokens": 42}})).into_response()
     }
 
     async fn start_fake(fake: Fake) -> String {
-        let app = axum::Router::new().route("/v1/embeddings", post(fake_embeddings)).with_state(fake);
+        let app = axum::Router::new()
+            .route("/v1/embeddings", post(fake_embeddings))
+            .with_state(fake);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/v1", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -478,13 +660,21 @@ mod tests {
         .unwrap();
         let docs = texts(&["alpha beta", "gamma"]);
         let out = e.embed_batch(&docs, InputType::Document).await.unwrap();
-        assert_eq!(out.vectors, vec![mock_vector("alpha beta", 6), mock_vector("gamma", 6)]);
+        assert_eq!(
+            out.vectors,
+            vec![mock_vector("alpha beta", 6), mock_vector("gamma", 6)]
+        );
         assert_eq!((out.tokens, out.usd), (42, 42.0));
-        e.embed_batch(&texts(&["q"]), InputType::Query).await.unwrap();
+        e.embed_batch(&texts(&["q"]), InputType::Query)
+            .await
+            .unwrap();
 
         let requests = fake.requests.lock().unwrap().clone();
         assert_eq!(requests[0].0.as_deref(), Some("Bearer secret-key"));
-        assert_eq!(requests[0].1, json!({"input": ["alpha beta", "gamma"], "model": "voyage-test", "input_type": "document"}));
+        assert_eq!(
+            requests[0].1,
+            json!({"input": ["alpha beta", "gamma"], "model": "voyage-test", "input_type": "document"})
+        );
         assert_eq!(requests[1].1["input_type"], "query");
     }
 
@@ -501,7 +691,10 @@ mod tests {
         .unwrap()
         .unwrap();
         e.base_delay = Duration::from_millis(1);
-        let out = e.embed_batch(&texts(&["x"]), InputType::Query).await.unwrap();
+        let out = e
+            .embed_batch(&texts(&["x"]), InputType::Query)
+            .await
+            .unwrap();
         assert_eq!(out.vectors.len(), 1);
         let requests = fake.requests.lock().unwrap().clone();
         assert_eq!(requests.len(), 3);
@@ -514,10 +707,18 @@ mod tests {
         let fake = Fake::default();
         fake.statuses.lock().unwrap().push(400);
         let base = start_fake(fake.clone()).await;
-        let e = Embedder::from_vars(vars(&[("RAG_EMBED_PROVIDER", "openai_compat"), ("RAG_EMBED_MODEL", "m"), ("RAG_EMBED_BASE_URL", &base)]))
-            .unwrap()
-            .unwrap();
-        let err = e.embed_batch(&texts(&["x"]), InputType::Query).await.unwrap_err().0;
+        let e = Embedder::from_vars(vars(&[
+            ("RAG_EMBED_PROVIDER", "openai_compat"),
+            ("RAG_EMBED_MODEL", "m"),
+            ("RAG_EMBED_BASE_URL", &base),
+        ]))
+        .unwrap()
+        .unwrap();
+        let err = e
+            .embed_batch(&texts(&["x"]), InputType::Query)
+            .await
+            .unwrap_err()
+            .0;
         assert!(err.contains("400"), "{err}");
         assert_eq!(fake.requests.lock().unwrap().len(), 1);
     }

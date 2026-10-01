@@ -147,17 +147,35 @@ mod tests {
 
     #[test]
     fn measure_collapses_whitespace_runs() {
-        assert_eq!(measure("  a  bc\r\n\r\n d\t"), TextSize { characters: 6, whitespace_tokens: 3 });
+        assert_eq!(
+            measure("  a  bc\r\n\r\n d\t"),
+            TextSize {
+                characters: 6,
+                whitespace_tokens: 3
+            }
+        );
     }
 
     #[test]
     fn measure_counts_unicode_scalars_not_bytes() {
-        assert_eq!(measure("π ≤ ∑"), TextSize { characters: 5, whitespace_tokens: 3 });
+        assert_eq!(
+            measure("π ≤ ∑"),
+            TextSize {
+                characters: 5,
+                whitespace_tokens: 3
+            }
+        );
     }
 
     #[test]
     fn measure_ignores_control_characters() {
-        assert_eq!(measure("ab\u{2}c"), TextSize { characters: 3, whitespace_tokens: 1 });
+        assert_eq!(
+            measure("ab\u{2}c"),
+            TextSize {
+                characters: 3,
+                whitespace_tokens: 1
+            }
+        );
     }
 
     #[test]
@@ -168,14 +186,33 @@ mod tests {
 
     #[test]
     fn tokens_est_is_characters_over_four() {
-        assert_eq!(TextSize { characters: 4001, whitespace_tokens: 0 }.tokens_est(), 1000);
+        assert_eq!(
+            TextSize {
+                characters: 4001,
+                whitespace_tokens: 0
+            }
+            .tokens_est(),
+            1000
+        );
     }
 
     #[test]
     fn sizes_add() {
-        let mut a = TextSize { characters: 3, whitespace_tokens: 1 };
-        a += TextSize { characters: 4, whitespace_tokens: 2 };
-        assert_eq!(a, TextSize { characters: 7, whitespace_tokens: 3 });
+        let mut a = TextSize {
+            characters: 3,
+            whitespace_tokens: 1,
+        };
+        a += TextSize {
+            characters: 4,
+            whitespace_tokens: 2,
+        };
+        assert_eq!(
+            a,
+            TextSize {
+                characters: 7,
+                whitespace_tokens: 3
+            }
+        );
     }
 
     #[test]
@@ -185,7 +222,10 @@ mod tests {
                     <body><!-- note <b>hidden</b> --><h1>Chapter&#160;1</h1>\
                     <p>Plants &amp; algae</p><p>use &lt;light&gt; &#x3C0;</p></body></html>";
         let text = strip_markup(html);
-        assert_eq!(measure(&text), measure("T Chapter 1 Plants & algae use <light> π"));
+        assert_eq!(
+            measure(&text),
+            measure("T Chapter 1 Plants & algae use <light> π")
+        );
         assert!(!text.contains("color"));
         assert!(!text.contains("var x"));
         assert!(!text.contains("hidden"));
@@ -199,8 +239,14 @@ mod tests {
 
     #[test]
     fn strip_handles_uppercase_tags_and_unterminated_markup() {
-        assert_eq!(measure(&strip_markup("<SCRIPT>x()</SCRIPT>ok")), measure("ok"));
-        assert_eq!(measure(&strip_markup("text <p unterminated")), measure("text"));
+        assert_eq!(
+            measure(&strip_markup("<SCRIPT>x()</SCRIPT>ok")),
+            measure("ok")
+        );
+        assert_eq!(
+            measure(&strip_markup("text <p unterminated")),
+            measure("text")
+        );
         assert_eq!(measure(&strip_markup("a <!-- open comment")), measure("a"));
     }
 }

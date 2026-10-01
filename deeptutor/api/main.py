@@ -691,9 +691,7 @@ app.include_router(
 app.include_router(
     languages.router, prefix="/api/languages", tags=["languages"], dependencies=_auth
 )
-app.include_router(
-    learning.router, prefix="/api/study", tags=["study"], dependencies=_auth
-)
+app.include_router(learning.router, prefix="/api/study", tags=["study"], dependencies=_auth)
 # Public UI-settings read (auth pages bootstrap the interface language
 # before a session exists, so GET /api/settings/ui must not be gated
 # by _auth). Mounted first so the path resolves here, not on the gated

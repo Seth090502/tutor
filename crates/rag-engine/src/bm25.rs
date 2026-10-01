@@ -16,7 +16,8 @@ use tantivy::directory::MmapDirectory;
 use tantivy::indexer::LogMergePolicy;
 use tantivy::query::{BooleanQuery, BoostQuery, Occur, Query, TermQuery};
 use tantivy::schema::{
-    Field, IndexRecordOption, STORED, STRING, Schema, TantivyDocument, TextFieldIndexing, TextOptions, Value,
+    Field, IndexRecordOption, STORED, STRING, Schema, TantivyDocument, TextFieldIndexing,
+    TextOptions, Value,
 };
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyError, Term, doc};
 
@@ -48,7 +49,12 @@ impl Default for Tuning {
     /// Boosts that rank a title or heading match above a body-only match (tested below), and
     /// the growth settings of docs/tutor/CORPUS.md (heap 1-2 GB, commits every 50-200k chunks).
     fn default() -> Tuning {
-        Tuning { title_boost: 2.0, heading_boost: 2.0, writer_heap_bytes: 1 << 30, commit_chunks: 100_000 }
+        Tuning {
+            title_boost: 2.0,
+            heading_boost: 2.0,
+            writer_heap_bytes: 1 << 30,
+            commit_chunks: 100_000,
+        }
     }
 }
 
@@ -61,14 +67,26 @@ impl Tuning {
 
     /// The defaults, overridden by the variables `var` returns. Empty values mean unset.
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Tuning> {
-        fn parse<T: std::str::FromStr>(var: &impl Fn(&str) -> Option<String>, name: &str) -> Result<Option<T>> {
-            match var(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+        fn parse<T: std::str::FromStr>(
+            var: &impl Fn(&str) -> Option<String>,
+            name: &str,
+        ) -> Result<Option<T>> {
+            match var(name)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+            {
                 None => Ok(None),
-                Some(v) => v.parse().map(Some).map_err(|_| Error(format!("{name} must be a number, got {v:?}"))),
+                Some(v) => v
+                    .parse()
+                    .map(Some)
+                    .map_err(|_| Error(format!("{name} must be a number, got {v:?}"))),
             }
         }
         let mut tuning = Tuning::default();
-        for (name, boost) in [("RAG_BM25_TITLE_BOOST", &mut tuning.title_boost), ("RAG_BM25_HEADING_BOOST", &mut tuning.heading_boost)] {
+        for (name, boost) in [
+            ("RAG_BM25_TITLE_BOOST", &mut tuning.title_boost),
+            ("RAG_BM25_HEADING_BOOST", &mut tuning.heading_boost),
+        ] {
             if let Some(value) = parse::<f32>(&var, name)? {
                 if !(value.is_finite() && value >= 0.0) {
                     return Err(format!("{name} must be 0 or more, got {value}").into());
@@ -111,7 +129,9 @@ struct Fields {
 fn schema() -> (Schema, Fields) {
     let mut builder = Schema::builder();
     let text_options = TextOptions::default().set_indexing_options(
-        TextFieldIndexing::default().set_tokenizer(ANALYZER).set_index_option(IndexRecordOption::WithFreqs),
+        TextFieldIndexing::default()
+            .set_tokenizer(ANALYZER)
+            .set_index_option(IndexRecordOption::WithFreqs),
     );
     let fields = Fields {
         chunk_id: builder.add_text_field("chunk_id", STRING | STORED),
@@ -159,10 +179,14 @@ impl Bm25 {
     /// Open the index in `dir`, or create it. An index with other fields or another analyzer
     /// (an older [`SCHEMA_VERSION`]) is deleted and created empty; the next ingest re-indexes it.
     pub fn open(dir: &Path, tuning: Tuning) -> Result<Bm25> {
-        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
         let (schema, fields) = schema();
         let created = !Index::exists(&MmapDirectory::open(dir)?).map_err(|e| e.to_string())?;
-        let (index, created) = match Index::open_or_create(MmapDirectory::open(dir)?, schema.clone()) {
+        let (index, created) = match Index::open_or_create(
+            MmapDirectory::open(dir)?,
+            schema.clone(),
+        ) {
             Ok(index) => (index, created),
             Err(TantivyError::SchemaError(_)) => {
                 eprintln!(
@@ -170,15 +194,29 @@ impl Bm25 {
                      re-indexed from the database by the next ingest (until then BM25 search finds nothing)",
                     dir.display()
                 );
-                std::fs::remove_dir_all(dir).map_err(|e| format!("cannot clear the old BM25 index in {}: {e}", dir.display()))?;
-                std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+                std::fs::remove_dir_all(dir).map_err(|e| {
+                    format!("cannot clear the old BM25 index in {}: {e}", dir.display())
+                })?;
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
                 (Index::create_in_dir(dir, schema)?, true)
             }
-            Err(e) => return Err(format!("cannot open the BM25 index in {}: {e}", dir.display()).into()),
+            Err(e) => {
+                return Err(format!("cannot open the BM25 index in {}: {e}", dir.display()).into());
+            }
         };
         index.tokenizers().register(ANALYZER, tokenize::analyzer());
-        let reader = index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into()?;
-        Ok(Bm25 { index, reader, fields, tuning, created })
+        let reader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        Ok(Bm25 {
+            index,
+            reader,
+            fields,
+            tuning,
+            created,
+        })
     }
 
     pub fn tuning(&self) -> Tuning {
@@ -188,14 +226,21 @@ impl Bm25 {
     /// The single writer. tantivy's lock file makes a second writer on the same index fail,
     /// including one in another process.
     pub fn writer(&self) -> Result<Bm25Writer> {
-        let writer: IndexWriter = self
-            .index
-            .writer(self.tuning.writer_heap_bytes)
-            .map_err(|e| format!("cannot open the BM25 index for writing (is another ingest running?): {e}"))?;
+        let writer: IndexWriter =
+            self.index
+                .writer(self.tuning.writer_heap_bytes)
+                .map_err(|e| {
+                    format!(
+                        "cannot open the BM25 index for writing (is another ingest running?): {e}"
+                    )
+                })?;
         let mut merge_policy = LogMergePolicy::default();
         merge_policy.set_del_docs_ratio_before_merge(DEL_DOCS_RATIO_BEFORE_MERGE);
         writer.set_merge_policy(Box::new(merge_policy));
-        Ok(Bm25Writer { writer, fields: self.fields })
+        Ok(Bm25Writer {
+            writer,
+            fields: self.fields,
+        })
     }
 
     /// Make the last commit visible to searches.
@@ -210,27 +255,44 @@ impl Bm25 {
         let mut stream = analyzer.token_stream(query);
         let mut seen = HashSet::new();
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-        let fields = [(f.text, 1.0), (f.title, self.tuning.title_boost), (f.heading, self.tuning.heading_boost)];
+        let fields = [
+            (f.text, 1.0),
+            (f.title, self.tuning.title_boost),
+            (f.heading, self.tuning.heading_boost),
+        ];
         while stream.advance() {
             let token = stream.token().text.clone();
             if seen.insert(token.clone()) {
                 for (field, boost) in fields.iter().filter(|(_, boost)| *boost > 0.0) {
-                    let term = TermQuery::new(Term::from_field_text(*field, &token), IndexRecordOption::WithFreqs);
-                    clauses.push((Occur::Should, Box::new(BoostQuery::new(Box::new(term), *boost))));
+                    let term = TermQuery::new(
+                        Term::from_field_text(*field, &token),
+                        IndexRecordOption::WithFreqs,
+                    );
+                    clauses.push((
+                        Occur::Should,
+                        Box::new(BoostQuery::new(Box::new(term), *boost)),
+                    ));
                 }
             }
         }
         if clauses.is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
-        let mut must: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, Box::new(BooleanQuery::new(clauses)))];
-        for (field, values) in [(f.domain, &filter.domains), (f.source_type, &filter.source_types)] {
+        let mut must: Vec<(Occur, Box<dyn Query>)> =
+            vec![(Occur::Must, Box::new(BooleanQuery::new(clauses)))];
+        for (field, values) in [
+            (f.domain, &filter.domains),
+            (f.source_type, &filter.source_types),
+        ] {
             if !values.is_empty() {
                 must.push((Occur::Must, Box::new(any_of(field, values))));
             }
         }
         let searcher = self.reader.searcher();
-        let top = searcher.search(&BooleanQuery::new(must), &TopDocs::with_limit(limit).order_by_score())?;
+        let top = searcher.search(
+            &BooleanQuery::new(must),
+            &TopDocs::with_limit(limit).order_by_score(),
+        )?;
         top.into_iter()
             .map(|(score, address)| {
                 let stored: TantivyDocument = searcher.doc(address)?;
@@ -250,7 +312,13 @@ fn any_of(field: Field, values: &[String]) -> BooleanQuery {
         values
             .iter()
             .map(|v| -> (Occur, Box<dyn Query>) {
-                (Occur::Should, Box::new(TermQuery::new(Term::from_field_text(field, v), IndexRecordOption::Basic)))
+                (
+                    Occur::Should,
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(field, v),
+                        IndexRecordOption::Basic,
+                    )),
+                )
             })
             .collect(),
     )
@@ -278,7 +346,8 @@ impl Bm25Writer {
 
     /// Remove every chunk of `doc_id` (applied at the next commit).
     pub fn delete_doc(&self, doc_id: &str) {
-        self.writer.delete_term(Term::from_field_text(self.fields.doc_id, doc_id));
+        self.writer
+            .delete_term(Term::from_field_text(self.fields.doc_id, doc_id));
     }
 
     pub fn delete_all(&self) -> Result<()> {
@@ -314,8 +383,24 @@ mod tests {
     }
 
     /// Add a chunk without title or headings.
-    fn add(w: &Bm25Writer, chunk_id: &str, doc_id: &str, domain: &str, source_type: &str, text: &str) {
-        w.add(&Entry { chunk_id, doc_id, domain, source_type, title: "", heading_path: &[], text }).unwrap();
+    fn add(
+        w: &Bm25Writer,
+        chunk_id: &str,
+        doc_id: &str,
+        domain: &str,
+        source_type: &str,
+        text: &str,
+    ) {
+        w.add(&Entry {
+            chunk_id,
+            doc_id,
+            domain,
+            source_type,
+            title: "",
+            heading_path: &[],
+            text,
+        })
+        .unwrap();
     }
 
     #[test]
@@ -323,34 +408,104 @@ mod tests {
         let dir = temp_dir("bm25");
         let bm25 = Bm25::open(&dir, Tuning::default()).unwrap();
         let mut w = bm25.writer().unwrap();
-        add(&w, "a:0", "a", "chemistry", "book", "Oxidation reactions lose electrons; reduction gains them.");
-        add(&w, "a:1", "a", "chemistry", "book", "Acids donate protons in water.");
-        add(&w, "b:0", "b", "math", "paper", "A limit describes the value a function approaches.");
-        add(&w, "c:0", "c", "math", "note", "Reaction rates and limits of sequences.");
+        add(
+            &w,
+            "a:0",
+            "a",
+            "chemistry",
+            "book",
+            "Oxidation reactions lose electrons; reduction gains them.",
+        );
+        add(
+            &w,
+            "a:1",
+            "a",
+            "chemistry",
+            "book",
+            "Acids donate protons in water.",
+        );
+        add(
+            &w,
+            "b:0",
+            "b",
+            "math",
+            "paper",
+            "A limit describes the value a function approaches.",
+        );
+        add(
+            &w,
+            "c:0",
+            "c",
+            "math",
+            "note",
+            "Reaction rates and limits of sequences.",
+        );
         w.commit().unwrap();
         bm25.reload().unwrap();
 
         // Stemming: "electron" matches "electrons", "reaction" matches "reactions" and "Reaction".
-        assert_eq!(ids(&bm25.search("electron reaction", 10, &Filter::default()).unwrap()), vec!["a:0", "c:0"]);
+        assert_eq!(
+            ids(&bm25
+                .search("electron reaction", 10, &Filter::default())
+                .unwrap()),
+            vec!["a:0", "c:0"]
+        );
         // Both contain "limit" once; BM25 length normalisation ranks the shorter chunk first.
-        assert_eq!(ids(&bm25.search("limits", 10, &filter(&["math"], &[])).unwrap()), vec!["c:0", "b:0"]);
-        assert_eq!(ids(&bm25.search("limits", 10, &filter(&["math"], &["note"])).unwrap()), vec!["c:0"]);
-        assert_eq!(ids(&bm25.search("limits", 10, &filter(&["chemistry"], &[])).unwrap()), Vec::<&str>::new());
-        assert_eq!(bm25.search("limits", 1, &Filter::default()).unwrap().len(), 1);
+        assert_eq!(
+            ids(&bm25.search("limits", 10, &filter(&["math"], &[])).unwrap()),
+            vec!["c:0", "b:0"]
+        );
+        assert_eq!(
+            ids(&bm25
+                .search("limits", 10, &filter(&["math"], &["note"]))
+                .unwrap()),
+            vec!["c:0"]
+        );
+        assert_eq!(
+            ids(&bm25
+                .search("limits", 10, &filter(&["chemistry"], &[]))
+                .unwrap()),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            bm25.search("limits", 1, &Filter::default()).unwrap().len(),
+            1
+        );
 
         // Query syntax characters are just text; no terms means no hits.
-        assert_eq!(ids(&bm25.search("f(x) = limit:value AND \"approaches", 10, &Filter::default()).unwrap())[0], "b:0");
-        assert!(bm25.search("?? !! ==", 10, &Filter::default()).unwrap().is_empty());
+        assert_eq!(
+            ids(&bm25
+                .search(
+                    "f(x) = limit:value AND \"approaches",
+                    10,
+                    &Filter::default()
+                )
+                .unwrap())[0],
+            "b:0"
+        );
+        assert!(
+            bm25.search("?? !! ==", 10, &Filter::default())
+                .unwrap()
+                .is_empty()
+        );
 
         w.delete_doc("a");
         w.commit().unwrap();
         bm25.reload().unwrap();
-        assert!(bm25.search("oxidation acids", 10, &Filter::default()).unwrap().is_empty());
+        assert!(
+            bm25.search("oxidation acids", 10, &Filter::default())
+                .unwrap()
+                .is_empty()
+        );
         w.delete_all().unwrap();
         w.commit().unwrap();
         w.finish().unwrap();
         bm25.reload().unwrap();
-        assert!(bm25.search("limits", 10, &Filter::default()).unwrap().is_empty());
+        assert!(
+            bm25.search("limits", 10, &Filter::default())
+                .unwrap()
+                .is_empty()
+        );
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -363,14 +518,43 @@ mod tests {
         let mut w = bm25.writer().unwrap();
         let heading = |a: &str, b: &str| vec![a.to_string(), b.to_string()];
         let entries = [
-            ("t:0", "Entropy and Information", heading("Chapter 1", "Surprise"), "Bits measure how surprising a message is to the receiver who reads it carefully."),
-            ("h:0", "Thermal Physics Today", heading("Chapter 2", "Entropy"), "Heat flows from hot bodies to cold ones until the two of them reach thermal equilibrium."),
-            ("b:0", "Physics Notes Volume", heading("Chapter 3", "Gases"), "Entropy rises when a gas expands freely, and entropy counts the microstates of the system."),
-            ("x:0", "Organic Chemistry Basics", heading("Chapter 4", "Alkenes"), "Double bonds add hydrogen over a metal catalyst at modest pressures and room temperature."),
+            (
+                "t:0",
+                "Entropy and Information",
+                heading("Chapter 1", "Surprise"),
+                "Bits measure how surprising a message is to the receiver who reads it carefully.",
+            ),
+            (
+                "h:0",
+                "Thermal Physics Today",
+                heading("Chapter 2", "Entropy"),
+                "Heat flows from hot bodies to cold ones until the two of them reach thermal equilibrium.",
+            ),
+            (
+                "b:0",
+                "Physics Notes Volume",
+                heading("Chapter 3", "Gases"),
+                "Entropy rises when a gas expands freely, and entropy counts the microstates of the system.",
+            ),
+            (
+                "x:0",
+                "Organic Chemistry Basics",
+                heading("Chapter 4", "Alkenes"),
+                "Double bonds add hydrogen over a metal catalyst at modest pressures and room temperature.",
+            ),
         ];
         for (chunk_id, title, heading_path, text) in &entries {
             let doc_id = &chunk_id[..1];
-            w.add(&Entry { chunk_id, doc_id, domain: "science", source_type: "book", title, heading_path, text }).unwrap();
+            w.add(&Entry {
+                chunk_id,
+                doc_id,
+                domain: "science",
+                source_type: "book",
+                title,
+                heading_path,
+                text,
+            })
+            .unwrap();
         }
         w.commit().unwrap();
         w.finish().unwrap();
@@ -384,22 +568,42 @@ mod tests {
         let hits = bm25.search("entropy", 10, &Filter::default()).unwrap();
         let order = ids(&hits);
         assert_eq!(order.len(), 3, "{hits:?}");
-        assert_eq!(order[2], "b:0", "the default boosts rank title and heading matches first: {hits:?}");
+        assert_eq!(
+            order[2], "b:0",
+            "the default boosts rank title and heading matches first: {hits:?}"
+        );
         // Title and heading words are searchable through the maths analyzer too.
-        assert_eq!(ids(&bm25.search("thermal", 10, &Filter::default()).unwrap()), vec!["h:0"]);
+        assert_eq!(
+            ids(&bm25.search("thermal", 10, &Filter::default()).unwrap()),
+            vec!["h:0"]
+        );
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
 
         // Unboosted, the body with the word twice ranks first; with the fields off, only the body
         // matches.
-        let flat = Tuning { title_boost: 1.0, heading_boost: 1.0, ..Tuning::default() };
+        let flat = Tuning {
+            title_boost: 1.0,
+            heading_boost: 1.0,
+            ..Tuning::default()
+        };
         let (dir, bm25) = boost_fixture("bm25-boost-flat", flat);
-        assert_eq!(ids(&bm25.search("entropy", 10, &Filter::default()).unwrap())[0], "b:0");
+        assert_eq!(
+            ids(&bm25.search("entropy", 10, &Filter::default()).unwrap())[0],
+            "b:0"
+        );
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
-        let off = Tuning { title_boost: 0.0, heading_boost: 0.0, ..Tuning::default() };
+        let off = Tuning {
+            title_boost: 0.0,
+            heading_boost: 0.0,
+            ..Tuning::default()
+        };
         let (dir, bm25) = boost_fixture("bm25-boost-off", off);
-        assert_eq!(ids(&bm25.search("entropy", 10, &Filter::default()).unwrap()), vec!["b:0"]);
+        assert_eq!(
+            ids(&bm25.search("entropy", 10, &Filter::default()).unwrap()),
+            vec!["b:0"]
+        );
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -409,16 +613,50 @@ mod tests {
         let dir = temp_dir("bm25-maths");
         let bm25 = Bm25::open(&dir, Tuning::default()).unwrap();
         let mut w = bm25.writer().unwrap();
-        add(&w, "m:0", "m", "math", "book", "∑ 1/n² = π²/6 and ∂u/∂t = k ∇²u for 𝑥 ∈ ℝ");
-        add(&w, "p:0", "p", "math", "book", "The sum of the parts is a whole.");
+        add(
+            &w,
+            "m:0",
+            "m",
+            "math",
+            "book",
+            "∑ 1/n² = π²/6 and ∂u/∂t = k ∇²u for 𝑥 ∈ ℝ",
+        );
+        add(
+            &w,
+            "p:0",
+            "p",
+            "math",
+            "book",
+            "The sum of the parts is a whole.",
+        );
         w.commit().unwrap();
         w.finish().unwrap();
         bm25.reload().unwrap();
-        assert_eq!(ids(&bm25.search(r"\pi", 10, &Filter::default()).unwrap()), vec!["m:0"]);
-        assert_eq!(ids(&bm25.search("partial nabla", 10, &Filter::default()).unwrap()), vec!["m:0"]);
-        assert_eq!(ids(&bm25.search("π ∂", 10, &Filter::default()).unwrap()), vec!["m:0"]);
-        assert_eq!(ids(&bm25.search(r"x \in \mathbb{R}", 10, &Filter::default()).unwrap())[0], "m:0");
-        assert_eq!(ids(&bm25.search(r"\sum", 10, &Filter::default()).unwrap()).len(), 2, "∑ and the word sum");
+        assert_eq!(
+            ids(&bm25.search(r"\pi", 10, &Filter::default()).unwrap()),
+            vec!["m:0"]
+        );
+        assert_eq!(
+            ids(&bm25
+                .search("partial nabla", 10, &Filter::default())
+                .unwrap()),
+            vec!["m:0"]
+        );
+        assert_eq!(
+            ids(&bm25.search("π ∂", 10, &Filter::default()).unwrap()),
+            vec!["m:0"]
+        );
+        assert_eq!(
+            ids(&bm25
+                .search(r"x \in \mathbb{R}", 10, &Filter::default())
+                .unwrap())[0],
+            "m:0"
+        );
+        assert_eq!(
+            ids(&bm25.search(r"\sum", 10, &Filter::default()).unwrap()).len(),
+            2,
+            "∑ and the word sum"
+        );
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -426,10 +664,18 @@ mod tests {
     #[test]
     fn tuning_comes_from_the_environment() {
         let vars = |pairs: &'static [(&'static str, &'static str)]| {
-            move |name: &str| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
         };
         assert_eq!(Tuning::from_vars(vars(&[])).unwrap(), Tuning::default());
-        assert_eq!(Tuning::from_vars(vars(&[("RAG_BM25_TITLE_BOOST", " ")])).unwrap(), Tuning::default());
+        assert_eq!(
+            Tuning::from_vars(vars(&[("RAG_BM25_TITLE_BOOST", " ")])).unwrap(),
+            Tuning::default()
+        );
         let t = Tuning::from_vars(vars(&[
             ("RAG_BM25_TITLE_BOOST", "1.5"),
             ("RAG_BM25_HEADING_BOOST", "0"),
@@ -437,7 +683,15 @@ mod tests {
             ("RAG_BM25_COMMIT_CHUNKS", "50000"),
         ]))
         .unwrap();
-        assert_eq!(t, Tuning { title_boost: 1.5, heading_boost: 0.0, writer_heap_bytes: 2048 << 20, commit_chunks: 50_000 });
+        assert_eq!(
+            t,
+            Tuning {
+                title_boost: 1.5,
+                heading_boost: 0.0,
+                writer_heap_bytes: 2048 << 20,
+                commit_chunks: 50_000
+            }
+        );
         for bad in [
             &[("RAG_BM25_TITLE_BOOST", "-1")][..],
             &[("RAG_BM25_HEADING_BOOST", "NaN")],
@@ -455,7 +709,10 @@ mod tests {
         let bm25 = Bm25::open(&dir, Tuning::default()).unwrap();
         let w = bm25.writer().unwrap();
         let policy = format!("{:?}", w.writer.get_merge_policy());
-        assert!(policy.contains("del_docs_ratio_before_merge: 0.2"), "{policy}");
+        assert!(
+            policy.contains("del_docs_ratio_before_merge: 0.2"),
+            "{policy}"
+        );
         w.finish().unwrap();
         drop(bm25);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -470,7 +727,8 @@ mod tests {
         builder.add_text_field("text", tantivy::schema::TEXT);
         let old = Index::create_in_dir(&dir, builder.build()).unwrap();
         let mut w: IndexWriter = old.writer_with_num_threads(1, 50 << 20).unwrap();
-        w.add_document(doc!(old.schema().get_field("chunk_id").unwrap() => "a:0")).unwrap();
+        w.add_document(doc!(old.schema().get_field("chunk_id").unwrap() => "a:0"))
+            .unwrap();
         w.commit().unwrap();
         drop(w);
         drop(old);
@@ -485,7 +743,10 @@ mod tests {
         drop(bm25);
         let reopened = Bm25::open(&dir, Tuning::default()).unwrap();
         assert!(!reopened.created, "a current index is kept");
-        assert_eq!(ids(&reopened.search("limit", 10, &Filter::default()).unwrap()), vec!["b:0"]);
+        assert_eq!(
+            ids(&reopened.search("limit", 10, &Filter::default()).unwrap()),
+            vec!["b:0"]
+        );
         drop(reopened);
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -1,6 +1,7 @@
 import unittest
-from tutor import spaced as SP
+
 from tutor import curriculum as CU
+from tutor import spaced as SP
 
 
 class SpacedTest(unittest.TestCase):

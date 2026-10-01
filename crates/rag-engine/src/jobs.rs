@@ -30,7 +30,10 @@ fn parse<T: for<'de> Deserialize<'de>>(s: &str) -> Option<T> {
 }
 
 fn name<T: Serialize>(value: T) -> String {
-    serde_json::to_value(value).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// Work done so far out of the work known so far. `total` can grow as a job discovers work
@@ -53,7 +56,10 @@ impl Progress {
         self.total.store(total, Ordering::Relaxed);
     }
     pub fn get(&self) -> (u64, u64) {
-        (self.done.load(Ordering::Relaxed), self.total.load(Ordering::Relaxed))
+        (
+            self.done.load(Ordering::Relaxed),
+            self.total.load(Ordering::Relaxed),
+        )
     }
 }
 
@@ -85,7 +91,12 @@ struct Status {
 
 impl Status {
     fn new(state: JobState, started_at: Option<f64>) -> Mutex<Status> {
-        Mutex::new(Status { state, started_at, finished_at: None, error: None })
+        Mutex::new(Status {
+            state,
+            started_at,
+            finished_at: None,
+            error: None,
+        })
     }
 }
 
@@ -99,9 +110,22 @@ pub struct Job {
 
 impl Job {
     pub fn view(&self) -> JobView {
-        let Status { state, started_at, finished_at, error } = self.status.lock().expect("job status lock").clone();
+        let Status {
+            state,
+            started_at,
+            finished_at,
+            error,
+        } = self.status.lock().expect("job status lock").clone();
         let (done, total) = self.progress.get();
-        JobView { job_id: self.id.clone(), kind: self.kind, state, progress: ProgressView { done, total }, started_at, finished_at, error }
+        JobView {
+            job_id: self.id.clone(),
+            kind: self.kind,
+            state,
+            progress: ProgressView { done, total },
+            started_at,
+            finished_at,
+            error,
+        }
     }
 
     fn set(&self, state: JobState, error: Option<String>) {
@@ -157,12 +181,17 @@ pub fn load(conn: &Connection, job_id: &str) -> Result<Option<JobView>> {
             },
         )
         .optional()?;
-    let Some((job_id, kind, state, done, total, started_at, finished_at, error)) = row else { return Ok(None) };
+    let Some((job_id, kind, state, done, total, started_at, finished_at, error)) = row else {
+        return Ok(None);
+    };
     Ok(Some(JobView {
         job_id,
         kind: parse(&kind).ok_or(format!("unknown job kind {kind:?}"))?,
         state: parse(&state).ok_or(format!("unknown job state {state:?}"))?,
-        progress: ProgressView { done: done as u64, total: total as u64 },
+        progress: ProgressView {
+            done: done as u64,
+            total: total as u64,
+        },
         started_at,
         finished_at,
         error,
@@ -188,17 +217,28 @@ impl Jobs {
     /// The running (or just queued) job, if any.
     pub fn active(&self) -> Option<Arc<Job>> {
         let active = self.active.lock().expect("active job lock");
-        active.as_ref().filter(|j| matches!(j.view().state, JobState::Queued | JobState::Running)).cloned()
+        active
+            .as_ref()
+            .filter(|j| matches!(j.view().state, JobState::Queued | JobState::Running))
+            .cloned()
     }
 
     /// Start `work` on a blocking thread unless a job is already running, in which case the
     /// running job's id is returned as the error. `conn` persists the job's states.
-    pub fn start<F>(&self, kind: JobKind, conn: Arc<Mutex<Connection>>, work: F) -> std::result::Result<String, String>
+    pub fn start<F>(
+        &self,
+        kind: JobKind,
+        conn: Arc<Mutex<Connection>>,
+        work: F,
+    ) -> std::result::Result<String, String>
     where
         F: FnOnce(&Progress) -> Result<()> + Send + 'static,
     {
         let mut active = self.active.lock().expect("active job lock");
-        if let Some(job) = active.as_ref().filter(|j| matches!(j.view().state, JobState::Queued | JobState::Running)) {
+        if let Some(job) = active
+            .as_ref()
+            .filter(|j| matches!(j.view().state, JobState::Queued | JobState::Running))
+        {
             return Err(job.id.clone());
         }
         let created_at = store::now();
@@ -228,8 +268,9 @@ impl Jobs {
             job.set(JobState::Running, None);
             persist(&job);
             eprintln!("jobs: {} started", job.id);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&job.progress)))
-                .unwrap_or_else(|_| Err("the job panicked".into()));
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&job.progress)))
+                    .unwrap_or_else(|_| Err("the job panicked".into()));
             match result {
                 Ok(()) => {
                     job.set(JobState::Done, None);
@@ -248,7 +289,13 @@ impl Jobs {
     /// A job by id: the active one from memory, others from the database. The job lock is
     /// released before the connection is locked, never held while waiting for it.
     pub fn get(&self, conn: &Mutex<Connection>, job_id: &str) -> Result<Option<JobView>> {
-        let active = self.active.lock().expect("active job lock").as_ref().filter(|j| j.id == job_id).cloned();
+        let active = self
+            .active
+            .lock()
+            .expect("active job lock")
+            .as_ref()
+            .filter(|j| j.id == job_id)
+            .cloned();
         if let Some(job) = active {
             return Ok(Some(job.view()));
         }
@@ -262,7 +309,12 @@ mod tests {
     use crate::store::temp_dir;
     use std::time::Duration;
 
-    async fn wait_for(jobs: &Jobs, conn: &Arc<Mutex<Connection>>, id: &str, state: JobState) -> JobView {
+    async fn wait_for(
+        jobs: &Jobs,
+        conn: &Arc<Mutex<Connection>>,
+        id: &str,
+        state: JobState,
+    ) -> JobView {
         for _ in 0..500 {
             let view = jobs.get(conn, id).unwrap().unwrap();
             if view.state == state {
@@ -294,7 +346,10 @@ mod tests {
         assert_eq!(jobs.active().unwrap().id, id);
 
         // A second job is refused while the first runs.
-        assert_eq!(jobs.start(JobKind::Survey, conn.clone(), |_| Ok(())), Err(id.clone()));
+        assert_eq!(
+            jobs.start(JobKind::Survey, conn.clone(), |_| Ok(())),
+            Err(id.clone())
+        );
 
         release.send(()).unwrap();
         let done = wait_for(&jobs, &conn, &id, JobState::Done).await;
@@ -308,7 +363,11 @@ mod tests {
         }
         assert!(jobs.active().is_none());
 
-        let failing = jobs.start(JobKind::Survey, conn.clone(), |_| Err("no such folder".into())).unwrap();
+        let failing = jobs
+            .start(JobKind::Survey, conn.clone(), |_| {
+                Err("no such folder".into())
+            })
+            .unwrap();
         let failed = wait_for(&jobs, &conn, &failing, JobState::Failed).await;
         assert_eq!(failed.error.as_deref(), Some("no such folder"));
         assert_eq!(failed.kind, JobKind::Survey);
@@ -321,7 +380,10 @@ mod tests {
 
     #[test]
     fn reading_jobs_while_the_database_is_busy_does_not_deadlock() {
-        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let dir = temp_dir("jobs-lock-order");
         let conn = Arc::new(Mutex::new(store::open(&dir).unwrap()));
         let jobs = Arc::new(Jobs::default());
@@ -337,7 +399,9 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let j = jobs.clone();
         std::thread::spawn(move || tx.send(j.active().map(|job| job.id.clone())).unwrap());
-        let seen = rx.recv_timeout(Duration::from_secs(5)).expect("jobs.active() blocked behind the database");
+        let seen = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("jobs.active() blocked behind the database");
         drop(busy);
         let id = starter.join().unwrap().unwrap();
         assert_eq!(seen, Some(id));

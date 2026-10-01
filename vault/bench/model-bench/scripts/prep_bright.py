@@ -11,7 +11,12 @@ Outputs: <bright>/<split>/documents.jsonl   {id, content}
          <bright>/token_stats.json
 BRIGHT licence: CC-BY-4.0 (dataset card, xlangai/BRIGHT). Attribution is kept in <bright>/LICENSE.md.
 """
-import argparse, json, os, statistics
+
+import argparse
+import json
+import os
+import statistics
+
 import pyarrow.parquet as pq
 from tokenizers import Tokenizer
 
@@ -24,14 +29,25 @@ def pct(xs, p):
 
 
 def summarize(lens):
-    return {"n": len(lens), "total": sum(lens), "mean": round(statistics.fmean(lens), 1), "p50": pct(lens, 50),
-            "p90": pct(lens, 90), "p95": pct(lens, 95), "p99": pct(lens, 99), "max": max(lens)}
+    return {
+        "n": len(lens),
+        "total": sum(lens),
+        "mean": round(statistics.fmean(lens), 1),
+        "p50": pct(lens, 50),
+        "p90": pct(lens, 90),
+        "p95": pct(lens, 95),
+        "p99": pct(lens, 99),
+        "max": max(lens),
+    }
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bright", default=r"C:\Users\sethy\Projects\vault-eval\external\bright")
-    ap.add_argument("--tokenizer", default=r"C:\Users\sethy\Projects\vault-models\tokenizer\Qwen__Qwen3-Embedding-0.6B__tokenizer.json")
+    ap.add_argument(
+        "--tokenizer",
+        default=r"C:\Users\sethy\Projects\vault-models\tokenizer\Qwen__Qwen3-Embedding-0.6B__tokenizer.json",
+    )
     a = ap.parse_args()
     tok = Tokenizer.from_file(a.tokenizer)
     tok.no_truncation()
@@ -43,21 +59,38 @@ def main():
         exs = pq.read_table(os.path.join(a.bright, "raw", "examples", f"{s}.parquet")).to_pylist()
         with open(os.path.join(out, "documents.jsonl"), "w", encoding="utf-8", newline="\n") as f:
             for d in docs:
-                f.write(json.dumps({"id": d["id"], "content": d["content"]}, ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps({"id": d["id"], "content": d["content"]}, ensure_ascii=False) + "\n"
+                )
         with open(os.path.join(out, "examples.jsonl"), "w", encoding="utf-8", newline="\n") as f:
             for e in exs:
-                f.write(json.dumps({"id": e["id"], "query": e["query"], "gold_ids": list(e["gold_ids"]),
-                                    "excluded_ids": list(e["excluded_ids"])}, ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "id": e["id"],
+                            "query": e["query"],
+                            "gold_ids": list(e["gold_ids"]),
+                            "excluded_ids": list(e["excluded_ids"]),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
         dlens = [len(x.ids) for x in tok.encode_batch([d["content"] for d in docs])]
         qlens = [len(x.ids) for x in tok.encode_batch([e["query"] for e in exs])]
         gold = {g for e in exs for g in e["gold_ids"]}
         ids = {d["id"] for d in docs}
-        glens = [l for d, l in zip(docs, dlens) if d["id"] in gold]
+        glens = [n for d, n in zip(docs, dlens) if d["id"] in gold]
         stats["splits"][s] = {
-            "documents": summarize(dlens), "queries": summarize(qlens), "gold_docs": summarize(glens),
-            "gold_ids_total": sum(len(e["gold_ids"]) for e in exs), "gold_unique": len(gold),
+            "documents": summarize(dlens),
+            "queries": summarize(qlens),
+            "gold_docs": summarize(glens),
+            "gold_ids_total": sum(len(e["gold_ids"]) for e in exs),
+            "gold_unique": len(gold),
             "gold_missing_from_documents": len(gold - ids),
-            "queries_with_excluded_ids": sum(1 for e in exs if e["excluded_ids"] and e["excluded_ids"] != ["N/A"]),
+            "queries_with_excluded_ids": sum(
+                1 for e in exs if e["excluded_ids"] and e["excluded_ids"] != ["N/A"]
+            ),
         }
         print(s, json.dumps(stats["splits"][s]))
     with open(os.path.join(a.bright, "token_stats.json"), "w", encoding="utf-8") as f:

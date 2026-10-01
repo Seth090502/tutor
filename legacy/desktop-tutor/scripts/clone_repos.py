@@ -1,4 +1,5 @@
 """Safe shallow cloner for catalog repos. Opt-in only."""
+
 import argparse
 import json
 import os
@@ -33,7 +34,9 @@ def main(argv=None):
         for name, r in repos.items():
             print(f"{name}: {r['url']} — {r['why']}")
         return 0
-    targets = list(repos.values()) if args.clone_all else [repos[n] for n in args.clone if n in repos]
+    targets = (
+        list(repos.values()) if args.clone_all else [repos[n] for n in args.clone if n in repos]
+    )
     missing = [n for n in args.clone if n not in repos]
     for m in missing:
         print(f"Unknown repo '{m}'. Use --list.", file=sys.stderr)

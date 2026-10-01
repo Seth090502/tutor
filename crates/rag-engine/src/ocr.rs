@@ -31,7 +31,10 @@ pub trait OcrProvider: Send + Sync {
 }
 
 pub fn provider_from_env() -> Result<Option<Box<dyn OcrProvider>>> {
-    match std::env::var("RAG_OCR_PROVIDER").ok().filter(|v| !v.trim().is_empty()) {
+    match std::env::var("RAG_OCR_PROVIDER")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
         None => Ok(None),
         Some(name) => Err(format!(
             "RAG_OCR_PROVIDER={name:?} is not supported: no OCR provider is implemented yet. \
@@ -68,8 +71,11 @@ pub fn enqueue(conn: &Connection, doc_id: &str, pages: &[(u32, PageClass)]) -> R
 
 /// OCR text of the finished pages of `doc_id`, by page number.
 pub fn done_texts(conn: &Connection, doc_id: &str) -> Result<HashMap<u32, String>> {
-    let mut stmt = conn.prepare_cached("SELECT page, text FROM ocr_queue WHERE doc_id = ?1 AND state = 'done'")?;
-    let rows = stmt.query_map([doc_id], |r| Ok((r.get::<_, u32>(0)?, r.get::<_, String>(1)?)))?;
+    let mut stmt = conn
+        .prepare_cached("SELECT page, text FROM ocr_queue WHERE doc_id = ?1 AND state = 'done'")?;
+    let rows = stmt.query_map([doc_id], |r| {
+        Ok((r.get::<_, u32>(0)?, r.get::<_, String>(1)?))
+    })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
@@ -116,7 +122,14 @@ pub fn process(
                          WHERE doc_id = ?1 AND page = ?2",
                         params![doc_id, page, out.text, provider.name(), store::now()],
                     )?;
-                    store::record_spend(conn, SpendKind::Ocr, provider.name(), provider.model(), 0, out.usd)?;
+                    store::record_spend(
+                        conn,
+                        SpendKind::Ocr,
+                        provider.name(),
+                        provider.model(),
+                        0,
+                        out.usd,
+                    )?;
                     done += 1;
                     on_page();
                 }
@@ -167,7 +180,10 @@ mod tests {
             if Some(page) == self.fail_page {
                 return Err("provider down".into());
             }
-            Ok(OcrOutput { text: format!("ocr text of page {page}"), usd: 0.001 })
+            Ok(OcrOutput {
+                text: format!("ocr text of page {page}"),
+                usd: 0.001,
+            })
         }
     }
 
@@ -180,8 +196,12 @@ mod tests {
         .unwrap()
     }
 
-    const PAGES: [(u32, PageClass); 4] =
-        [(1, PageClass::BornDigital), (2, PageClass::Scanned), (3, PageClass::MathHeavy), (4, PageClass::Empty)];
+    const PAGES: [(u32, PageClass); 4] = [
+        (1, PageClass::BornDigital),
+        (2, PageClass::Scanned),
+        (3, PageClass::MathHeavy),
+        (4, PageClass::Empty),
+    ];
 
     #[test]
     fn only_scanned_and_math_heavy_pages_are_queued_and_stay_pending() {
@@ -209,12 +229,27 @@ mod tests {
         let conn = store::open(&dir).unwrap();
         enqueue(&conn, "d1", &PAGES).unwrap();
         enqueue(&conn, "d2", &[(7, PageClass::Scanned)]).unwrap();
-        let ocr = MockOcr { fail_page: None, seen: Mutex::new(Vec::new()) };
+        let ocr = MockOcr {
+            fail_page: None,
+            seen: Mutex::new(Vec::new()),
+        };
         let mut pages = 0;
-        let done = process(&conn, &ocr, |d| Some(PathBuf::from(format!("{d}.pdf"))), || pages += 1).unwrap();
+        let done = process(
+            &conn,
+            &ocr,
+            |d| Some(PathBuf::from(format!("{d}.pdf"))),
+            || pages += 1,
+        )
+        .unwrap();
         assert_eq!((done, pages), (3, 3));
         assert_eq!(counts(&conn).unwrap(), (0, 3));
-        assert_eq!(done_texts(&conn, "d1").unwrap(), HashMap::from([(2, "ocr text of page 2".into()), (3, "ocr text of page 3".into())]));
+        assert_eq!(
+            done_texts(&conn, "d1").unwrap(),
+            HashMap::from([
+                (2, "ocr text of page 2".into()),
+                (3, "ocr text of page 3".into())
+            ])
+        );
         assert_eq!(ocr.seen.lock().unwrap()[2], (PathBuf::from("d2.pdf"), 7));
         assert!((store::spend_usd(&conn, SpendKind::Ocr).unwrap() - 0.003).abs() < 1e-12);
 
@@ -241,12 +276,23 @@ mod tests {
         let dir = temp_dir("ocr-fail");
         let conn = store::open(&dir).unwrap();
         enqueue(&conn, "d", &PAGES).unwrap();
-        let ocr = MockOcr { fail_page: Some(3), seen: Mutex::new(Vec::new()) };
-        let err = process(&conn, &ocr, |_| Some(PathBuf::from("d.pdf")), || {}).unwrap_err().0;
-        assert!(err.contains("page 3") && err.contains("provider down"), "{err}");
+        let ocr = MockOcr {
+            fail_page: Some(3),
+            seen: Mutex::new(Vec::new()),
+        };
+        let err = process(&conn, &ocr, |_| Some(PathBuf::from("d.pdf")), || {})
+            .unwrap_err()
+            .0;
+        assert!(
+            err.contains("page 3") && err.contains("provider down"),
+            "{err}"
+        );
         assert_eq!(state(&conn, "d", 2).0, "done");
         let (s, text, error) = state(&conn, "d", 3);
-        assert_eq!((s.as_str(), text, error.as_deref()), ("pending", None, Some("provider down")));
+        assert_eq!(
+            (s.as_str(), text, error.as_deref()),
+            ("pending", None, Some("provider down"))
+        );
         assert_eq!(counts(&conn).unwrap(), (1, 1));
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();

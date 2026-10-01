@@ -52,7 +52,10 @@ impl DocText {
             .iter()
             .enumerate()
             .map(|(i, &(start, _))| {
-                let end = self.pages.get(i + 1).map_or(self.text.len(), |&(next, _)| next - PAGE_SEPARATOR.len());
+                let end = self
+                    .pages
+                    .get(i + 1)
+                    .map_or(self.text.len(), |&(next, _)| next - PAGE_SEPARATOR.len());
                 (start, &self.text[start..end])
             })
             .collect()
@@ -87,7 +90,9 @@ pub fn chunk(doc: &DocText) -> Vec<Chunk> {
         .with_overlap(OVERLAP_TOKENS)
         .expect("overlap is smaller than the chunk size");
     let pieces: Vec<(usize, &str)> = if doc.markdown {
-        MarkdownSplitter::new(config).chunk_indices(&doc.text).collect()
+        MarkdownSplitter::new(config)
+            .chunk_indices(&doc.text)
+            .collect()
     } else {
         TextSplitter::new(config).chunk_indices(&doc.text).collect()
     };
@@ -129,19 +134,44 @@ mod tests {
     #[test]
     fn chunks_respect_the_token_limit_and_overlap() {
         let pages: Vec<String> = (1..=3).map(|p| page_text(p, 40)).collect();
-        let doc = DocText::from_pages(pages.iter().enumerate().map(|(i, t)| (i as u32 + 1, t.as_str())));
+        let doc = DocText::from_pages(
+            pages
+                .iter()
+                .enumerate()
+                .map(|(i, t)| (i as u32 + 1, t.as_str())),
+        );
         let chunks = chunk(&doc);
         assert!(chunks.len() >= 4, "{} chunks", chunks.len());
         for (i, c) in chunks.iter().enumerate() {
             assert_eq!(c.ordinal as usize, i);
-            assert!(c.tokens as usize <= CHUNK_TOKENS, "chunk {i} has {} tokens", c.tokens);
-            assert_eq!(c.tokens as usize, tokenizer().encode_ordinary(&c.text).len());
+            assert!(
+                c.tokens as usize <= CHUNK_TOKENS,
+                "chunk {i} has {} tokens",
+                c.tokens
+            );
+            assert_eq!(
+                c.tokens as usize,
+                tokenizer().encode_ordinary(&c.text).len()
+            );
         }
         // Chunks split inside a page overlap: the next one starts with text the previous one ends with.
         let mut within_page = 0;
-        for pair in chunks.windows(2).filter(|p| p[0].page_end == p[1].page_start) {
-            let next_start: String = pair[1].text.split_whitespace().take(6).collect::<Vec<_>>().join(" ");
-            assert!(pair[0].text.contains(&next_start), "no overlap between\n{}\nand\n{}", pair[0].text, pair[1].text);
+        for pair in chunks
+            .windows(2)
+            .filter(|p| p[0].page_end == p[1].page_start)
+        {
+            let next_start: String = pair[1]
+                .text
+                .split_whitespace()
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(
+                pair[0].text.contains(&next_start),
+                "no overlap between\n{}\nand\n{}",
+                pair[0].text,
+                pair[1].text
+            );
             within_page += 1;
         }
         assert!(within_page >= 2, "{within_page} in-page boundaries");
@@ -164,12 +194,18 @@ mod tests {
                 .map(|s| s.split_whitespace().next().unwrap().parse().unwrap())
                 .collect();
             assert!(mentioned.iter().all(|p| (start..=end).contains(p)), "{c:?}");
-            assert!(mentioned.contains(&start) && mentioned.contains(&end), "{c:?}");
+            assert!(
+                mentioned.contains(&start) && mentioned.contains(&end),
+                "{c:?}"
+            );
             if start != end {
                 crossing += 1;
             }
         }
-        assert!(crossing > 0, "expected at least one chunk spanning a page break");
+        assert!(
+            crossing > 0,
+            "expected at least one chunk spanning a page break"
+        );
         assert_eq!(chunks.first().unwrap().page_start, Some(10));
         assert_eq!(chunks.last().unwrap().page_end, Some(13));
     }
@@ -179,12 +215,18 @@ mod tests {
         let doc = DocText::from_pages([(1, ""), (2, "Oxidation is loss of electrons.")]);
         let chunks = chunk(&doc);
         assert_eq!(chunks.len(), 1);
-        assert_eq!((chunks[0].page_start, chunks[0].page_end), (Some(2), Some(2)));
+        assert_eq!(
+            (chunks[0].page_start, chunks[0].page_end),
+            (Some(2), Some(2))
+        );
     }
 
     #[test]
     fn unpaged_documents_have_no_page_numbers() {
-        let doc = DocText { text: "Just a note.".into(), ..Default::default() };
+        let doc = DocText {
+            text: "Just a note.".into(),
+            ..Default::default()
+        };
         let chunks = chunk(&doc);
         assert_eq!(chunks.len(), 1);
         assert_eq!((chunks[0].page_start, chunks[0].page_end), (None, None));
@@ -193,27 +235,54 @@ mod tests {
     #[test]
     fn markdown_chunks_carry_the_heading_path_at_their_start() {
         let body = |topic: &str| {
-            (0..30).map(|i| format!("Fact {i} about {topic} is stated in this sentence.")).collect::<Vec<_>>().join(" ")
+            (0..30)
+                .map(|i| format!("Fact {i} about {topic} is stated in this sentence."))
+                .collect::<Vec<_>>()
+                .join(" ")
         };
-        let text = format!("# Chemistry\n\n## Redox\n\n{}\n\n## Acids\n\n{}\n", body("redox"), body("acids"));
-        let doc = DocText { sections: headings::markdown(&text), text, markdown: true, ..Default::default() };
+        let text = format!(
+            "# Chemistry\n\n## Redox\n\n{}\n\n## Acids\n\n{}\n",
+            body("redox"),
+            body("acids")
+        );
+        let doc = DocText {
+            sections: headings::markdown(&text),
+            text,
+            markdown: true,
+            ..Default::default()
+        };
         let chunks = chunk(&doc);
         assert!(chunks.len() >= 2);
         for c in &chunks {
             if c.text.contains("about acids") && !c.text.contains("about redox") {
                 assert_eq!(c.heading_path, vec!["Chemistry", "Acids"], "{c:?}");
             }
-            if c.text.starts_with("# Chemistry") || c.text.contains("about redox") && !c.text.contains("Acids") {
-                assert!(c.heading_path.starts_with(&["Chemistry".to_string()]), "{c:?}");
+            if c.text.starts_with("# Chemistry")
+                || c.text.contains("about redox") && !c.text.contains("Acids")
+            {
+                assert!(
+                    c.heading_path.starts_with(&["Chemistry".to_string()]),
+                    "{c:?}"
+                );
             }
         }
         assert_eq!(chunks[0].heading_path, vec!["Chemistry"]);
-        assert!(chunks.iter().any(|c| c.heading_path == ["Chemistry", "Acids"]));
+        assert!(
+            chunks
+                .iter()
+                .any(|c| c.heading_path == ["Chemistry", "Acids"])
+        );
     }
 
     #[test]
     fn empty_text_gives_no_chunks() {
         assert!(chunk(&DocText::default()).is_empty());
-        assert!(chunk(&DocText { text: " \n\n ".into(), ..Default::default() }).is_empty());
+        assert!(
+            chunk(&DocText {
+                text: " \n\n ".into(),
+                ..Default::default()
+            })
+            .is_empty()
+        );
     }
 }

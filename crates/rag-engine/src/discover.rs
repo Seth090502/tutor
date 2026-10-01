@@ -47,8 +47,10 @@ pub struct Discovery {
 
 /// Lowercase extension of `path`, or `(none)`.
 pub fn extension_key(path: &Path) -> String {
-    path.extension()
-        .map_or_else(|| "(none)".to_string(), |e| e.to_string_lossy().to_lowercase())
+    path.extension().map_or_else(
+        || "(none)".to_string(),
+        |e| e.to_string_lossy().to_lowercase(),
+    )
 }
 
 pub fn doc_kind(path: &Path) -> Option<DocKind> {
@@ -75,7 +77,9 @@ pub fn discover(root: &Path) -> Discovery {
         let bytes = match entry.metadata() {
             Ok(meta) => meta.len(),
             Err(e) => {
-                found.walk_errors.push(format!("{}: {e}", entry.path().display()));
+                found
+                    .walk_errors
+                    .push(format!("{}: {e}", entry.path().display()));
                 continue;
             }
         };
@@ -90,7 +94,11 @@ pub fn discover(root: &Path) -> Discovery {
                     bytes,
                 });
             }
-            None => found.other.entry(extension_key(&path)).or_default().add(bytes),
+            None => found
+                .other
+                .entry(extension_key(&path))
+                .or_default()
+                .add(bytes),
         }
     }
     found.docs.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
@@ -112,7 +120,15 @@ mod tests {
 
     #[test]
     fn other_files_are_not_documents() {
-        for p in ["a.djvu", "b.mobi", "c.pdf.part", "d", ".pdf", "e.markdown", "f.azw3"] {
+        for p in [
+            "a.djvu",
+            "b.mobi",
+            "c.pdf.part",
+            "d",
+            ".pdf",
+            "e.markdown",
+            "f.azw3",
+        ] {
             assert_eq!(doc_kind(Path::new(p)), None, "{p}");
         }
     }
@@ -140,8 +156,11 @@ mod tests {
         let found = discover(&root);
         fs::remove_dir_all(&root).unwrap();
 
-        let docs: Vec<(&str, DocKind, u64)> =
-            found.docs.iter().map(|d| (d.rel_path.as_str(), d.kind, d.bytes)).collect();
+        let docs: Vec<(&str, DocKind, u64)> = found
+            .docs
+            .iter()
+            .map(|d| (d.rel_path.as_str(), d.kind, d.bytes))
+            .collect();
         assert_eq!(
             docs,
             vec![
@@ -151,8 +170,17 @@ mod tests {
                 ("sub/deeper/d.md", DocKind::Md, 0),
             ]
         );
-        assert_eq!(found.other.get("djvu"), Some(&FileTotals { files: 2, bytes: 10 }));
-        assert_eq!(found.other.get("(none)"), Some(&FileTotals { files: 1, bytes: 2 }));
+        assert_eq!(
+            found.other.get("djvu"),
+            Some(&FileTotals {
+                files: 2,
+                bytes: 10
+            })
+        );
+        assert_eq!(
+            found.other.get("(none)"),
+            Some(&FileTotals { files: 1, bytes: 2 })
+        );
         assert_eq!(found.other.len(), 2);
         assert!(found.walk_errors.is_empty());
     }

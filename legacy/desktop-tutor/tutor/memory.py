@@ -15,8 +15,7 @@ def _facts(state):
 
 def add_fact(state, text, tags=None):
     """Append-only. Returns the fact record."""
-    fact = {"text": str(text)[:500], "tags": list(tags or []),
-            "ts": int(time.time())}
+    fact = {"text": str(text)[:500], "tags": list(tags or []), "ts": int(time.time())}
     _facts(state).append(fact)
     return fact
 
@@ -48,6 +47,9 @@ def summarize(state):
     acc = accuracy_by_domain(state)
     facts = _facts(state)[-5:]
     weak = min(acc.items(), key=lambda kv: kv[1]["acc"])[0] if acc else None
-    return {"accuracy": acc, "weakest": weak,
-            "recent_facts": [f["text"] for f in facts],
-            "tracked": len(state.get("items", {}))}
+    return {
+        "accuracy": acc,
+        "weakest": weak,
+        "recent_facts": [f["text"] for f in facts],
+        "tracked": len(state.get("items", {})),
+    }
