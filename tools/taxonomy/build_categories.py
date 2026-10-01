@@ -16,7 +16,21 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSION = "2026-10-01.1"
+VERSION = "2026-10-01.2"
+
+# OpenAlex files these topics under subfields that misplace them for our purposes (pure mathematics under computer
+# science, geochemistry under AI). Overrides are topic-level, kept small, and each has its reason in the comment.
+TOPIC_OVERRIDES = {
+    "T11727": ("mathematics", ["cs-ai"]),       # Advanced Algebra and Logic (filed under Computational Theory)
+    "T10374": ("mathematics", ["cs-ai"]),       # Advanced Graph Theory Research
+    "T10792": ("mathematics", ["cs-ai"]),       # Matrix Theory and Algorithms
+    "T11435": ("mathematics", ["cs-ai"]),       # Polynomial and algebraic computation
+    "T12292": ("mathematics", ["cs-ai"]),       # Graph Theory and Algorithms (filed under Computer Vision)
+    "T12157": ("natural-sciences", ["cs-ai"]),  # Geochemistry and Geologic Mapping (filed under AI)
+}
+# A work's OpenAlex primary topic counts as a category source only at or above this score; below it, the next
+# source in the precedence list decides (a 0.396-score primary topic was observed misattributing a work).
+OPENALEX_MIN_TOPIC_SCORE = 0.5
 
 # ---------------------------------------------------------------------------------------------------------------
 # Vault categories, in the owner's priority order. Targets are proposals for the owner to adjust.
@@ -504,6 +518,9 @@ def main():
     for t in topics:
         field, sub = t["field"]["display_name"], t["subfield"]["display_name"]
         primary, secondary = subfield_categories(field, sub)
+        tid = t["id"].rsplit("/", 1)[-1]
+        if tid in TOPIC_OVERRIDES:
+            primary, secondary = TOPIC_OVERRIDES[tid][0], list(TOPIC_OVERRIDES[tid][1])
         text = topic_text(t)
         name = t["display_name"]
         overlay = False
@@ -583,6 +600,8 @@ def main():
         "crosswalks": {"arxiv": arxiv_map, "lcc": lcc, "ddc": ddc},
         "precedence": ["manifest_field", "openalex_primary_topic", "arxiv_primary_category", "lcc", "ddc",
                        "inbox_folder_hint", "embedding_nearest_topic"],
+        "openalex_min_topic_score": OPENALEX_MIN_TOPIC_SCORE,
+        "topic_overrides": sorted(TOPIC_OVERRIDES),
     }
     (root / "categories.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8",
                                           newline="\n")
@@ -616,8 +635,11 @@ def write_markdown(root, out, sub_rows, cat_topics, cat_members, overlay_by_sub,
              "organised.")
     L.append("- **Books and preprints** reach the same map through crosswalks: LCC and DDC class numbers (from "
              "the book's own Cataloging-in-Publication block, or from metadata), and arXiv categories.")
-    L.append("- **Precedence when sources disagree:** " + ", then ".join(out["precedence"]) + ". Every assignment "
+    L.append("- **Precedence when sources disagree:** " + ", then ".join(out["precedence"]) + ". OpenAlex's "
+             f"primary topic counts only at a score of {out['openalex_min_topic_score']} or more. Every assignment "
              "records its source and confidence; low-confidence ones are flagged in the intake report.")
+    L.append(f"- **Topic overrides:** {', '.join(out['topic_overrides'])} are re-assigned where OpenAlex files them "
+             "under a misleading subfield (for example pure algebra under computer science); see the generator.")
     L.append("- **Unknowns are never dropped:** a document with no usable signal is classified by its nearest "
              "OpenAlex topic in embedding space (topic name, description and keywords), flagged as such.\n")
 

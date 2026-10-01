@@ -1,6 +1,6 @@
 {
  "format": 1,
- "version": "2026-10-01.1",
+ "version": "2026-10-01.2",
  "sources": {
   "openalex": "2026-10-01",
   "arxiv": "github.com/arXiv/arxiv-base arxiv/taxonomy/definitions.py"
@@ -318,8 +318,10 @@
    "name": "Geochemistry and Geologic Mapping",
    "field": "Computer Science",
    "subfield": "Artificial Intelligence",
-   "primary": "cs-ai",
-   "secondary": [],
+   "primary": "natural-sciences",
+   "secondary": [
+    "cs-ai"
+   ],
    "works_count": 3409105
   },
   "T10451": {
@@ -5838,9 +5840,9 @@
    "name": "Matrix Theory and Algorithms",
    "field": "Computer Science",
    "subfield": "Computational Theory and Mathematics",
-   "primary": "cs-ai",
+   "primary": "mathematics",
    "secondary": [
-    "mathematics"
+    "cs-ai"
    ],
    "works_count": 122222
   },
@@ -12986,9 +12988,9 @@
    "name": "Advanced Graph Theory Research",
    "field": "Computer Science",
    "subfield": "Computational Theory and Mathematics",
-   "primary": "cs-ai",
+   "primary": "mathematics",
    "secondary": [
-    "mathematics"
+    "cs-ai"
    ],
    "works_count": 78408
   },
@@ -13489,9 +13491,9 @@
    "name": "Advanced Algebra and Logic",
    "field": "Computer Science",
    "subfield": "Computational Theory and Mathematics",
-   "primary": "cs-ai",
+   "primary": "mathematics",
    "secondary": [
-    "mathematics"
+    "cs-ai"
    ],
    "works_count": 75920
   },
@@ -19185,9 +19187,9 @@
    "name": "Polynomial and algebraic computation",
    "field": "Computer Science",
    "subfield": "Computational Theory and Mathematics",
-   "primary": "cs-ai",
+   "primary": "mathematics",
    "secondary": [
-    "mathematics"
+    "cs-ai"
    ],
    "works_count": 57188
   },
@@ -27347,8 +27349,10 @@
    "name": "Graph Theory and Algorithms",
    "field": "Computer Science",
    "subfield": "Computer Vision and Pattern Recognition",
-   "primary": "cs-ai",
-   "secondary": [],
+   "primary": "mathematics",
+   "secondary": [
+    "cs-ai"
+   ],
    "works_count": 37517
   },
   "T12104": {
@@ -40629,5 +40633,14 @@
   "ddc",
   "inbox_folder_hint",
   "embedding_nearest_topic"
+ ],
+ "openalex_min_topic_score": 0.5,
+ "topic_overrides": [
+  "T10374",
+  "T10792",
+  "T11435",
+  "T11727",
+  "T12157",
+  "T12292"
  ]
 }

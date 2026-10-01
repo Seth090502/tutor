@@ -172,6 +172,12 @@ openalex_key_env = "OPENALEX_API_KEY"  # value read from the environment; never 
   - `vault verify` re-hashes every file and reports missing, extra and mismatched files.
   - The files are line-buffered and fsynced per batch.
 
+**Defence in depth (wave 2):**
+- After writing a text, sidecar-structure, original or quarantine file, the store sets the file's read-only
+  attribute, so a careless agent or editor gets "access denied" instead of silently corrupting an address.
+- Integrity verification still catches anything that bypasses it.
+- This changes no ACLs or system settings.
+
 ## 6. SQLite (`hot/db/vault.sqlite`)
 
 - **Settings:** WAL, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`.
