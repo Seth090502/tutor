@@ -33,21 +33,26 @@ Detail reports are in `docs/phase0/`:
 
 ## 1. What I found that shapes the design
 
-1. **Your engine (Cinference, `ninfer-serve`, in WSL2) hosts Huihui Qwen3.8-27B (NVFP4/FP8, 21.5 GB) with a
-   262,144-token context. It holds 29.8 of 32.6 GB of VRAM (M), and its KV cache is preallocated (D).**
-   - It speaks OpenAI Chat Completions with OpenAI-format `tools`. It has no MCP client and does not execute
-     tools; the harness does (D).
-   - It serves **one request at a time**; a 16-deep queue waits, and a waiter is cut off after 600 s (D).
-   - The engine's integration doc says not to run other GPU workloads while it is up (D).
-   - Consequences:
-     - On the 5090, retrieval models and the tutor cannot run at the same time.
-     - Tutor eval runs queue behind your own use of the tutor.
-     - The tools block must stay byte-identical across turns, or the prefix cache misses (D).
-2. **Every harness you have already speaks MCP:** Claude Code, Qwen Local Workbench, OpenCode (slot unused) and
-   DeepTutor (`services/mcp`). The DeepSeek harness is unverified (D).
-3. **WSL runs in NAT mode (M).** Windows programs reach the engine through localhost forwarding, but code inside
-   WSL cannot reach a Windows `127.0.0.1` service. libraryd and the tutor-side tool loop therefore run on
-   Windows. Nothing in WSL calls libraryd.
+1. **The tutor is the Rust/React desktop app** (`C:\Users\sethy\Projects\tutor\apps\desktop`). For its LLM work
+   it runs a **headless session of Claude Code or OpenCode Go** (owner, 2026-09-30). The app asks you which
+   model and effort to use.
+   - Both are installed (M):
+     - **Claude Code 2.1.286** has `-p` with stream-json input and output, `--model`,
+       `--effort low|medium|high|xhigh|max`, `--tools ""` (no built-in tools), `--mcp-config` with
+       `--strict-mcp-config`, `--system-prompt`, `--restricted` and `--no-session-persistence`.
+     - **OpenCode 1.18.33** has `run` (`-m opencode-go/<model>`, `--variant <effort>`, `--format json`,
+       `--agent`) and `serve`. 29 `opencode-go/*` models are listed, and your default is
+       `muse-spark-1.3-contributor` with a `max` variant.
+   - Both are MCP clients, and both accept outside tools only over MCP. So the tutor reaches libraryd over MCP;
+     see 2.4.
+   - The app's current Python backend calls LLM APIs directly (`deeptutor/services/llm`). It does not use
+     headless sessions yet.
+2. **Your engine (Cinference, `ninfer-serve` in WSL2, Qwen3.8-27B) is a separate project, not the tutor's
+   runtime.** It matters here only because, while it runs, it holds 29.8 of 32.6 GB of the 5090 (M) with a
+   preallocated KV cache (D). Its integration doc says not to run other GPU work beside it (D). So GPU windows
+   (bulk embedding, MinerU, the model matrix) mean times when Cinference is stopped, which you control.
+3. **WSL runs in NAT mode (M).** Code inside WSL cannot reach a Windows `127.0.0.1` service. libraryd, the
+   desktop app and the headless sessions all run natively on Windows, so this does not affect the vault.
 4. **Delivered so far:** 17 real born-digital PDFs (10 MB). Everything else on D: is oa-forge test fixtures (M).
    There are no books, no psychology corpus and no Chinese yet. The cold-tier projection rests on estimates
    until the pilot arrives.
@@ -86,7 +91,7 @@ Detail reports are in `docs/phase0/`:
   - `vault-client`: the Rust gRPC client.
   - `vault-intake`: intake, extraction routing and the job queue.
   - `vault-eval`: runner, graders and load generator.
-  - `tutor-bridge`: see 2.4.
+  - `tutor-runtime`: the headless Claude Code or OpenCode Go session; see 2.4.
   - `iobench`: already built.
 - **Vault layout,** with every path relative to a tier root:
   - **Hot root:** `text/`, `sidecars/`, `db/` (SQLite: meta, jobs, citations, glossary), `index/tantivy/`,
@@ -114,13 +119,15 @@ Detail reports are in `docs/phase0/`:
 
 - **The embedder sets query-time placement for the whole vault life.** Corpus and queries must use the
   identical model file.
-  - In Stage 2, queries will most likely run on the 7800 XT (16 GB), because the 5090 belongs to the tutor.
+  - The tutor itself needs no GPU (its model runs in the cloud through Claude Code or OpenCode Go).
+  - In Stage 2, queries will likely run on the 7800 XT (16 GB), because the 5090 is shared with Cinference
+    whenever you run it.
   - 8B Q8_0 (about 8 GB) plus a 4B reranker (about 4.3 GB) fits in 16 GB; 8B plus 8B does not (E).
 - **The reranker is what threatens the 1 s hybrid target.** Reranking 50-100 passages of about 400 tokens means
   20-40k tokens of prefill per search (E).
   - On the 7800 XT, that is plausible within the target for 0.6B and doubtful for 4B unless rerank depth is
     small (E; measured in Stage 2).
-- **Bulk embedding of 2.5B tokens needs the tutor unloaded:** about 5 h (0.6B), 15-20 h (4B) or 30-40 h (8B)
+- **Bulk embedding of 2.5B tokens needs Cinference stopped:** about 5 h (0.6B), 15-20 h (4B) or 30-40 h (8B)
   on the 5090 (E; the matrix measures it).
 - **Provisional recommendation, to be confirmed or overturned by the matrix:**
   - **Embedder:** Qwen3-Embedding-4B Q8_0. Store full 2560-dimension vectors as data, and index a Matryoshka
@@ -136,19 +143,33 @@ the run finishes.
 
 ### 2.4 Interfaces and the tutor connection
 
-- **libraryd** exposes the same nine tools over MCP and gRPC, all batched.
-  - Tool names use only `[A-Za-z0-9_-]`, which the engine requires.
-  - Tool descriptions are byte-stable, to keep the engine's prefix cache.
-- **Your interactive harness connects over MCP.** Every harness you have supports it, so there is no new code
-  in the harness and none in the engine.
-- **`tutor-bridge` (Rust, new):** the tool loop for the eval runner and for any tutor client we write.
-  - It sends chat requests to Cinference at `127.0.0.1:8000`, executes tool calls through `vault-client`
-    (gRPC), and returns the cited answer.
-  - This is the native path, and it is what layer D measures.
-- **MCP versus native:** measured per tool in Phase 1 (local) and Stage 2 (network).
-  - The tutor defaults to native wherever we control the loop.
-  - Your harness stays on MCP unless the measured difference is meaningful relative to a tutor turn, which
-    takes seconds.
+- **libraryd** exposes the same nine tools over MCP (rmcp, streamable HTTP, bearer token) and gRPC (tonic),
+  all batched.
+  - Tool names use only `[A-Za-z0-9_-]`.
+  - Tool descriptions stay byte-stable, which keeps the model provider's prompt cache warm.
+- **The tutor connects over MCP; it has no other way.** Claude Code and OpenCode take outside tools only
+  through MCP, so the brief's "default the tutor to native" cannot apply. The native path still matters:
+  - **The desktop app's own non-LLM features** (opening a cited passage, a reading view, a search box) link
+    `vault-client` into the Tauri shell and call gRPC directly.
+  - **The eval's programmatic layers** (A-C) and the load generator use gRPC.
+- **MCP versus native:** measured per tool in Phase 1 (local) and Stage 2 (network), and reported. For the
+  tutor this is information, not a choice.
+- **`tutor-runtime` (Rust, new, in the vault workspace):** one component that starts and drives a headless
+  session, used by both the desktop app and the eval runner, so layer D measures exactly what you use.
+  - **Inputs:** runtime (Claude Code or OpenCode Go), model, effort, and the tutor system prompt.
+  - **The app asks you for runtime, model and effort** when a conversation starts, and remembers your last
+    choice.
+    - Claude Code models: opus, sonnet, fable, haiku, or full names. Effort: low, medium, high, xhigh, max.
+    - OpenCode Go models come from `opencode models opencode-go`, each with its own variants.
+  - **The session is locked down so it can reach only libraryd:**
+    - **Claude Code:** `--tools ""`, `--strict-mcp-config` with a generated config holding only libraryd,
+      our own `--system-prompt`, no user CLAUDE.md, memory, hooks, plugins or skills, an empty working
+      directory, and `--no-session-persistence` for eval runs.
+    - **OpenCode:** an app-only config with every built-in tool disabled and only `libraryd_*` allowed,
+      with none of your global instructions or AGENTS.md.
+    - The exact switches for each are being verified now (`docs/phase0/opencode-headless.md` and the Claude
+      Code docs check), and are proven by the canary test run *through the session itself*.
+  - **No web tools by default,** so every claim has to cite the vault. Please confirm.
 
 ### 2.5 Intake handoff
 
@@ -223,9 +244,9 @@ transfer and the checkpoint covers what is ingested by then.
    - The real constraint is that the 5090 hosts the tutor. So I prioritise a verified checkpoint, and run GPU
      jobs in windows: they never start a unit unless enough VRAM is free, and they yield on request
      (`design-notes.md` section 5).
-7. **No query-time models on the 5090 in Stage 1 while the tutor is loaded** (the engine's own rule). Stage 1
-   query embedding uses CPU builds of the same GGUF, gated by the 0.999 parity test, or waits for Stage 2's
-   7800 XT. Phase 4 likely falls after the transfer anyway.
+7. **No query-time models on the 5090 while Cinference is running** (its own rule). When it runs, Stage 1 query
+   embedding uses a CPU build of the same GGUF, gated by the 0.999 parity test. Phase 4 likely falls after the
+   transfer anyway, where the 7800 XT is the natural home.
 8. **LaTeX sources need a converter the brief didn't list.**
    - **Proposed:** pandoc as a sidecar process. It keeps maths verbatim. It is GPL, but runs as an external
      tool, not linked.
@@ -237,9 +258,25 @@ transfer and the checkpoint covers what is ingested by then.
 10. **4B and 8B reranker GGUFs:** convert them ourselves from Qwen's official weights with llama.cpp's
     converter. Verify the classifier head, and run the sanity test before any scoring. Do not use community
     conversions.
-11. **LLM enrichment through your engine is too slow** with one request at a time: context sentences for
-    about 500k pilot chunks would take days (E). Measure first, and either restrict it to a sample or use a
-    small batched model in a tutor-off GPU window.
+11. **Enrichment model.** The brief asks for local generation on the 5090. Cinference serves one request at a
+    time, so context sentences for about 500k pilot chunks would take days through it (E).
+    - **Proposed:** a small instruct model in llama-server with batched requests, in GPU windows.
+    - Measure throughput first, and restrict enrichment to a sample if needed.
+    - Sending book text to cloud models for enrichment would also conflict with the earlier "library indexing
+      stays local" decision (tutor PLAN D8), so I don't propose using the headless cloud sessions for it.
+15. **Unreachable eval answers when the tutor is a local agent CLI.** Claude Code and OpenCode normally have
+    file, shell and web tools on the same disk as the eval directory. The guarantee therefore rests on:
+    - the session lock-down in 2.4;
+    - the eval directory lying outside every vault root;
+    - libraryd refusing paths outside its roots;
+    - a canary test that asks the *locked-down tutor session itself* to find the canary.
+    - **Optional extra layer:** run tutor sessions under a separate Windows account that has no access to the
+      eval directory. That is a system change you would make; I won't.
+16. **The judge runs through the same runtimes, with a model different from the tutor's.** For example, a
+    Claude Code tutor gets an OpenCode Go judge (GPT or GLM family), and an OpenCode Go tutor gets a Claude
+    judge.
+    - No API key is needed. It uses your subscriptions' quotas instead, so a full layer D run (cases × repeats
+      × 2 sessions) draws on those limits. I'll report the run size before each run.
 12. **The claude-api skill's `build-eval` and `hillclimb`** expect a Claude-provider app plus node or bun (D).
     I apply their principles manually to our Rust eval.
 13. **RAPTOR's controlled gain is about 0.5-2 points (D).** It stays an experiment that has to earn its place.
@@ -321,15 +358,19 @@ gets its own warning, reported by `vault_info`, the status page and intake.
 
 1. **The vault SSD:** connect it when you have it. I'll inspect it, measure it, and move the stand-in's
    contents over (nothing is written to the stand-in before then).
-2. **A GPU window** of about 90 minutes for the model matrix. Tell me when the tutor is unloaded.
-3. **Which program you tutor in:** Qwen Local Workbench, OpenCode, DeepTutor, the DeepSeek harness, or
-   something else. That decides where the MCP configuration goes.
-4. **The judge model must not be the tutor's.**
-   - **Proposed:** Claude through the API, for open-ended answer quality only (layer D). Everything else is
-     graded programmatically.
-   - This needs your API key, which stays in Credential Manager and is never printed, and approval of the
-     spend: roughly $10-50 per full layer D run (E).
-   - The alternative is a different local model, which competes for GPUs.
+2. **A GPU window** of about 90 minutes for the model matrix. Tell me when Cinference is stopped.
+3. **Scope of the headless runtime.**
+   - **Recommendation:**
+     - Build `tutor-runtime` and the runtime, model and effort picker as part of this work (Phase 1), for the
+       tutoring chat, which is where the vault is used.
+     - Move the app's other LLM features (quiz generation, guided reading, voice and the rest, which today
+       call LLM APIs from the Python backend) onto the same runtime as a separate track after Phase 2.
+   - **Tradeoff:** doing all of it now delays the vault by days. Is that the split you want?
+4. **The judge pairing** (section 3, item 16): a model family different from the tutor's, run through the
+   other runtime.
+   - Which tutor configurations should the eval cover? I'd default to your most likely daily choice plus one
+     cheaper one.
+   - Do you accept the subscription quota the eval runs will use?
 5. **OpenAlex:** a free API key (you create it; I never see the value), or accept keyless rates, which make
    enrichment slower (about 3 days for 160k DOIs).
 6. **GROBID hosting:** install Docker Desktop (a system install), or let me set up GROBID with JDK 21 in a

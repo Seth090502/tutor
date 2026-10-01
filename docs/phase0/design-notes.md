@@ -100,13 +100,13 @@ page for the first line of the range.
   - The original file name, batch, date and manifest row are kept in SQLite.
   - **This touches originals, so it needs the owner's approval.**
 
-## 5. GPU windows (the 5090 also hosts the tutor)
+## 5. GPU windows (the 5090 is shared with Cinference; the tutor itself runs in the cloud through Claude Code or OpenCode Go)
 
 - GPU stages (MinerU, OCR, bulk embedding, enrichment) never start a unit of work unless free VRAM is above that
   stage's measured need, read from `nvidia-smi` once per unit.
 - The owner can run `vault gpu yield`, which writes a flag file. GPU stages then stop at the next unit
   boundary (within about a minute) and release the GPU.
-- The owner reloads the tutor; the queue resumes when VRAM frees again or on `vault gpu resume`.
+- The owner restarts Cinference; the queue resumes when VRAM frees again or on `vault gpu resume`.
 - Nothing ever stops Cinference or Salad.
 
 ## 6. Storage arithmetic
