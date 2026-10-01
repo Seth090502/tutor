@@ -1,0 +1,10 @@
+[package]
+name = "vault-core"
+description = "Vault storage, canonical text, metadata, integrity and the VaultApi implementation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+vault-api.workspace = true

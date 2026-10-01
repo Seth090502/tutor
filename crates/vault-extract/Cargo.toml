@@ -1,0 +1,9 @@
+[package]
+name = "vault-extract"
+description = "Format detection and converters from delivered files to canonical-ready Markdown with structure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
