@@ -1,0 +1,29 @@
+[package]
+name = "vector-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Phase 0 dense-vector index benchmark: lancedb/lance vs usearch on synthetic 6M x 1024 data"
+
+# Standalone package: own workspace table so it never joins a parent workspace.
+[workspace]
+
+[dependencies]
+# Candidates, pinned exactly (latest on crates.io as of 2026-09-30).
+# lancedb 0.39.0 fails to compile without "remote" (src/job.rs uses the remote-only Error::Http).
+lancedb = { version = "=0.39.0", default-features = false, features = ["remote"] }
+lance = { version = "=12.0.0", default-features = false }
+lance-core = { version = "=12.0.0", default-features = false }
+usearch = "=2.26.2"
+# Support crates.
+rayon = "1.11"
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3"
+crc32fast = "1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_SystemInformation"] }
+
+[profile.release]
+debug = false

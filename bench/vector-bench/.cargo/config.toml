@@ -1,0 +1,10 @@
+# Build settings for the Phase 0 vector benchmark.
+# x86-64-v3 = AVX2 + FMA + F16C, the instruction set of the target AI PC (Ryzen 5 5600X, Zen 3).
+# Compile-time vectorised Rust code therefore never uses AVX-512 here; runtime-dispatched kernels
+# (lance-linalg, NumKong inside usearch) still detect the host CPU, see docs/phase0/vector-bench.md.
+[build]
+target-dir = "C:/Users/sethy/Projects/vault/target"
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+[env]
+PROTOC = "C:/Users/sethy/Projects/tutor/crates/rag-engine/vendor/protoc/bin/protoc.exe"
