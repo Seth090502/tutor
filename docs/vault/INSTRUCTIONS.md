@@ -1,0 +1,445 @@
+# Vault instructions: delivering, ingesting and finding content
+
+This file lives at the root of the vault and travels with it. The canonical copy is in the code repository at
+`docs/vault/INSTRUCTIONS.md`. Last updated 2026-10-01 (vault format 1).
+
+> **Status today (Stage 1, stand-in at `E:\Stand-In Vault`):**
+> - **Works now:** dropping files and folders into `inbox\`. Nothing reads, moves or changes them yet.
+> - **Arrives with Phase 1:** the intake service that ingests the inbox, and the `vault` command-line tool.
+>   Until then, everything marked **(Phase 1)** below is the design those parts are being built to.
+> - When the 1 TB SSD arrives, this whole folder, inbox included, is copied to the SSD and verified (section 8).
+>   Files you drop here today are not lost.
+
+## Contents
+
+1. [What the vault is](#1-what-the-vault-is)
+2. [Layout: what each folder is for](#2-layout-what-each-folder-is-for)
+3. [Delivering content](#3-delivering-content)
+4. [Source code folders](#4-source-code-folders)
+5. [What intake does, step by step](#5-what-intake-does-step-by-step)
+6. [Checking results and fixing problems](#6-checking-results-and-fixing-problems)
+7. [Categories](#7-categories)
+8. [Finding and reading content (traversal)](#8-finding-and-reading-content-traversal)
+9. [Moving the vault](#9-moving-the-vault)
+10. [Rules that keep the vault trustworthy](#10-rules-that-keep-the-vault-trustworthy)
+11. [Quick reference](#11-quick-reference)
+
+## 1. What the vault is
+
+The vault is your library in a form a tutor can search, read exactly and cite.
+
+- **One clean Markdown file per document.** Every book, paper and source file becomes one UTF-8 Markdown file,
+  the *canonical text*, addressed by line numbers.
+- **Indexes over that text:** keyword (BM25), exact and regex (trigram), and meaning (vectors). They find things
+  fast.
+- **libraryd serves all of it** to the tutor and to Claude Code.
+- **Citations look like `3f9a1c07b2e4d55e#L120-L148`** (document id, then a line range). An address never
+  changes once issued: not when the document is reclassified, not when the corpus grows, and not when the drive
+  moves to another machine.
+
+**Guarantees:**
+- **Nothing you deliver is silently dropped.** Every file ends up in the vault, or in quarantine with a stated
+  reason, or (for a few file types in source folders) is excluded by a named rule that the intake report lists.
+- **Provenance is kept exactly as you deliver it:** source, URL, licence, manifest fields, plus the date and the
+  batch it arrived in.
+- **Originals are kept byte for byte,** stored under the hash of their bytes.
+
+## 2. Layout: what each folder is for
+
+```
+<vault root>\
+  INSTRUCTIONS.md      this file
+  vault.toml           vault identity and format version (no machine paths)
+  inbox\               THE ONLY FOLDER YOU WRITE TO
+    <batch-name>\      a delivery batch (section 3.1)
+    loose\<category>\  drop folders for single files (section 3.3)
+    _done\             finished batches: what intake did not take, plus each batch's report
+    _templates\        manifest and SOURCE.toml templates
+  hot\                 fast tier: everything the tutor reads (intake writes it; don't edit)
+    text\{h2}\{doc_id}.md        canonical text, one file per document
+    sidecars\{h2}\{doc_id}.json  headings with line ranges, page map, metadata, provenance, quality
+    db\                          SQLite: metadata, categories, citations, glossary, job queue
+    index\tantivy|trigram|vectors\   indexes (all rebuildable from text\)
+    meta\taxonomy\               the category map (CATEGORIES.md, categories.json, OpenAlex snapshot)
+    manifests\                   BLAKE3 integrity manifests
+    reports\                     intake report and status pages (static HTML)
+    cache\                       rebuildable caches
+  cold\                bulk tier (may move to another disk later)
+    originals\{h2}\{blake3}.{ext}   your delivered files, byte for byte
+    quarantine\{h2}\{blake3}.{ext}  files that could not be ingested, each with a reason file
+```
+
+- `{h2}` is the first two hex characters of the id, which spreads about 160,000 files over 256 folders.
+- **Never edit, rename or delete anything under `hot\` or `cold\` by hand.** Intake and the integrity manifest
+  track every file there. A hand edit shows up as an integrity failure.
+- In `inbox\`, top-level names that start with `_` belong to intake. Everything else there is yours.
+
+## 3. Delivering content
+
+**Put copies in the inbox, never your only copy or a working folder:**
+- Intake moves accepted files into `cold\originals` once you approve that policy; until then it copies them.
+- It leaves everything else in `inbox\_done\`. It never deletes a file.
+
+### 3.1 Batches (the normal way)
+
+1. **Make a batch folder:** `inbox\<batch-name>\`, for example `inbox\2026-10-02-psych-classics\`.
+   - Names: letters, digits, `-` and `_`, at most 40 characters. Start with the date.
+2. **Copy the files into it.** Subfolders are fine and are recorded as provenance.
+3. **Optional but recommended:** add a manifest (section 3.4) as `manifest.tsv` or `manifest.jsonl` in the
+   batch folder.
+4. **When copying has finished,** create an empty file named `_BATCH_COMPLETE` in the batch folder.
+   - It may contain one line, `files=<n>`, the number of files you copied. Intake then checks the count.
+   - In PowerShell: `New-Item "inbox\2026-10-02-psych-classics\_BATCH_COMPLETE"`.
+
+**(Phase 1)** Intake ignores a batch folder until `_BATCH_COMPLETE` exists. Even then, it takes a file only once
+the file:
+- is unchanged across two checks 30 seconds apart;
+- can be opened with no other program writing to it;
+- matches the manifest's `bytes` and `sha256` when the manifest gives them.
+
+A half-copied file can never be ingested.
+
+### 3.2 oa-forge harvests
+
+- **Drop a whole oa-forge root folder** (the one containing `_meta\manifest.jsonl`) into `inbox\` as a batch.
+- **No marker is needed (Phase 1):** a file counts as delivered when its bytes and sha256 match its
+  `manifest.jsonl` row.
+- **Intake reads** `_meta\manifest.jsonl` and every `<file>.meta.json` sidecar (which has the URL) as the
+  manifest.
+  - It ignores `_meta\` housekeeping files (`state.jsonl`, `requests.jsonl`, robots caches, `*.oaf-tmp`).
+  - It records them in the batch report.
+- **Asks for oa-forge** (your side):
+  - carry `level`, `type`, `mode` and `url` into `manifest.jsonl`;
+  - write `_meta\_BATCH_COMPLETE` at the end of a clean run.
+  - Until then, a root with a stale `manifest.lock` is held back and reported, not ingested half-written.
+
+### 3.3 Single files without a batch
+
+- **Drop them into `inbox\loose\<category>\`.** The folders are `psych-cogsci`, `engineering`, `mathematics`,
+  `medicine`, `cs-ai`, `natural-sciences`, `humanities`, `social-other`, and `unsorted` if unsure.
+- **The folder name is a category hint, not a decision** (section 7).
+- **(Phase 1)** A loose file is taken after 15 minutes with no change and an exclusive-open check. Loose files
+  are grouped into a daily batch named `loose-YYYY-MM-DD`.
+
+### 3.4 Manifests
+
+- A manifest describes files you deliver. It is optional per file: files without a row are identified from their
+  own content and from OpenAlex.
+- **Formats:**
+  - **TSV:** UTF-8, tab-separated, with a header row. A template is in `inbox\_templates\manifest.tsv`.
+  - **JSONL:** one JSON object per line, with the same keys.
+
+| Column | Required | Meaning |
+|---|---|---|
+| `file` | **yes** | Path of the file relative to the batch folder. This links the row to a file. |
+| `domain` | no | Category slug or hint word (`psych-cogsci`, `mathematics`, `psychology`…; section 7) |
+| `type` | no | `paper`, `book`, `chapter`, `thesis`, `report`, `notes`, `code`, `dataset-doc`, `other` |
+| `level` | no | `intro`, `graduate`, `landmark`, `recent` |
+| `title`, `authors`, `year` | no | Authors separated by `;`. Used to verify identity. |
+| `doi`, `arxiv_id`, `pmcid`, `pmid`, `isbn`, `openalex_id` | no | Identifiers. Any one of them makes identification nearly certain. |
+| `language` | no | ISO 639-1 code (`en`, `zh`, …) |
+| `edition`, `publisher`, `series` | no | Books |
+| `url`, `provenance`, `license_class`, `license`, `mode` | no | Where it came from and on what terms. Kept verbatim. |
+| `sha256` or `blake3`, `bytes` | no | Proves the copy is complete and intact. Strongly recommended. |
+| `version_of` | no | The `file`, DOI or arXiv id of another version (preprint and published, editions) |
+
+- Unknown extra columns are kept verbatim in provenance.
+- A row whose file never arrives is reported as "listed but missing". It is never invented.
+
+### 3.5 Formats
+
+Format is detected from the file's content, not its extension.
+
+| Format | How it is ingested |
+|---|---|
+| JATS XML (PubMed Central `.nxml`) | Structured converter; best quality for papers |
+| arXiv LaTeX source (`.tar.gz` or `.gz` containing `.tex`) | LaTeX converter; maths kept verbatim |
+| arXiv HTML and other HTML or XHTML | HTML converter (maths from MathML alt-text) |
+| EPUB | xberg; MathML becomes LaTeX; DRM-protected files are quarantined |
+| DOCX and ODT | xberg |
+| PDF, born-digital paper | GROBID (structure and references), with fallbacks |
+| PDF, born-digital book | xberg or PDFium (chosen by measurement in Phase 1) |
+| PDF, maths-heavy | MinerU (LaTeX for equations) |
+| PDF, scanned | MinerU OCR (English and Chinese) |
+| TEI XML | Structured converter |
+| Markdown, plain text | Normalised directly (encoding detected) |
+| Jupyter notebooks | Cells become Markdown, with code in fenced blocks |
+| ZIP or TAR archives | Unpacked (limits: 500 MB, ratio 100:1, 10,000 entries); each member is processed as its own file |
+| Source code inside a code folder | Stored verbatim (section 4) |
+| Images, audio, video, executables, fonts | Quarantined as `unsupported_format` (re-deliver a PDF if it is a document) |
+| Encrypted PDF, DRM EPUB | Quarantined as `protected` |
+
+**Best formats to deliver, in order:**
+1. JATS (from PMC) or arXiv source for papers.
+2. EPUB for books.
+3. Born-digital PDF.
+4. Scans, last.
+
+When you have two formats of the same work, deliver both: intake keeps the best as primary and links the other.
+
+## 4. Source code folders
+
+Copy each repository (or a folder of repositories) into a batch folder, then add `_BATCH_COMPLETE`. Intake
+**(Phase 1)** recognises a code tree from its contents: a `.git` folder, `Cargo.toml`, `package.json`,
+`pyproject.toml`, `go.mod`, a `*.sln`, and so on.
+
+**What happens to a repository:**
+- **Every source and text file becomes its own vault document, stored verbatim.**
+  - Encoding goes to UTF-8 and line endings to LF. Nothing else changes: no reflow, no sentence splitting.
+  - So `…#L40-L72` is exactly lines 40-72 of the original file.
+- **A repository document is generated:** the README first, then the file tree with each file's address. It is
+  what `outline` shows for the repository.
+- **Recorded per repository:** name, the remote URL and HEAD commit (read from `.git` if present), the licence
+  (from `LICENSE`/`COPYING`), and the language of each file.
+- **Optional:** put a `SOURCE.toml` at the repository root (template in `inbox\_templates\SOURCE.toml`) to state
+  the URL, licence, commit, category and a one-line description.
+- **Category:** `cs-ai` by default. `SOURCE.toml` or the manifest can add others; for example, a PsychoPy
+  experiment repository can also be `psych-cogsci`.
+- **Documents inside the repository** (PDFs, EPUBs, notebooks, Markdown docs) go through their normal routes.
+
+**Excluded by rule.** These are never silently dropped: the batch report lists each one with its path, size,
+BLAKE3 hash and the rule that matched, and the files stay in `inbox\_done\<batch>\` for you to review:
+
+| Rule | Paths |
+|---|---|
+| `vcs-metadata` | `.git\`, `.hg\`, `.svn\` (history is not ingested; the HEAD commit is recorded) |
+| `dependencies` | `node_modules\`, `.venv\`, `venv\`, `site-packages\`, `bower_components\`, Go `vendor\` |
+| `build-output` | `target\`, `build\`, `dist\`, `out\`, `bin\`, `obj\`, `__pycache__\`, `.next\`, `.gradle\`, `.idea\`, `.vs\`, `*.pyc` |
+| `lockfiles` | `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock` |
+| `generated` | `*.min.js`, `*.map`, files marked `@generated` |
+| `binary` | non-text files that are not a supported document format |
+| `oversize-text` | text files over 2 MB (usually generated); listed so you can re-deliver one deliberately |
+
+**Secrets: please remove them before copying.**
+- Intake also scans every file for private keys, tokens, `.env` files and credential files.
+- A match is **left in place** in `inbox\_done\<batch>\`, never copied into the vault, never indexed, and never
+  served. It is recorded as quarantined with reason `suspected_secret`, naming the rule, never the value.
+
+## 5. What intake does, step by step
+
+Every step is **(Phase 1)** and resumable: stopping and restarting never duplicates or loses work.
+
+1. **Readiness:** the marker, stability and manifest checks above.
+2. **Hash:** BLAKE3 of the bytes. If those exact bytes are already in the vault, this delivery's provenance is
+   added to the existing original and nothing else happens (outcome **duplicate**).
+3. **Store the original** in `cold\originals\{h2}\{blake3}.{ext}`.
+4. **Detect format; route to an extractor** (section 3.5).
+5. **Normalise to canonical Markdown:**
+   - UTF-8, LF line endings, one sentence per line for prose.
+   - Headings as `#` levels, maths as `$…$` and `$$…$$` with LaTeX verbatim, tables as pipe tables, code in fences.
+   - References as one entry per line.
+   - Page numbers kept in the sidecar's page map.
+   - Code (section 4) keeps its exact lines.
+6. **Quality check:** garbled characters, empty pages, broken encoding, missing sections, OCR confidence.
+   - A weak result is retried with a stronger extractor (xberg or GROBID, then MinerU, then OCR) before giving up.
+7. **Identify** from the manifest, then the document itself (title, authors, DOI, arXiv id, ISBN, and for books
+   the Cataloging-in-Publication block), then OpenAlex verification.
+   - Confidence is recorded. Documents whose identity can't be established are flagged, not rejected.
+8. **Categorise and detect language** (section 7). Chinese text gets a Chinese tokenizer.
+9. **Find near-duplicates** (preprint against published version, editions). The best version becomes primary;
+   the others are linked, never deleted (outcome **near-duplicate, linked**).
+10. **Publish:**
+    - `hot\text\{h2}\{doc_id}.md` and its sidecar are written once and never changed.
+    - `doc_id` is 16 hex characters of the text's BLAKE3 hash plus a short slug.
+    - A better extraction later becomes a new version; the old addresses keep working and point to it.
+11. **Index:** keyword, trigram and vector indexes are updated incrementally; there are no full rebuilds.
+12. **Report:**
+    - The batch folder moves to `inbox\_done\<batch>\` with `_INTAKE_REPORT.md` inside. It lists every file and
+      its outcome: **published**, **duplicate**, **near-duplicate (linked)**, **quarantined (reason)**,
+      **excluded (rule)** or **left in place (suspected secret)**.
+    - What remains in that folder is exactly what the vault did not take. Delete it when you are satisfied.
+
+## 6. Checking results and fixing problems
+
+**(Phase 1)**
+
+- **Intake report:** `hot\reports\intake\index.html` is a static page with no network access. It shows:
+  - documents per batch, format and category;
+  - extraction paths used and quality scores;
+  - duplicates and quarantine reasons.
+- **Status page:** `hot\reports\status\index.html` shows service health, disk use per tier (with a warning at
+  85%), recent batches and the latest eval scores.
+
+**Commands:**
+
+| Command | What it does |
+|---|---|
+| `vault status` | One-screen summary |
+| `vault intake run` | Process the inbox once |
+| `vault intake watch` | Keep processing as batches complete |
+| `vault quarantine list` | Every quarantined file with its reason code |
+| `vault quarantine show <id>` | Details and the extraction attempts |
+| `vault quarantine retry <id>` | Retry after an extractor upgrade |
+| `vault verify` | Re-hash every original and text file against the integrity manifest |
+
+**Quarantine reason codes:**
+
+| Code | Meaning |
+|---|---|
+| `unsupported_format` | Not a document format |
+| `protected` | Encrypted or DRM |
+| `corrupt_file` | The file is damaged |
+| `empty_file` | The file has no content |
+| `extraction_failed` | Every extractor failed |
+| `low_quality_text` | Below the quality bar after every retry |
+| `incomplete_copy` | Did not match its manifest hash before the timeout |
+| `archive_limits` | An archive broke the unpack limits |
+| `id_collision` | Two different texts share a hash prefix; never expected in practice |
+| `path_too_long` | The path is too long to handle |
+| `suspected_secret` | Left in place (section 4) |
+
+**To fix a quarantined file:** deliver a better copy (a cleaner PDF, the EPUB, the JATS) in a new batch. Intake
+links it to the quarantined one.
+
+## 7. Categories
+
+The full map is `hot\meta\taxonomy\CATEGORIES.md`.
+
+| Priority | Category (slug) |
+|---|---|
+| 1 | Psychology and cognitive science (`psych-cogsci`) |
+| 2 | Engineering (`engineering`) |
+| 2 | Mathematics (`mathematics`) |
+| 3 | Medicine (`medicine`) |
+| 4 | Computer science and AI (`cs-ai`) |
+| 5 | Natural sciences (`natural-sciences`) |
+| 6 | Humanities (`humanities`) |
+| 7 | Social sciences and other (`social-other`) |
+
+- **Categories are metadata, never folders.** Reclassifying a document changes its category, not its address.
+- **The backbone is OpenAlex's taxonomy:**
+  - 4 domains, 26 fields, 252 subfields and 4,516 research topics.
+  - OpenAlex classifies the papers it knows, so most papers are categorised by the metadata lookup itself.
+  - Every topic maps to one **primary** vault category and any number of **secondary** ones.
+- **The cognitive-science overlay** makes cognition-related topics from other fields (language acquisition,
+  intelligent tutoring, dementia, ADHD, visual attention, the learning sciences in education) members of
+  psychology and cognitive science too.
+- **Study map:** psychology topics also carry an area, for focused searches:
+  - perception, attention, memory, language, thinking, emotion and motivation;
+  - developmental, social, personality, clinical, biological;
+  - methods, applied, computational, foundations.
+- **Books and preprints** are mapped through their Library of Congress or Dewey class (often printed in the book
+  itself) and their arXiv category.
+- **Precedence when sources disagree:** your manifest's `domain`, then OpenAlex's topic, then arXiv category,
+  then LCC, then DDC, then the inbox folder hint, then the nearest topic by meaning.
+  - Every assignment records its source and confidence.
+- **(Phase 1)** `vault classify <doc_id> <category>` overrides a category by hand. The override is recorded and
+  survives re-processing.
+
+## 8. Finding and reading content (traversal)
+
+### 8.1 Addresses
+
+| Form | Example |
+|---|---|
+| Line range | `3f9a1c07b2e4d55e-cowan-magical-number-four#L120-L148` |
+| Short form, same meaning | `3f9a1c07b2e4d55e#L120-L148` |
+| Single line | `…#L120` |
+
+- Lines are counted in the canonical Markdown. For prose, one line is one sentence; for code, one line is one
+  source line.
+- Responses also give the printed page ("p. 214") from the sidecar's page map, so you can check the original.
+- If a document was later re-extracted, its old addresses still resolve to exactly the cited text, with a pointer
+  to the newer version.
+
+### 8.2 The tools
+
+**(Phase 1-5)** These are the same over MCP (Claude Code, the tutor) and the native gRPC interface (the desktop
+app).
+
+| Tool | Use it to |
+|---|---|
+| `vault_info()` | Counts per category and format, coverage against targets, index version, deployment stage |
+| `find_docs(queries[], filters, k)` | Find documents: landmark studies, textbooks, a paper you half-remember |
+| `search(queries[], filters, k)` | Find passages by meaning and keywords, with addresses and pages |
+| `workspace(action, doc_ids[])` | Keep a working set of documents (add, list, clear) |
+| `grep(patterns[], scope, context_lines, max_hits)` | Exact or regex search. Scope is a document, the workspace, a category or study area, or the whole vault |
+| `read(addresses[], expand)` | Exact text at addresses, expanded by lines or to the whole section |
+| `outline(doc_ids[])` | Heading tree with line ranges and pages (for a repository: the file tree) |
+| `citations(doc_ids[], direction)` | What these documents cite, or what cites them, within the vault |
+| `define(terms[])` | Textbook definitions, from back-of-book indexes and definition passages |
+
+**Filters** (all optional):
+- `category`, `area` (psychology study map), `type`, `level`, `year_from`, `year_to`, `language`,
+  `openalex_topic`, `batch`.
+
+**The intended loop:** batch everything you can into one call at each step.
+1. `find_docs` and `search` with 2-4 focused queries.
+2. `workspace add` the promising documents.
+3. `grep` and `read` inside the workspace.
+4. `citations` to follow the trail.
+5. Answer with addresses.
+
+**Example** (the shape of an MCP call):
+
+```
+search(queries=["capacity limit of working memory", "Cowan embedded-processes model", "chunking in short-term memory"],
+       filters={"category": "psych-cogsci", "area": "memory"}, k=8)
+grep(patterns=["magical number (seven|four)"], scope={"workspace": true}, context_lines=1, max_hits=40)
+read(addresses=["3f9a1c07b2e4d55e#L120-L148"], expand="section")
+```
+
+**Response format:**
+- Every response stays within a size budget (about 8,000 tokens by default). It says when it truncated and how
+  to get the rest.
+- Returned text is wrapped as `<vault_passage address="…" page="…" id="…">…</vault_passage>`. It is reference
+  material, never instructions.
+
+### 8.3 Connecting Claude Code
+
+**(Phase 1)** The port and token location are filled in when libraryd ships.
+
+- **Stage 1 (this PC):**
+  `claude mcp add --scope user --transport http libraryd http://127.0.0.1:<port>/mcp --header "Authorization: Bearer <token>"`
+- **Stage 2 (AI PC):** the same command with the AI PC's private address in place of `127.0.0.1`.
+- The token is in a file only your account can read. Do not paste it into chats or commit it.
+
+### 8.4 Reading files directly
+
+You can open `hot\text\{h2}\{doc_id}.md` in any editor: it is plain Markdown. Its sidecar `hot\sidecars\…json`
+has the metadata, headings and page map. Find a document's id with `find_docs` or in the intake report. **Look,
+don't edit** (section 2).
+
+## 9. Moving the vault
+
+- **Nothing inside the vault records a machine name, drive letter or absolute path.** Each machine has its own
+  config, `%ProgramData%\vault\libraryd.toml`, outside the vault: tier roots, bind address, token file, sidecar
+  URLs and model paths. Moving the vault is a config change plus a validation run.
+- **Stand-in to SSD (now):**
+  1. Copy the whole `E:\Stand-In Vault` folder to the SSD, for example `F:\vault`.
+  2. Point the config at it.
+  3. Run `vault verify` and the invariant suite. Nothing has been ingested yet, so today this is just a copy.
+- **SSD to AI PC (transfer day):**
+  1. Bring jobs to a clean checkpoint (writers committed, databases checkpointed, services stopped).
+  2. Verify integrity and run the invariant suite.
+  3. Safely remove the drive and install it in the AI PC.
+  4. Write the AI PC's config, then verify and run the invariant suite again.
+  5. Point the tutor and Claude Code at the network address.
+  - The full procedure is in the repository README (Transfer phase).
+- **The cold tier can move on its own,** for example to the AI PC's hard drive if space gets tight. Copy
+  `cold\`, change `cold_root` in the config, and verify.
+
+## 10. Rules that keep the vault trustworthy
+
+- **Everything in the vault is readable by the tutor.** Do not deliver answer keys, eval files, private notes you
+  don't want quoted, or secrets. The eval directory deliberately lives outside the vault.
+- **Never edit `hot\` or `cold\` by hand.** Deliver a corrected file instead.
+- **Keep the drive's own permissions** (Authenticated Users: Modify). They keep working after the drive moves to
+  another PC. Don't add permissions for your personal account only.
+- **Space:** the status page and `vault_info` warn before either tier passes 85% of its disk.
+- **Backups:** originals, `hot\text\`, `hot\sidecars\` and `hot\db\` are the hard-won assets. Indexes rebuild.
+  The backup scheme and restore test arrive in Phase 8.
+
+## 11. Quick reference
+
+| I want to… | Do this |
+|---|---|
+| Deliver papers and books | `inbox\<date-name>\` + files + optional `manifest.tsv` + `_BATCH_COMPLETE` |
+| Deliver an oa-forge harvest | Drop the whole root folder into `inbox\` |
+| Deliver one file | Put it in `inbox\loose\<category>\` |
+| Deliver source code | Copy the repository into a batch folder (remove secrets first), + `_BATCH_COMPLETE` |
+| See what happened | `inbox\_done\<batch>\_INTAKE_REPORT.md`, or `hot\reports\intake\index.html` |
+| Fix a quarantined file | Deliver a better copy in a new batch |
+| Find something | `find_docs` / `search`, then `grep` / `read` |
+| Cite something | Copy the address it returned: `doc_id#Lstart-Lend` (+ page) |
+| Check integrity | `vault verify` |

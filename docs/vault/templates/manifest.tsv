@@ -1,0 +1,3 @@
+file	domain	type	level	title	authors	year	doi	arxiv_id	pmcid	isbn	language	edition	url	provenance	license_class	license	sha256	bytes	version_of
+papers/baddeley-1974.pdf	psych-cogsci	paper	landmark	Working memory	Baddeley, A. D.; Hitch, G.	1974	10.1016/S0079-7421(08)60452-1						en				owned_copy		<sha256 hex>	<bytes>
+books/example-textbook.epub	psych-cogsci	book	graduate	Example Textbook Title	Author, A.	2021				9780000000000	en	3	https://example.org/book	publisher purchase	owned_copy		<sha256 hex>	<bytes>
