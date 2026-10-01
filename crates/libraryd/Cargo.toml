@@ -14,6 +14,7 @@ mock = ["dep:regex"]
 [dependencies]
 vault-api = { workspace = true, features = ["schema"] }
 vault-client = { workspace = true, features = ["server"] }
+vault-core.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,5 +35,6 @@ regex = { workspace = true, optional = true }
 clap = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+tempfile.workspace = true
 tower.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }

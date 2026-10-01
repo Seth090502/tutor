@@ -1,12 +1,14 @@
-//! The `libraryd` binary itself: token creation, config handling, `--mock` start-up, and refusing to start
-//! without a vault backend.
+//! The `libraryd` binary itself: token creation, config handling, `--mock` start-up, serving a real vault, and
+//! refusing to start when the vault cannot be opened.
 
 mod common;
 
 use common::raw_http;
+use common::real;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use vault_api::ReadRequest;
 use vault_client::{ClientOptions, Secret, VaultClient};
 
 fn scratch(name: &str) -> PathBuf {
@@ -46,9 +48,14 @@ impl Drop for Running {
     }
 }
 
-/// Starts the binary and waits for its "ready" log line, which names the ports it picked.
-fn start(config: &Path) -> Running {
-    let mut child = libraryd(&["--mock", "--config", config.to_str().unwrap()])
+/// Starts the binary (on the mock unless `mock` is false) and waits for its "ready" log line, which names the
+/// ports it picked.
+fn start(config: &Path, mock: bool) -> Running {
+    let mut args = vec!["--config", config.to_str().unwrap()];
+    if mock {
+        args.push("--mock");
+    }
+    let mut child = libraryd(&args)
         .env("NO_COLOR", "1")
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
@@ -94,7 +101,7 @@ fn init_token_writes_64_hex_and_never_overwrites() {
 }
 
 #[test]
-fn start_without_a_token_file_or_a_backend_fails_clearly() {
+fn start_without_a_token_file_or_a_vault_fails_clearly() {
     let dir = scratch("fail");
     let config = write_config(&dir);
 
@@ -105,7 +112,11 @@ fn start_without_a_token_file_or_a_backend_fails_clearly() {
     assert!(libraryd(&["--config", config.to_str().unwrap(), "--init-token"]).output().unwrap().status.success());
     let out = libraryd(&["--config", config.to_str().unwrap()]).output().unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("no vault backend is wired in yet"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cannot open the vault described by") && stderr.contains("missing field `vault`"),
+        "{stderr}"
+    );
 
     let missing = libraryd(&["--config", dir.join("nope.toml").to_str().unwrap()]).output().unwrap();
     assert!(!missing.status.success());
@@ -118,7 +129,7 @@ async fn the_mock_binary_serves_health_mcp_auth_and_grpc() {
     let config = write_config(&dir);
     assert!(libraryd(&["--config", config.to_str().unwrap(), "--init-token"]).output().unwrap().status.success());
     let token = std::fs::read_to_string(dir.join("token")).unwrap().trim().to_string();
-    let server = start(&config);
+    let server = start(&config, true);
 
     let mcp_addr: std::net::SocketAddr = server.mcp.parse().unwrap();
     let (status, _, body) = raw_http(mcp_addr, "GET", "/healthz", &[], "").await;
@@ -143,4 +154,38 @@ async fn the_mock_binary_serves_health_mcp_auth_and_grpc() {
     assert_eq!(client.vault_info().await.unwrap().vault_id, "mock-vault-0001");
     drop(server);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn start_before_intake_has_created_the_database_says_so() {
+    let vault = real::empty();
+    let config = vault.config_path.to_str().unwrap();
+    assert!(libraryd(&["--config", config, "--init-token"]).output().unwrap().status.success());
+    let out = libraryd(&["--config", config]).output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("hot/db/vault.sqlite does not exist yet; run intake once"), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_binary_serves_the_real_vault_named_in_its_config() {
+    let vault = real::build();
+    let config = vault.config_path.to_str().unwrap();
+    assert!(libraryd(&["--config", config, "--init-token"]).output().unwrap().status.success());
+    let token = std::fs::read_to_string(&vault.token_file).unwrap().trim().to_string();
+    let server = start(&vault.config_path, false);
+
+    let (status, _, body) = raw_http(server.mcp.parse().unwrap(), "GET", "/healthz", &[], "").await;
+    assert!(status == 200 && body.contains(real::VAULT_ID), "{body}");
+
+    let client =
+        VaultClient::connect(&format!("http://{}", server.grpc), Some(Secret::new(token)), ClientOptions::default())
+            .await
+            .unwrap();
+    let info = client.vault_info().await.unwrap();
+    assert_eq!((info.vault_id.as_str(), info.documents), (real::VAULT_ID, vault.docs.len() as u64));
+    let (doc, text) = &vault.docs[0];
+    let read = ReadRequest { addresses: vec![format!("{doc}#L1")], expand: None, max_tokens: None };
+    let passage = client.read(read).await.unwrap().passages.remove(0);
+    assert_eq!(passage.text, text.lines().next().unwrap());
 }

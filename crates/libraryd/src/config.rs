@@ -1,8 +1,7 @@
 //! The machine config (docs/phase1/SPEC.md section 4), reduced to what libraryd itself reads.
 //!
-//! vault-core owns the full config. Until it lands this module reads the TOML directly: `stage`, `machine`,
-//! `[vault].root` and `[server]`. Every other section is ignored. When vault-core's config module is ready,
-//! replace `Config::load` with a conversion from that type and keep [`ServerSection`].
+//! vault-core owns the full config and opens the vault from the same file. This module reads the TOML directly:
+//! `stage`, `machine`, `[vault].root` and `[server]`. Every other section is ignored.
 
 use serde::Deserialize;
 use std::ffi::OsString;

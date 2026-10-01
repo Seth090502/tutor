@@ -7,11 +7,14 @@ Spec: `docs/phase1/SPEC.md` section 11. Wire contract: `proto/vault.proto`. Clie
 
 ```
 libraryd --config <libraryd.toml> --init-token     # once: writes [server].token_file (64 hex), never overwrites
-libraryd --config <libraryd.toml> --mock           # fixture data, until vault-core is wired in
+libraryd --config <libraryd.toml>                  # serves the vault named in [vault]
+libraryd --config <libraryd.toml> --mock           # fixture data instead of a vault
 ```
 
 Config lookup: `--config`, `VAULT_CONFIG`, `%ProgramData%\vault\libraryd.toml`, `%APPDATA%\vault\libraryd.toml`.
-Only `stage`, `machine`, `[vault].root` and `[server]` are read here (`src/config.rs`); everything else is ignored.
+libraryd reads `stage`, `machine` and `[server]` itself (`src/config.rs`) and ignores the rest. The vault is opened by
+vault-core from the same file (`VaultConfig::from_file`), which validates all of it. vault-core is stricter about unknown
+keys and identical bind strings; libraryd about `allowed_hosts` (non-empty, plain host names).
 
 | Endpoint | Address (default) | Auth |
 |---|---|---|
@@ -44,12 +47,16 @@ Claude Code: `claude mcp add --scope user --transport http libraryd http://127.0
   sees the stream close (rmcp ends sessions as soon as it is told to stop).
 - **Logs** go to stderr; the token and presented tokens are never logged.
 
-## Wiring the real vault
+## The vault
 
-`src/main.rs` has one marked place (`WIRE-UP POINT`) where the real `vault_core::Vault` replaces the mock. Nothing else
-changes.
+Without `--mock`, `src/main.rs` opens `vault_core::Vault` from the config and serves it through `Blocking`
+(`src/blocking.rs`), which runs every call on tokio's blocking pool because the vault's calls do SQLite and file I/O.
+A panic inside a call becomes a generic `Internal` error. Startup stops with a message saying what is missing, for
+example `hot/db/vault.sqlite does not exist yet; run intake once to create the vault database`. A call that overruns
+its deadline is answered `Unavailable` but keeps running on the blocking pool until it finishes.
 
 ## Tests
 
 `cargo test -p libraryd` starts the server on ephemeral ports and drives it with the `rmcp` client and `vault-client`.
+`tests/real_vault.rs` does so over a temporary vault built through vault-core.
 Latency (informational): `cargo test -p libraryd --release --test latency -- --ignored --nocapture`.
