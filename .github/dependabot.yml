@@ -1,5 +1,6 @@
-# Grouped, monthly version updates (security updates arrive as soon as an advisory lands). Grouping keeps it
-# to about one pull request per ecosystem a month, which keeps CI minutes down on this private repo.
+# Grouped, monthly minor and patch updates; major versions are reviewed by hand, not proposed automatically.
+# Security updates arrive as soon as an advisory lands, at any version. Grouping keeps it to about one pull
+# request per ecosystem a month, which keeps CI minutes down on this private repo.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -7,6 +8,9 @@ updates:
     schedule: { interval: monthly }
     groups:
       actions: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /
@@ -14,6 +18,9 @@ updates:
     open-pull-requests-limit: 3
     groups:
       python: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /apps/desktop
@@ -21,6 +28,9 @@ updates:
     open-pull-requests-limit: 3
     groups:
       desktop-npm: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /web
@@ -28,6 +38,9 @@ updates:
     open-pull-requests-limit: 3
     groups:
       web-npm: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /
@@ -35,6 +48,11 @@ updates:
     open-pull-requests-limit: 3
     groups:
       rust: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # LanceDB is pinned on purpose (docs/tutor/PLAN.md, known issues: 0.38+ needs the remote feature).
+      - dependency-name: "lancedb"
 
   # The vault pins exact versions on purpose (SPEC section 1): security updates only.
   - package-ecosystem: cargo
