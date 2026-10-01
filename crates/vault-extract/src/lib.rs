@@ -12,6 +12,10 @@ pub mod jats;
 pub mod mathml;
 pub mod notebook;
 pub mod odt;
+#[cfg(feature = "pdfium")]
+pub mod pdf;
+pub mod pdfclass;
+mod pdflayout;
 pub mod pdfscan;
 pub mod quality;
 mod tables;

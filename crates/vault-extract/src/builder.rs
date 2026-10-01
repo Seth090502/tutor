@@ -40,9 +40,15 @@ impl MdBuilder {
     /// Add the separating blank line (unless this continues a tight list), then flush pending page marks onto the
     /// line about to be written.
     fn begin(&mut self, continues_list: bool) {
+        self.begin_with(continues_list, false)
+    }
+
+    /// Like [`begin`](Self::begin); `continues_para` also suppresses the blank line after a paragraph.
+    fn begin_with(&mut self, continues_list: bool, continues_para: bool) {
         let needs_blank = match self.last() {
             Last::Start => false,
             Last::List => !continues_list,
+            Last::Para => !continues_para,
             _ => true,
         };
         if needs_blank {
@@ -74,6 +80,19 @@ impl MdBuilder {
             return;
         }
         self.begin(false);
+        self.lines.push(escape_block_start(&text));
+        self.last = Some(Last::Para);
+    }
+
+    /// More text of the previous paragraph, on the next line with no blank line between: the paragraph is split
+    /// where a page boundary falls, so the page mark lands on the right line. Falls back to a new paragraph when
+    /// the previous block was not a paragraph.
+    pub fn paragraph_cont(&mut self, text: &str) {
+        let text = collapse_ws(text);
+        if text.is_empty() {
+            return;
+        }
+        self.begin_with(false, true);
         self.lines.push(escape_block_start(&text));
         self.last = Some(Last::Para);
     }
@@ -341,6 +360,23 @@ mod tests {
         b.list_item(0, "-", "two");
         b.paragraph("After");
         assert_eq!(b.finish().markdown, "Intro\n\n- one\n  - nested\n- two\n\nAfter\n");
+    }
+
+    #[test]
+    fn continued_paragraph_has_no_blank_line_and_carries_the_page_mark() {
+        let mut b = MdBuilder::new();
+        b.page_break(Some("1".into()));
+        b.paragraph("first half of a sentence");
+        b.page_break(Some("2".into()));
+        b.paragraph_cont("second half.");
+        b.paragraph("Next paragraph.");
+        let f = b.finish();
+        assert_eq!(f.markdown, "first half of a sentence
+second half.
+
+Next paragraph.
+");
+        assert_eq!(f.pages.iter().map(|p| p.line).collect::<Vec<_>>(), vec![1, 2]);
     }
 
     #[test]
