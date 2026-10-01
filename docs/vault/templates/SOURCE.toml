@@ -3,10 +3,11 @@
 
 name = "example-repo"
 url = "https://github.com/owner/example-repo"
-commit = ""                      # leave empty if the delivered copy has a .git folder (the HEAD commit is read from it)
+commit = ""                      # the delivered commit; /ingest fills it from .git, which it does not copy
 license = "MIT"                  # SPDX id, or "owned" / "unknown"; LICENSE files are detected anyway
 categories = ["cs-ai"]           # first one is primary; e.g. ["cs-ai", "psych-cogsci"] for a PsychoPy experiment
 collections = ["gamedev"]         # named sets agents can scope to, e.g. gamedev, compilers, rust-exemplars
 level = "graduate"               # intro | graduate | landmark | recent
 description = "One line on what this code is and why it is in the vault."
 companion = ""                   # optional: DOI or title of the book or paper this code accompanies
+profile = ""                     # only if detection gets it wrong: unreal | source-engine | godot | generic

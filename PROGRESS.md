@@ -34,7 +34,8 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 - [x] Stand-in vault laid out; INSTRUCTIONS.md, AGENTS.md, category map (OpenAlex topics + overlays + crosswalks)
 - [x] vault-api contract and docs/phase1/SPEC.md
 - [ ] Wave 1 (running): vault-core foundation, libraryd + vault-client, vault-extract + PDF/EPUB spike
-- [ ] Code research and repo sweep -> code design (SPEC section 9), then vault-code
+- [x] Code research and repo sweep -> code design (`docs/phase1/CODE-DESIGN.md`; SPEC section 9 summarises it)
+- [ ] vault-code increments C1-C7 (CODE-DESIGN section 7; about 26-32 worker-days, estimate)
 - [ ] Wave 2: intake pipeline + `vault` CLI, grep with trigram, collections, MCP instructions + skill
 - [ ] Per-machine config (hot and cold roots); nothing machine-specific in the vault
 - [ ] Intake: format detection, routing, metadata, language, dedup, quality checks, quarantine, intake report page

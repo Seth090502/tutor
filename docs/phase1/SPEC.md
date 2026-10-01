@@ -86,11 +86,15 @@ Owner decisions in force (2026-10-01):
 
 **Code** (section 9): decode as in step 1, CRLF and CR become LF, the BOM is removed. **Nothing else changes**:
 tabs, trailing spaces, NFC form and a missing final newline all stay, so line numbers equal the original's.
+**Code lines are LF-delimited, by definition:** VT, FF, U+0085, U+2028 and U+2029 are ordinary characters inside
+a code line (GPL `COPYING` files carry form feeds). Every consumer of code text (grep, read, tutor-runtime's
+citation check) splits code on LF only. The encoding found is recorded (`CODE-DESIGN.md` 3.5).
 
 **Required properties (tests):**
 - `normalize(normalize(x)) == normalize(x)`.
 - No text is lost: the multiset of non-whitespace characters is unchanged, except the removals in step 4.
-- A Python `splitlines()` and a Rust `lines()` on the output agree.
+- Prose: a Python `splitlines()` and a Rust `lines()` on the output agree. Code: `split('\n')` on the canonical
+  text equals the original's line sequence after decoding and CRLF/CR conversion.
 
 ## 3a. Sidecar (`hot/sidecars/{h2}/{doc_id}.json`)
 
@@ -200,8 +204,11 @@ openalex_key_env = "OPENALEX_API_KEY"  # value read from the environment; never 
 | `doc_areas` | `doc_id`, `area` |
 | `lineage` | `old_doc`, `new_doc`, `reason`, `at` |
 | `near_dups` | `group_id`, `doc_id`, `is_primary`, `similarity` |
-| `repos` | `repo_id`, `name`, `url`, `commit`, `license`, `snapshot_at`, `doc_id`, `batch_id` |
-| `repo_files` | `repo_id`, `path`, `doc_id`, `language`, `swhid` |
+| `repos` | `repo_id`, `name`, `url`, `license`, `redistributable`, `profile`, `first_seen` |
+| `repo_snapshots` | `snapshot_id`, `repo_id`, `commit`, `tree_digest`, `batch_id`, `snapshot_at`, `repo_doc_id`, `is_current` |
+| `repo_files` | `snapshot_id`, `path`, `doc_id` (NULL when excluded), `outcome`, `class`, `class_reason`, `language`, `encoding`, `bytes`, `swhid`, `swhid_lf`, `canonical_equals_original`, `parse_state`, `license` |
+| `symbols`, `doc_refs`, `file_edges`, `file_rank`, `sym_refs` | Derived code indexes, rebuildable from the text (`CODE-DESIGN.md` 4.1, 4.5) |
+| `collections`, `collection_members` | `name`, `description`, `created_at`; `collection`, `repo_id` or `doc_id`, `added_at`, `source` (`CODE-DESIGN.md` 5.3) |
 | `quarantine` | `id`, `delivery_id`, `blake3`, `reason`, `detail`, `stored_rel_path`, `at` |
 | `jobs` | `job_id`, `stage`, `key`, `state` (`queued`/`running`/`done`/`failed`/`waiting`), `attempts`, `fingerprint`, `last_error`, `updated_at`. Unique on (`stage`, `key`) |
 | `doc_fts` | FTS5 over `doc_id` (unindexed), `title`, `authors`, `abstract`, `headings`, `keywords` (for `find_docs` in Phase 1) |
@@ -212,8 +219,10 @@ openalex_key_env = "OPENALEX_API_KEY"  # value read from the environment; never 
   report `inbox/_done/<batch>/_INTAKE_REPORT.md` lists every file.
 - **Reason codes:** `unsupported_format`, `protected`, `corrupt_file`, `empty_file`, `extraction_failed`,
   `low_quality_text`, `incomplete_copy`, `archive_limits`, `id_collision`, `path_too_long`, `suspected_secret`.
-- **Exclusion rules (code only):** `vcs-metadata`, `dependencies`, `build-output`, `lockfiles`, `generated`,
-  `binary`, `oversize-text`.
+- **Exclusion rules (code only):** `vcs-metadata`, `dependencies`, `gitignored`, `build-output` (by artefact
+  signature, never by folder name), `lockfiles`, `minified`, `binary`, `oversize-text` (text over 2 MiB that is
+  not source, and any text over 16 MiB). Generated files are stored and tagged, not excluded
+  (`CODE-DESIGN.md` 3.3).
 - **Readiness:** INSTRUCTIONS.md section 3.
 
 ## 8. Formats and routing (Phase 1 availability)
@@ -241,41 +250,51 @@ Detection is by content: magic bytes, then container inspection.
 - CJK ratio.
 - Book versus paper from page count over 120 and metadata.
 
-## 9. Source code (summary; full design after the code research)
+## 9. Source code (summary; the full design is `docs/phase1/CODE-DESIGN.md`)
 
 **Scope (owner, 2026-10-01):** not only game code. Many state-of-the-art open-source codebases, organised in
 collections such as `gamedev` and `rust-exemplars`. An agent mid-development can look at how they solve the same
-problem, compare approaches across repositories, and read exact lines, seamlessly.
+problem, compare approaches across repositories, and read exact lines, seamlessly. **Delivered code is open
+source, the owner's own, or publicly published by its authors without a licence** (recorded `unknown`, not
+redistributable). Leaked proprietary source and decompilations of commercial products are not delivered:
+`/ingest` lists them in its report (lead decision on CODE-DESIGN 9.5, following the scope agreed with the owner).
 
-**Correction from the repo sweep (`docs/phase0/repos-*.md`):**
-- **Classify files by content and markers, never by directory name alone.** Several tools exclude `bin/`,
-  `build/`, `out/` and `docs/` by name, which drops real engine source.
-- **Use these signals:**
-  - `.gitignore` and `.gitattributes` (`linguist-vendored`, `linguist-generated`) through the `ignore` crate;
-  - `@generated` headers;
-  - build-artifact signatures (object files, PDBs, `CMakeCache.txt`);
-  - lockfiles;
-  - minified-content heuristics.
-- **Vendored third-party code** (Godot's `thirdparty/`) is kept and tagged `vendored`. It is de-duplicated across
-  repositories by content.
-- **Translations and similar bulk data** (`.po`) are indexed lightly or excluded by a named, reported rule.
-
-- Each kept file is its own document, canonicalised as code (section 3) and addressed by its real line
-  numbers.
-- One repository document per repository snapshot holds: the README first, then the file tree with addresses,
-  then the ranked symbol map.
-- Exclusion rules are listed in section 7.
-- **Secret scanning** runs before anything is stored. A hit is recorded as quarantined with reason
-  `suspected_secret` and **left in place**: never copied, indexed or served.
-- **Identity:** the repository's remote URL and HEAD commit come from `.git` files (read, never by running git).
-  Each file gets a SWHID content id.
+**The design in brief** (section numbers refer to `CODE-DESIGN.md`, which is normative for code):
+- **Repository detection and snapshots (3.1, 3.10):** a folder with `SOURCE.toml`, `.git` or build files at the
+  top of a batch subfolder. Snapshot key `(name, commit)`, else `(name, tree_digest)`. A later commit is a new
+  snapshot; unchanged files keep their `doc_id`s and addresses. HEAD only, no history.
+- **Classify, don't delete (3.3):** every file gets exactly one outcome and, if stored, one class (`source`,
+  `build`, `docs`, `test`, `generated`, `vendored`, `data`), decided by content and repository markers, never by a
+  folder name alone. The signal is recorded in `repo_files.class_reason`. Exclusion rules are in section 7.
+- **Canonical text and identity (3.5):** section 3's code rule; `doc_id` over the canonical bytes, so identical
+  content in two repositories is one document; SWHID per file (`swhid` over the delivered bytes, `swhid_lf` over
+  LF bytes when they differ); `swh:1:rev` when the commit is known. No `gix`: `.git` files are read as text.
+- **Licence (3.6):** `SOURCE.toml`, then root licence files via `spdx` detection, then manifest fields, else
+  `unknown`; `redistributable` per repository; any export feature must refuse `redistributable=false`.
+- **Secret scanning (3.7)** runs before anything is stored: gitleaks rules (pinned data file, `generic-api-key`
+  disabled) plus filename rules. A hit is recorded as quarantined with reason `suspected_secret` and **left in
+  place**: never copied, indexed or served.
+- **Macro pre-pass (3.9):** C/C++ is parsed from a shadow buffer in which export and annotation macros are blanked
+  with byte length and newlines unchanged; the stored text never changes. Files that trip the hazard rule are
+  flagged `parse_state = degraded` and chunked by lines.
+- **Repository document (3.11):** one per snapshot, generated deterministically: metadata, README, module list,
+  file tree with addresses and classes, ranked symbol map.
+- **Indexes (4):** tree-sitter 0.27 tags for symbols; references stored per document as compressed blobs plus
+  aggregated file edges with honest resolution labels; cAST chunks snapped to whole lines; a separate code BM25F
+  index with an identifier analyzer; the trigram index covers every stored file with no cap; dense vectors for
+  primary source only, in their own usearch index.
+- **Tools (5):** no new tools and no new address form; the additive `vault-api` fields in 5.1 land together in
+  increment C3.
+- **Order of work (7):** C1 intake, C2 symbols, C3 collections and scopes, C4 code eval, C5 references and maps,
+  C6 BM25F, C7 dense; C8 options only behind the eval.
 
 ## 10. Phase 1 tools (`vault-core` implementing `vault-api`)
 
 - **`read`:** resolves by `hash16`. `expand` is either lines or section (the innermost heading containing the
   range). It returns `page` and `section`, and per-item errors for unknown ids or out-of-range lines.
 - **`outline`:** headings and pages from the sidecar; symbols for code.
-- **`grep`:** scope is docs, category (with area), or the whole vault; workspace arrives in Phase 5.
+- **`grep`:** scope is docs, category (with area), or the whole vault; a repository or a collection with code
+  increment C3; workspace arrives in Phase 5.
   - The vault-wide scope uses a tantivy trigram field over line-aligned blocks of about 16 KiB. The query is
     planned from the regex (Cox and Zoekt method) with `regex-syntax`.
   - Candidates are then verified with `grep-regex` and `grep-searcher` over the canonical text, and real line
@@ -329,7 +348,7 @@ definitions and references across files and repositories, and read exactly what 
   - `citations` follows reference and import edges.
   - `grep` has symbol-aware ranking.
   - `find_docs` routes to repositories and files.
-  - The details land in section 9 from the code research (`docs/phase0/research-code-*.md`, `repos-*.md`).
+  - The details are in section 9 and `docs/phase1/CODE-DESIGN.md` section 5.
 - **Everything is Rust.** Specialist non-Rust tools (MinerU, GROBID, llama.cpp, pandoc) run only as sidecar
   processes called from Rust.
 

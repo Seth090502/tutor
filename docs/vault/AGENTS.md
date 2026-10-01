@@ -106,6 +106,9 @@ Report numbers you measured, not remembered ones, and say what you did not check
 
 ## Source code repositories
 
+- **Scope:** open-source code, the owner's own code, and code its authors published without a licence
+  (`unknown`). Leaked proprietary source and decompilations of commercial products are not part of the vault; if
+  you find any in the inbox, report it to the owner instead of running intake on it.
 - **Each source file is its own document, stored verbatim** (UTF-8, LF), so `doc_id#L40-L72` is exactly lines
   40-72 of the original file. A generated repository document holds the README, the file tree and the symbol
   map.

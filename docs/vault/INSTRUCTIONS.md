@@ -181,7 +181,7 @@ Format is detected from the file's content, not its extension.
 | Markdown, plain text | Normalised directly (encoding detected) |
 | Jupyter notebooks | Cells become Markdown, with code in fenced blocks |
 | ZIP or TAR archives | Unpacked (limits: 500 MB, ratio 100:1, 10,000 entries); each member is processed as its own file |
-| Source code inside a code folder | Stored verbatim (section 4) |
+| Any text file inside a code folder, including Markdown | Stored verbatim (section 4) |
 | Images, audio, video, executables, fonts | Quarantined as `unsupported_format` (re-deliver a PDF if it is a document) |
 | Encrypted PDF, DRM EPUB | Quarantined as `protected` |
 
@@ -195,41 +195,127 @@ When you have two formats of the same work, deliver both: intake keeps the best 
 
 ## 4. Source code folders
 
-Copy each repository (or a folder of repositories) into a batch folder, then add `_BATCH_COMPLETE`. Intake
-**(Phase 1)** recognises a code tree from its contents: a `.git` folder, `Cargo.toml`, `package.json`,
-`pyproject.toml`, `go.mod`, a `*.sln`, and so on.
+Deliver code with `/ingest` (section 3.0), or by hand: copy each repository as **one whole folder** into a
+batch folder, then add `_BATCH_COMPLETE`. A folder of repositories is fine; each repository inside it is handled
+on its own.
 
-**What happens to a repository:**
-- **Every source and text file becomes its own vault document, stored verbatim.**
-  - Encoding goes to UTF-8 and line endings to LF. Nothing else changes: no reflow, no sentence splitting.
-  - So `…#L40-L72` is exactly lines 40-72 of the original file.
-- **A repository document is generated:** the README first, then the file tree with each file's address. It is
-  what `outline` shows for the repository.
-- **Recorded per repository:** name, the remote URL and HEAD commit (read from `.git` if present), the licence
-  (from `LICENSE`/`COPYING`), and the language of each file.
-- **Optional:** put a `SOURCE.toml` at the repository root (template in `inbox\_templates\SOURCE.toml`) to state
-  the URL, licence, commit, category and a one-line description.
-- **Category:** `cs-ai` by default. `SOURCE.toml` or the manifest can add others; for example, a PsychoPy
-  experiment repository can also be `psych-cogsci`.
-- **Documents inside the repository** (PDFs, EPUBs, notebooks, Markdown docs) go through their normal routes.
+**(Phase 1)** Intake recognises a repository by a `SOURCE.toml` at its root (the `/ingest` skill writes one), or
+by its contents: a `.git` folder or build files such as `Cargo.toml`, `CMakeLists.txt`, `package.json`, `go.mod`,
+`*.sln`, `SConstruct` or `*.uproject`.
 
-**Excluded by rule.** These are never silently dropped: the batch report lists each one with its path, size,
-BLAKE3 hash and the rule that matched, and the files stay in `inbox\_done\<batch>\` for you to review:
+### What happens to a repository
 
-| Rule | Paths |
+- **Every text file becomes its own vault document, stored verbatim.**
+  - The encoding becomes UTF-8, line endings become LF, and a byte-order mark is removed. Nothing else changes:
+    tabs, trailing spaces and a missing final newline all stay.
+  - So `…#L40-L72` is exactly lines 40-72 as any editor shows them.
+  - This includes Markdown, text and other documentation files inside the repository, so their line numbers
+    match the repository too.
+  - PDFs, EPUBs and notebooks inside a repository go through their normal routes (section 3.5). A notebook's
+    line numbers refer to its converted text, not to the `.ipynb` file.
+- **Each file is classified by its content and the repository's own markers, never by folder name alone.**
+  A `build\`, `bin\` or `docs\` folder that holds real source is kept.
+
+  | Class | Examples | How agents see it |
+  |---|---|---|
+  | source | `.cpp`, `.rs`, `.cs`, `.gd`, `.hlsl` | Searched and ranked first |
+  | build | `CMakeLists.txt`, `Cargo.toml`, `*.Build.cs`, `SConstruct` | Searched; used for the module map |
+  | docs | `README.md`, design notes, Godot's `doc/classes/*.xml` | Searched |
+  | test | test folders and files (`*_test.go`, `tests\`) | Searched, ranked below source |
+  | generated | files with an `@generated` or "DO NOT EDIT" header, `*.gen.*`, `linguist-generated` | Searched, ranked below source |
+  | vendored | third-party copies (`thirdparty\`, `linguist-vendored`) | Searched, ranked below source |
+  | data | translations (`.po`), large tables, test baselines | Found by exact search (`grep`) and `read` only |
+
+  - The signals are the repository's `.gitignore` and `.gitattributes` (`linguist-vendored`,
+    `linguist-generated`, `linguist-language`), Godot's `.gdignore`, generated-file headers, Linguist's list of
+    vendored paths, build-artefact signatures, and line length (minified files).
+- **Identical files are stored once.** When several repositories carry the same file (a vendored zlib, a
+  forked engine), it is one document listed under every repository, with the same address everywhere.
+- **A repository document is generated for each delivery:** a metadata block (name, URL, commit, licence,
+  languages, collections), the README, the file tree with each file's address and class, binary files listed
+  by path, size and type, and a ranked map of the main symbols. `outline` on it shows the tree and the map.
+- **Recorded per repository:** name, URL and commit (from `SOURCE.toml`, or read from `.git` if it was
+  delivered), the licence, and the language of each file. Each file also gets a Software Heritage identifier
+  (SWHID) of the delivered bytes.
+- **Symbols:** functions, classes, methods and other definitions are extracted with line ranges for the main
+  languages. They power `outline`, `define`, `citations` and symbol-aware ranking. Languages without symbol
+  support are still fully searchable with `grep` and `search`; `vault_info` lists the coverage per language.
+- **Macro-heavy C++** (Unreal, Source engine, Godot) is parsed with a profile that hides export and annotation
+  macros (`ENGINE_API`, `UCLASS(...)`, `GDCLASS(...)`) from the parser only. The stored text is never changed.
+  Files the parser cannot fully understand are flagged, and stay searchable.
+
+### `SOURCE.toml`
+
+Optional, at the repository root. `/ingest` writes it; a template is in `inbox\_templates\SOURCE.toml`.
+Every field is optional.
+
+| Field | Meaning |
 |---|---|
-| `vcs-metadata` | `.git\`, `.hg\`, `.svn\` (history is not ingested; the HEAD commit is recorded) |
-| `dependencies` | `node_modules\`, `.venv\`, `venv\`, `site-packages\`, `bower_components\`, Go `vendor\` |
-| `build-output` | `target\`, `build\`, `dist\`, `out\`, `bin\`, `obj\`, `__pycache__\`, `.next\`, `.gradle\`, `.idea\`, `.vs\`, `*.pyc` |
-| `lockfiles` | `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock` |
-| `generated` | `*.min.js`, `*.map`, files marked `@generated` |
-| `binary` | non-text files that are not a supported document format |
-| `oversize-text` | text files over 2 MB (usually generated); listed so you can re-deliver one deliberately |
+| `name` | Short repository name, used in results and in `repo` filters |
+| `url` | Where it came from |
+| `commit` | The commit delivered. `/ingest` reads it from `.git` because it does not copy `.git` |
+| `license` | SPDX id (`MIT`, `GPL-2.0-only`…), `owned` for your own code, or `unknown`. Licence files are detected anyway |
+| `categories` | First one is primary; usually `cs-ai` |
+| `collections` | Named sets this repository joins, for example `gamedev`, `compilers`, `rust-exemplars` |
+| `level` | `intro`, `graduate`, `landmark` or `recent` |
+| `description` | One line on what the code is and why it is in the vault |
+| `companion` | DOI or title of a book or paper this code accompanies |
+| `profile` | Only if detection gets it wrong: `unreal`, `source-engine`, `godot` or `generic` |
 
-**Secrets: please remove them before copying.**
+**Licences:** deliver open-source code, your own code, and code its authors published without a licence. A
+repository with no licence file is still ingested and searchable; it is recorded as `unknown` and marked not
+redistributable, and nothing the vault exports will include it.
+
+### Collections
+
+- **A collection is a named, persistent set of repositories and documents,** for example `gamedev` = the engines
+  and games plus a few books. Agents can search, grep or map a whole collection in one call.
+- `SOURCE.toml` `collections` adds a repository at intake. **(Phase 1)** `vault collection create|add|remove|list`
+  edits collections later.
+- Collections are labels: changing them never changes an address.
+
+### A later commit of the same repository
+
+- Deliver the whole folder again, with the new `commit` in `SOURCE.toml`. It becomes a **new snapshot.**
+- Unchanged files keep their documents and addresses. Changed and new files become new documents.
+- The old snapshot stays readable, and its addresses keep working. Searches use the newest snapshot of each
+  repository unless a request names an older one.
+- **History is not ingested,** only the delivered files. Most delivered clones are shallow anyway.
+
+### Excluded by rule
+
+These are never silently dropped. The batch report lists each one with its path, size, BLAKE3 hash and the rule
+that matched, and the files stay in `inbox\_done\<batch>\` for you to review. Large exclusions are summarised per
+folder.
+
+| Rule | What |
+|---|---|
+| `vcs-metadata` | `.git\`, `.hg\`, `.svn\` |
+| `dependencies` | Package-manager install trees: `node_modules\`, Python virtual environments (a folder with `pyvenv.cfg`), `site-packages\`, `bower_components\` |
+| `build-output` | Folders that contain build artefacts (object files, `.pdb`, `CMakeCache.txt`, `.tlog`, `.ninja_log`). Decided by contents, not by the folder's name |
+| `gitignored` | Files the repository's own `.gitignore` excludes (usually local build output) |
+| `lockfiles` | `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock` |
+| `minified` | Text with very long lines: minified JavaScript or CSS, source maps, packed data |
+| `binary` | Non-text files that are not a supported document format: images, models, sounds, compiled files, game data. The repository document still lists them by path, size and type |
+| `oversize-text` | Text over 2 MB that is not hand-written source (generated tables, dumps), and any text file over 16 MB. Large hand-written source such as SQLite's single-file `sqlite3.c` is kept |
+
+### Secrets: please remove them before copying
+
 - Intake also scans every file for private keys, tokens, `.env` files and credential files.
-- A match is **left in place** in `inbox\_done\<batch>\`, never copied into the vault, never indexed, and never
+- A match is **left in place** in `inbox\_done\<batch>\`: never copied into the vault, never indexed, never
   served. It is recorded as quarantined with reason `suspected_secret`, naming the rule, never the value.
+- Open-source projects often carry test keys (TLS test certificates). Those are caught too, and are listed by
+  folder so the report stays readable.
+
+### What not to deliver
+
+- **Leaked proprietary source and decompilations of commercial games or programs.** They are outside the
+  vault's scope (books, papers and open-source code); `/ingest` lists them in its report instead of copying them.
+- **Game builds and asset dumps without source.** They would only be excluded as `binary`; `/ingest` lists them
+  in its report instead of copying them.
+- **Archives over the unpack limits** (section 3.5): unpack them yourself first, or leave them out.
+- **Your own notes about where material came from,** such as an index file in the staging folder. They can hold
+  passwords or account details, and everything in the vault is readable by the tutor and other agents.
 
 ## 5. What intake does, step by step
 
@@ -369,15 +455,15 @@ app).
 | `find_docs(queries[], filters, k)` | Find documents: landmark studies, textbooks, a paper you half-remember |
 | `search(queries[], filters, k)` | Find passages by meaning and keywords, with addresses and pages |
 | `workspace(action, doc_ids[])` | Keep a working set of documents (add, list, clear) |
-| `grep(patterns[], scope, context_lines, max_hits)` | Exact or regex search. Scope is a document, the workspace, a category or study area, or the whole vault |
+| `grep(patterns[], scope, context_lines, max_hits)` | Exact or regex search. Scope is a document, the workspace, a category or study area, a repository or a collection, or the whole vault |
 | `read(addresses[], expand)` | Exact text at addresses, expanded by lines or to the whole section |
-| `outline(doc_ids[])` | Heading tree with line ranges and pages (for a repository: the file tree) |
-| `citations(doc_ids[], direction)` | What these documents cite, or what cites them, within the vault |
-| `define(terms[])` | Textbook definitions, from back-of-book indexes and definition passages |
+| `outline(doc_ids[])` | Heading tree with line ranges and pages; for a repository, the file tree and a ranked symbol map fitted to the budget; for a code file, its symbols |
+| `citations(doc_ids[], direction)` | What these documents cite, or what cites them, within the vault; for code: imports, includes, calls and references, both directions |
+| `define(terms[])` | Textbook definitions, from back-of-book indexes and definition passages, and, for code, symbol definitions across repositories |
 
 **Filters** (all optional):
 - `category`, `area` (psychology study map), `type`, `level`, `year_from`, `year_to`, `language`,
-  `openalex_topic`, `batch`.
+  `openalex_topic`, `batch`, `collection`, `repo` (a repository name, or `name@commit` for an older snapshot).
 
 **The intended loop:** batch everything you can into one call at each step.
 1. `find_docs` and `search` with 2-4 focused queries.
