@@ -27,6 +27,7 @@ pub mod odt;
 #[cfg(feature = "pdfium")]
 pub mod pdf;
 pub mod pdfclass;
+#[cfg(feature = "pdfium")]
 mod pdflayout;
 pub mod pdfscan;
 pub mod quality;

@@ -80,6 +80,7 @@ impl MdBuilder {
         self.last = Some(Last::Para);
     }
 
+    #[cfg(any(feature = "pdfium", test))]
     /// More text of the previous paragraph, on the next line with no blank line between: the paragraph is split
     /// where a page boundary falls, so the page mark lands on the right line. Falls back to a new paragraph when
     /// the previous block was not a paragraph.
@@ -205,6 +206,7 @@ impl MdBuilder {
         self.pending_pages.push((label.filter(|l| !l.is_empty()), idx));
     }
 
+    #[cfg(feature = "pdfium")]
     /// Start a page whose physical index is known.
     pub fn page_break_at(&mut self, label: Option<String>, index: u32) {
         self.page_index = index;

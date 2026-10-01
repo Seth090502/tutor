@@ -11,6 +11,10 @@ default = ["pdfium"]
 # PDF text with page labels and reading order through PDFium, bound at run time (no DLL is needed to build).
 pdfium = ["dep:pdfium-render"]
 
+[[example]]
+name = "pdf_probe"
+required-features = ["pdfium"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
