@@ -35,11 +35,11 @@ Read `HANDOFF.md` first, then this checklist. Update both as work lands; commit 
 ## Phase 1: intake, extraction, canonical store, exact access (pilot)
 - [x] Stand-in vault laid out; INSTRUCTIONS.md, AGENTS.md, category map (OpenAlex topics + overlays + crosswalks)
 - [x] vault-api contract and docs/phase1/SPEC.md
-- [x] Wave 1 merged 2026-10-01 (e2c28ce): vault-core (canon, store, SQLite, jobs, publish, read/outline/find_docs/
+- [x] Wave 1 merged 2026-10-01 (1338d81): vault-core (canon, store, SQLite, jobs, publish, read/outline/find_docs/
   vault_info), libraryd + vault-client (MCP and gRPC, identical results), vault-extract (detection, converters;
   spike picks PDFium for PDF and own EPUB/DOCX/ODT converters, `docs/phase1/extract-spike.md`). 408 tests pass.
 - [x] libraryd serves the real vault (blocking-pool adapter, end-to-end test over MCP and gRPC); pins hoisted to
-  the workspace; rustfmt 120 columns (962322d; 416 tests pass, fmt and clippy clean)
+  the workspace; rustfmt 120 columns (dcb5701; 416 tests pass, fmt and clippy clean)
 - [ ] Wave 1 follow-ups: run PDF conversion in a child process with a timeout (PDFium is native code); pilot
   and full targets in `CategoryCoverage`; quarantine list/show/retry queries for vault-cli; CJK tokenising for
   `find_docs` (Phase 3); live test against a real Claude Code client; one unreproduced 60 s hang in a vault-client

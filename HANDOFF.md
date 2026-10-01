@@ -73,13 +73,13 @@ not start wave 2 (a multi-agent run) until the owner says go.
 
 ## 3. Open question for the owner: code scope (unresolved)
 
-- **The lead's position:** books, papers and open-source code (`24d45ce`, CODE-DESIGN 3.6 as first written).
+- **The lead's position:** books, papers and open-source code (`a66bc31`, CODE-DESIGN 3.6 as first written).
   - Publicly published code without a licence is ingested as `unknown`, not redistributable.
   - Leaked proprietary source and decompiled commercial code are listed, not copied.
   - The staging folder's `notable` group is left out entirely.
   - This followed an earlier agreement with the owner, after Claude's safety systems stopped several responses
     while handling the `notable` material (its index describes leaked and malware material).
-- **What another session then did (files dated 03:45, committed unchanged in `d219e16`):**
+- **What another session then did (files dated 03:45, committed unchanged in `de2420e`):**
   - It rewrote SPEC 9, CODE-DESIGN, `docs/vault/AGENTS.md`, INSTRUCTIONS and the `/ingest` skill around an
     "owner correction" widening scope to **all staged material for local static study, including `notable`,
     proprietary and decompiled code**.
@@ -271,6 +271,10 @@ its own worktree under `C:\Users\sethy\Projects\wt\` with separate owned paths, 
   then run all checks.
 - **Commits:** local by default, with the session's attribution trailer. `origin` is the private GitHub repo;
   push only when the owner asks.
+- **Commit identity:** always the GitHub no-reply address,
+  `Seth <276114533+Seth090502@users.noreply.github.com>`. It is set in this repository's `git config`, so never
+  pass `-c user.email=...` with the private Gmail address. GitHub rejects pushes that expose it (email privacy
+  setting).
 - **Subagent results:** verify them before merging (read the diff, rerun the checks). Subagent reports are
   claims, not facts.
 - **Files:** keep line endings per `.gitattributes` (LF, with CRLF for `.ps1`, `.cmd` and `.bat`). Python on
@@ -283,5 +287,9 @@ its own worktree under `C:\Users\sethy\Projects\wt\` with separate owned paths, 
 
 - **Commits:** `git log --format='%h %ad %s' --date=short` tells the story; the Phase 0 reports are in
   `docs/phase0/`.
+- **Rewritten commit IDs:** on 2026-10-01, before the first push, every commit's email was rewritten to the
+  no-reply address, which changed all 40 commit IDs. IDs quoted inside older commit messages are pre-rewrite IDs;
+  `docs/commit-id-map.tsv` maps old to new. A local backup branch `backup/pre-noreply-2026-10-01` keeps the old
+  history. Never push it: it carries the private email.
 - **The full transcript of the founding session** (local to the main PC, not in this repository):
   `C:\Users\sethy\.claude\projects\C--Users-sethy-OneDrive-Desktop-Tutor\ba4722e7-2537-4ced-b4a0-4062c34e0fa8.jsonl`.

@@ -1,0 +1,41 @@
+old_short	new_short	date	subject
+b7b16e3	1cedd5a	2026-09-30T22:25	Phase 0: audits, iobench, design notes, proposal draft
+d401bd7	c9b682a	2026-09-30T22:36	Phase 0 proposal: tutor runs as a headless Claude Code or OpenCode Go session
+0ecf63f	2646807	2026-09-30T22:40	Phase 0 proposal: plan for the tutor's own instruction file (TUTOR.md)
+30b9947	16b0720	2026-09-30T22:45	Phase 0: verified headless lock-down for Claude Code and OpenCode; proposal updated
+7569182	1f1829a	2026-09-30T22:50	Phase 0: model benchmark harness, downloads verified, CPU smoke test
+38349fa	8769464	2026-09-30T22:50	Keep shell scripts LF and PowerShell scripts CRLF
+02fd0e4	069e1d4	2026-10-01T00:39	Vault layout docs: INSTRUCTIONS.md, AGENTS.md for corpus management, category map generator and taxonomy snapshot
+ef1a277	32fc513	2026-10-01T00:50	Phase 1: workspace, vault-api contract, SPEC, crate skeletons
+61068e1	e5e28a2	2026-10-01T00:51	Check out text as LF so test fixtures keep exact bytes on Windows
+64523c7	2a518c0	2026-10-01T00:53	SPEC: any-agent use, collections, code navigation as first-class; progress updated
+06c2b1d	21b5632	2026-10-01T00:59	Eval methodology (Anthropic evals article + claude-api hill-climb guide) and the subagent briefing standard (Opus/Sonnet 5.5 prompting guides)
+9a8a906	82f416b	2026-10-01T01:08	Code repo sweep reports; SPEC: code collections scope and content-based file classification
+05626f5	10d08e8	2026-10-01T01:18	Add the /ingest skill (Claude Code and OpenCode) and document the staging fast path
+7cef63b	1166736	2026-10-01T01:25	Fold in research: taxonomy overrides and topic-score gate, instruction files in deliveries are data, read-only stored files; add research reports
+4c33391	99f00b7	2026-10-01T01:26	Phase 0 vector benchmark: usearch HNSW i8 M32 recommended (6M x 1024 synthetic); harness, report and raw results
+dc78711	7a14a83	2026-10-01T01:44	Model matrix: add Harrier-OSS-v1 0.6B (local alternative to Cohere Embed 5)
+7e5ace9	28339bf	2026-10-01T01:44	Ignore Python caches; PROGRESS: vector bench done, Harrier added, Cohere Embed 5 declined
+24d45ce	a66bc31	2026-10-01T01:58	Code design: CODE-DESIGN.md, SPEC section 9 summary, INSTRUCTIONS section 4, skill and templates
+b6c601c	217f36a	2026-10-01T01:45	vault-core: canonical text, store, SQLite, jobs, publish and Phase 1 tools
+fe61b04	5dba1a4	2026-10-01T02:11	Merge wt/v-core: vault-core foundation (canonical text, store, SQLite, jobs, publish, Phase 1 tools)
+ef2607f	317705e	2026-10-01T01:44	libraryd and vault-client: one VaultApi over MCP and gRPC
+150b700	6e12c2e	2026-10-01T02:11	Merge wt/v-server: libraryd and vault-client (MCP and gRPC over one VaultApi)
+71fffab	a16cb8a	2026-10-01T01:14	vault-extract: detection, quality metrics, text and JATS converters
+16eaec3	35c1c48	2026-10-01T01:29	vault-extract: TEI and HTML converters, depth guards, line-ending normalisation
+59d9b29	f83c0cd	2026-10-01T01:39	vault-extract: notebook, archive, EPUB, DOCX and ODT converters
+757f9d6	a9bc1ae	2026-10-01T01:50	vault-extract: PDF classification, layout analysis and PDFium converter
+fff817a	22fad2b	2026-10-01T02:00	vault-extract: dispatcher, PDF heading/reference/page-label rules, clippy clean
+25eb50a	f29676c	2026-10-01T02:01	vault-extract: build without the pdfium feature
+3211179	bd82c31	2026-10-01T02:09	vault-extract: spike report, real-sample smoke test, examples, deterministic layout, tracing
+e2c28ce	1338d81	2026-10-01T02:13	Merge wt/v-extract: format detection, converters and the PDF/EPUB spike
+95fc964	93b8034	2026-10-01T02:15	PROGRESS: wave 1 merged; wire-up running; wave 1 follow-ups
+c188a86	0ffe9f9	2026-10-01T02:16	PROGRESS: correct the wave 1 test count (408, not 409 as the merge message says)
+105a52d	d5e1957	2026-10-01T02:17	Add rustfmt.toml (max_width 120, use_small_heuristics Max) and reformat vault-extract
+ae6ea62	ee64ca8	2026-10-01T02:20	Hoist every external dependency pin into the root [workspace.dependencies]
+80e8465	c4773bd	2026-10-01T02:23	libraryd: serve the real vault, and test it end to end
+962322d	dcb5701	2026-10-01T02:24	Merge wt/v-wire: libraryd serves the real vault; pins hoisted to the workspace; rustfmt 120
+000aa87	384899b	2026-10-01T02:25	PROGRESS: libraryd wired to vault-core
+d219e16	de2420e	2026-10-01T14:14	Add vault-stage and the rewritten /ingest skill from another session, unchanged
+ca1e732	66f43b3	2026-10-01T14:16	Add HANDOFF.md, root AGENTS.md and CLAUDE.md so a fresh session resumes with full context
+cfa3f17	870710e	2026-10-01T14:17	PROGRESS: point at HANDOFF.md; GitHub remote; wave 2 waits for the owner; open scope question
