@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_SYNTH: &str = r"C:\Users\sethy\Projects\vault-synth";
@@ -14,7 +15,7 @@ pub const LANCEDB_VERSION: &str = "0.39.0";
 pub const LANCE_VERSION: &str = "12.0.0";
 pub const USEARCH_CRATE_VERSION: &str = "2.26.2";
 pub const NUMKONG_VERSION: &str = "7.8.3";
-pub const GiB: f64 = 1024.0 * 1024.0 * 1024.0;
+pub const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
 /// `--key value` and `--flag` style arguments.
 pub struct Args {
@@ -55,15 +56,6 @@ impl Args {
     }
     pub fn flag(&self, k: &str) -> bool {
         self.kv.get(k).map(|v| v == "true").unwrap_or(false)
-    }
-    pub fn list_usize(&self, k: &str, d: &[usize]) -> Vec<usize> {
-        match self.kv.get(k) {
-            Some(v) => v.split(',').map(|s| s.trim().parse().expect(k)).collect(),
-            None => d.to_vec(),
-        }
-    }
-    pub fn all(&self) -> Value {
-        json!(self.kv)
     }
 }
 
@@ -110,7 +102,7 @@ pub fn now_rfc3339() -> String {
 
 pub fn cpu_brand() -> String {
     #[cfg(target_arch = "x86_64")]
-    unsafe {
+    {
         use std::arch::x86_64::__cpuid;
         let mut s = Vec::new();
         for leaf in 0x8000_0002u32..=0x8000_0004 {
@@ -156,10 +148,11 @@ pub fn mem_info() -> MemInfo {
 pub fn mem_json() -> Value {
     let m = mem_info();
     json!({
-        "working_set_gib": m.ws as f64 / GiB,
-        "peak_working_set_gib": m.peak_ws as f64 / GiB,
-        "private_gib": m.private as f64 / GiB,
-        "peak_private_gib": m.peak_private as f64 / GiB,
+        "working_set_gib": m.ws as f64 / GIB,
+        "peak_working_set_gib": m.peak_ws as f64 / GIB,
+        "private_gib": m.private as f64 / GIB,
+        "peak_private_gib": m.peak_private as f64 / GIB,
+        "mapped_view_trims": WS_TRIMS.load(Ordering::SeqCst),
     })
 }
 
@@ -174,34 +167,52 @@ pub fn sys_mem() -> (u64, u64) {
     }
 }
 
-/// Refuse to start a step that would push available RAM under the 6 GiB floor.
+/// Refuse to start a step that would push available RAM under the 6 GIB floor.
 pub fn require_free_ram(step: &str, need_bytes: u64) {
     let (avail, _) = sys_mem();
     let floor = 6u64 << 30;
     log(format!(
-        "RAM check for {step}: available {:.1} GiB, step needs ~{:.1} GiB",
-        avail as f64 / GiB,
-        need_bytes as f64 / GiB
+        "RAM check for {step}: available {:.1} GIB, step needs ~{:.1} GIB",
+        avail as f64 / GIB,
+        need_bytes as f64 / GIB
     ));
     if avail < need_bytes + floor {
-        log(format!("ABORT {step}: available RAM would fall under 6 GiB"));
+        log(format!("ABORT {step}: available RAM would fall under 6 GIB"));
         std::process::exit(3);
     }
 }
 
-/// Background watchdog: abort the process if available RAM drops below 6 GiB or
-/// our own working set exceeds the 16 GiB benchmark limit.
+static MAP_PTR: AtomicUsize = AtomicUsize::new(0);
+static MAP_LEN: AtomicUsize = AtomicUsize::new(0);
+pub static WS_TRIMS: AtomicUsize = AtomicUsize::new(0);
+
+/// Register a read-only file mapping whose pages the watchdog may drop from the working set.
+pub fn register_mapping(ptr: *const u8, len: usize) {
+    MAP_PTR.store(ptr as usize, Ordering::SeqCst);
+    MAP_LEN.store(len, Ordering::SeqCst);
+}
+
+/// Background watchdog: trims the registered file mapping from the working set above 13 GiB
+/// (pages stay in the OS file cache and soft-fault back), and aborts the process if available
+/// RAM drops below 6 GiB or the working set still exceeds the 16 GiB benchmark limit.
 pub fn start_ram_watchdog(step: &'static str) {
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(500));
             let (avail, _) = sys_mem();
-            let m = mem_info();
+            let mut m = mem_info();
+            let (p, l) = (MAP_PTR.load(Ordering::SeqCst), MAP_LEN.load(Ordering::SeqCst));
+            if m.ws > (13u64 << 30) && p != 0 {
+                // VirtualUnlock on unlocked pages removes them from the working set (documented).
+                unsafe { windows_sys::Win32::System::Memory::VirtualUnlock(p as *const _, l) };
+                WS_TRIMS.fetch_add(1, Ordering::SeqCst);
+                m = mem_info();
+            }
             if avail < (6u64 << 30) || m.ws > (16u64 << 30) {
                 log(format!(
-                    "WATCHDOG ABORT in {step}: available {:.2} GiB, working set {:.2} GiB",
-                    avail as f64 / GiB,
-                    m.ws as f64 / GiB
+                    "WATCHDOG ABORT in {step}: available {:.2} GIB, working set {:.2} GIB",
+                    avail as f64 / GIB,
+                    m.ws as f64 / GIB
                 ));
                 std::process::exit(4);
             }
@@ -239,7 +250,7 @@ pub fn env_json(threads: usize, affinity: Option<u64>) -> Value {
             "host": "main-pc",
             "cpu": cpu_brand(),
             "logical_cpus": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
-            "total_ram_gib": total as f64 / GiB,
+            "total_ram_gib": total as f64 / GIB,
             "os": "Windows 11 Home 10.0.26200",
             "storage": "Samsung 990 PRO NVMe",
             "lance_simd_tier": lance_core::utils::cpu::simd_info().tier.to_string(),

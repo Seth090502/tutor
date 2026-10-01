@@ -149,7 +149,7 @@ pub fn cmd_lance_ingest(a: &Args) {
         st["ingested_rows"] = json!(rows);
         st["base_version"] = json!(version);
         write_state(a, &st);
-        log(format!("lance-ingest: {rows} rows in {ingest_s:.0}s, {:.2} GiB", total_bytes as f64 / GiB));
+        log(format!("lance-ingest: {rows} rows in {ingest_s:.0}s, {:.2} GIB", total_bytes as f64 / GIB));
     });
 }
 
@@ -177,8 +177,25 @@ pub fn cmd_lance_build(a: &Args) {
         if let Some(v) = st["indexes"][&name]["version"].as_u64() {
             let t = open_table(a).await;
             t.checkout(v).await.unwrap();
-            if t.list_indices().await.unwrap().iter().any(|i| i.name == name) {
+            let vec_idx = vector_indexes(&t).await;
+            if vec_idx == vec![name.clone()] {
                 log(format!("lance-build: {name} already built at version {v}, skipping"));
+                return;
+            }
+            if vec_idx.contains(&name) {
+                // Older harness versions left other vector indexes on the column; a query would
+                // then use the first one. Drop the others at the latest version and re-point.
+                t.checkout_latest().await.unwrap();
+                for other in vector_indexes(&t).await.into_iter().filter(|n| *n != name) {
+                    t.drop_index(&other).await.unwrap();
+                }
+                assert_eq!(vector_indexes(&t).await, vec![name.clone()]);
+                let nv = t.version().await.unwrap();
+                let mut st = read_state(a);
+                st["indexes"][&name]["version"] = json!(nv);
+                st["indexes"][&name]["isolated_from_version"] = json!(v);
+                write_state(a, &st);
+                log(format!("lance-build: {name} isolated at version {nv} (was {v} with {vec_idx:?})"));
                 return;
             }
         }
@@ -216,11 +233,16 @@ pub fn cmd_lance_build(a: &Args) {
             _ => unreachable!(),
         };
         let table = open_table(a).await;
+        // One vector index per dataset version: lancedb queries cannot pick an index by name.
+        for other in vector_indexes(&table).await {
+            table.drop_index(&other).await.unwrap();
+        }
         let before = dir_size(&lance_dir(a));
         let t0 = Instant::now();
         table.create_index(&["vector"], idx).name(name.clone()).replace(true).execute().await.unwrap();
         let build_s = t0.elapsed().as_secs_f64();
         let version = table.version().await.unwrap();
+        assert_eq!(vector_indexes(&table).await, vec![name.clone()]);
         let cfg = table.list_indices().await.unwrap().into_iter().find(|i| i.name == name).expect("index listed");
         let uuid = cfg.index_uuid.clone().unwrap_or_default();
         let idx_dir = lance_dir(a).join("base.lance").join("_indices").join(&uuid);
@@ -238,8 +260,13 @@ pub fn cmd_lance_build(a: &Args) {
         let mut st = read_state(a);
         st["indexes"][&name] = json!({"version": version, "uuid": cfg.index_uuid, "build_seconds": build_s, "index_bytes": idx_bytes});
         write_state(a, &st);
-        log(format!("lance-build {name}: {build_s:.0}s, {:.2} GiB index, version {version}", idx_bytes as f64 / GiB));
+        log(format!("lance-build {name}: {build_s:.0}s, {:.2} GIB index, version {version}", idx_bytes as f64 / GIB));
     });
+}
+
+/// Names of the vector indexes on the "vector" column at the table's checked-out version.
+async fn vector_indexes(t: &Table) -> Vec<String> {
+    t.list_indices().await.unwrap().into_iter().filter(|i| i.columns == ["vector"]).map(|i| i.name).collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -293,7 +320,8 @@ pub fn cmd_lance_bench(a: &Args) {
     let name = index_name(a);
     let do_recall = a.flag("recall");
     let data_tag = a.str("data", "d1024");
-    let done_id = format!("lance-bench:{data_tag}:{name}:t{threads}:{}", if do_recall { "recall" } else { "lat" });
+    let done_id = format!("lance-bench:{data_tag}:{name}:t{threads}:{}", if do_recall { "recall" } else { "lat" })
+        + &a.opt("tag").map(|t| format!(":{t}")).unwrap_or_default();
     let rpath = results_path(a);
     if has_record(&rpath, &done_id) {
         log(format!("lance-bench: {done_id} already recorded, skipping"));
@@ -325,6 +353,7 @@ pub fn cmd_lance_bench(a: &Args) {
         let table = open_table(a).await;
         table.checkout(version).await.unwrap();
         let open_s = t0.elapsed().as_secs_f64();
+        assert_eq!(vector_indexes(&table).await, vec![name.clone()], "version {version} must hold only {name}");
         let index_json = json!({"name": name, "version": version, "index_bytes": idx_bytes, "open_seconds": open_s,
             "index_cache_default_bytes": 6u64 << 30, "lance_cpu_threads": threads, "filter_mode": "prefilter (lancedb default)"});
         let q = |i: usize| qv[i * d..(i + 1) * d].to_vec();
@@ -348,7 +377,8 @@ pub fn cmd_lance_bench(a: &Args) {
         let n_single = a.usize("nsingle", 500);
         let n_batch = a.usize("nbatch", 125);
         let tput_s = a.f64("tput_seconds", 5.0);
-        for pt in &grid {
+        let grid_run: Vec<LPoint> = if a.flag("filter-only") { Vec::new() } else { grid.clone() };
+        for pt in &grid_run {
             let recall = if do_recall {
                 let lists = run_concurrent(&table, &qv, d, (0..gt.n_q).collect(), *pt, None, k, threads).await;
                 Some(recall_summary(&gt, &qm, &lists, 0, info.filter_field))
@@ -404,7 +434,17 @@ pub fn cmd_lance_bench(a: &Args) {
                         std::hint::black_box(lq(&table, &q(2000 + i), *pt, Some(&expr), k).await);
                         single.push(elapsed_ns(t));
                     }
+                    let mut single_in = Vec::new();
+                    if set == 1 {
+                        let ids: Vec<usize> = (2000..info.params.n_query).filter(|&i| qm[i].field == info.filter_field).take(300).collect();
+                        for qi in ids {
+                            let t = Instant::now();
+                            std::hint::black_box(lq(&table, &q(qi), *pt, Some(&expr), k).await);
+                            single_in.push(elapsed_ns(t));
+                        }
+                    }
                     append_jsonl(&rpath, json!({
+                        "latency_single_query_in_field": lat_summary(&mut single_in),
                         "run_id": format!("{done_id}:filter_{label}:np{}:rf{}", pt.nprobes, pt.refine.unwrap_or(0)),
                         "kind": "filter_point", "candidate": "A_lance", "index": index_json,
                         "filter": {"type": label, "expr": expr, "method": "lancedb only_if, prefilter, BITMAP scalar index"},
@@ -414,7 +454,7 @@ pub fn cmd_lance_bench(a: &Args) {
             }
         }
         append_jsonl(&rpath, json!({"run_id": done_id, "kind": "bench_done", "candidate": "A_lance", "index": index_json, "mem_final": mem_json()}), &env, &ds);
-        log(format!("lance-bench {name} t{threads}: done, peak ws {:.2} GiB", mem_info().peak_ws as f64 / GiB));
+        log(format!("lance-bench {name} t{threads}: done, peak ws {:.2} GIB", mem_info().peak_ws as f64 / GIB));
     });
 }
 

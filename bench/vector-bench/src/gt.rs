@@ -184,7 +184,6 @@ pub fn load_gt(dir: &Path) -> Gt {
 }
 
 struct QState {
-    q: Vec<f32>,
     all: TopK,
     field: Option<TopK>,
     rattr: Option<TopK>,
@@ -224,15 +223,13 @@ pub fn cmd_gt(a: &Args) {
     }
     let doc_vecs = read_rows(&dir, d, &doc_ids);
     let mut states: Vec<QState> = (0..n_gt)
-        .map(|i| QState {
-            q: qv[i * d..(i + 1) * d].to_vec(),
+        .map(|_| QState {
             all: TopK::new(k),
             field: Some(TopK::new(k)),
             rattr: Some(TopK::new(k)),
             skip: u32::MAX,
         })
         .chain((0..n_doc).map(|j| QState {
-            q: doc_vecs[j * d..(j + 1) * d].to_vec(),
             all: TopK::new(k),
             field: None,
             rattr: None,
@@ -241,8 +238,12 @@ pub fn cmd_gt(a: &Args) {
         .collect();
     while states.len() % 4 != 0 {
         // Pad to a multiple of 4 with a dummy query that is discarded.
-        states.push(QState { q: vec![0.0; d], all: TopK::new(1), field: None, rattr: None, skip: u32::MAX });
+        states.push(QState { all: TopK::new(1), field: None, rattr: None, skip: u32::MAX });
     }
+    // Query vectors for all states, flat, same order (GT queries, doc queries, zero padding).
+    let mut qflat: Vec<f32> = qv[..n_gt * d].to_vec();
+    qflat.extend_from_slice(&doc_vecs);
+    qflat.resize(states.len() * d, 0.0);
     // Independent naive check: f64 accumulation over scalar-decoded f16, separate code path.
     let lut: Vec<f64> = (0..=u16::MAX).map(f16_bits_to_f64_scalar).collect();
     let naive_q: Vec<Vec<f64>> =
@@ -254,8 +255,10 @@ pub fn cmd_gt(a: &Args) {
     while let Some((start, rows)) = rd.next_f32(block, &mut bits, &mut blk) {
         let blk_ref = &blk;
         let meta_ref = &meta;
-        states.par_chunks_mut(4).for_each(|g| {
-            let qs = [&g[0].q[..], &g[1].q[..], &g[2].q[..], &g[3].q[..]];
+        let qflat_ref = &qflat;
+        states.par_chunks_mut(4).enumerate().for_each(|(gi, g)| {
+            let qg = &qflat_ref[gi * 4 * d..(gi + 1) * 4 * d];
+            let qs = [&qg[..d], &qg[d..2 * d], &qg[2 * d..3 * d], &qg[3 * d..]];
             for r in 0..rows {
                 let id = (start + r) as u32;
                 let s = dot_1x4(&blk_ref[r * d..(r + 1) * d], qs);

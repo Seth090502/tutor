@@ -132,8 +132,18 @@ impl Codes {
         };
         r.expect("usearch add");
     }
-    fn search(&self, index: &Index, i: usize, dim: usize, count: usize, filter: Option<&(dyn Fn(u64) -> bool + Sync)>) -> Vec<u64> {
+    fn search(&self, index: &Index, i: usize, dim: usize, count: usize, filter: Option<&(dyn Fn(u64) -> bool + Sync)>, exact: bool) -> Vec<u64> {
         let w = self.width(dim);
+        if exact {
+            // Brute force over the stored (quantised) codes: the quantisation ceiling.
+            let m = match self {
+                Codes::I8(c) => index.exact_search::<i8>(&c[i * w..(i + 1) * w], count),
+                Codes::U8(c) => index.exact_search::<b1x8>(b1x8::from_u8s(&c[i * w..(i + 1) * w]), count),
+                Codes::F16(c) => index.exact_search::<usearch::f16>(usearch::f16::from_i16s(&c[i * w..(i + 1) * w]), count),
+                Codes::F32(c) => index.exact_search::<f32>(&c[i * w..(i + 1) * w], count),
+            };
+            return m.expect("usearch exact search").keys;
+        }
         let m = match (self, filter) {
             (Codes::I8(c), None) => index.search::<i8>(&c[i * w..(i + 1) * w], count),
             (Codes::U8(c), None) => index.search::<b1x8>(b1x8::from_u8s(&c[i * w..(i + 1) * w]), count),
@@ -210,9 +220,9 @@ pub fn cmd_us_build(a: &Args) {
         if (done / 65536) % 8 == 0 || done == n {
             let mi = mem_info();
             log(format!(
-                "us-build {name}: {done}/{n} ({:.0} vec/s), ws {:.2} GiB",
+                "us-build {name}: {done}/{n} ({:.0} vec/s), ws {:.2} GIB",
                 done as f64 / t0.elapsed().as_secs_f64(),
-                mi.ws as f64 / GiB
+                mi.ws as f64 / GIB
             ));
         }
     }
@@ -248,7 +258,7 @@ pub fn cmd_us_build(a: &Args) {
     });
     std::fs::write(&man, serde_json::to_string_pretty(&json!({"file_bytes": file_bytes, "record": rec})).unwrap()).unwrap();
     append_jsonl(&results_path(a), rec, &env_json(threads, None), &dataset_json(&info));
-    log(format!("us-build {name}: done in {build_s:.0}s, {:.2} GiB file", file_bytes as f64 / GiB));
+    log(format!("us-build {name}: done in {build_s:.0}s, {:.2} GIB file", file_bytes as f64 / GIB));
 }
 
 // ------------------------------------------------------------------ NumKong kernel override
@@ -306,23 +316,19 @@ fn default_grid(kind: Kind) -> Vec<Point> {
     let p = |ef, cand, rescore| Point { ef, cand, rescore };
     match kind {
         Kind::I8 | Kind::I8Auto | Kind::F16 => vec![
-            p(100, 100, false),
-            p(128, 100, false),
-            p(192, 100, false),
             p(256, 100, false),
-            p(384, 100, false),
             p(512, 100, false),
-            p(128, 128, true),
-            p(192, 192, true),
-            p(256, 256, true),
-            p(384, 384, true),
-            p(512, 512, true),
+            p(1024, 100, false),
+            p(1536, 100, false),
+            p(2048, 100, false),
+            p(512, 200, true),
+            p(1024, 200, true),
+            p(2048, 200, true),
         ],
         Kind::B1 => vec![
-            p(256, 256, true),
             p(512, 512, true),
-            p(1024, 1024, true),
-            p(2048, 1024, true),
+            p(1024, 1000, true),
+            p(2048, 1000, true),
             p(2048, 2048, true),
         ],
     }
@@ -339,12 +345,13 @@ fn parse_grid(s: &str) -> Vec<Point> {
 }
 
 pub fn cmd_us_bench(a: &Args) {
-    let (kind, m, _efc, name, idir) = names(a);
+    let (kind, m, efc, name, idir) = names(a);
     let threads = a.usize("threads", 12);
     let mo = a.str("metric", "native");
     let do_recall = a.flag("recall");
     let data_tag = a.str("data", "d1024");
-    let done_id = format!("us-bench:{data_tag}:{name}:t{threads}:{mo}:{}", if do_recall { "recall" } else { "lat" });
+    let done_id = format!("us-bench:{data_tag}:{name}:t{threads}:{mo}:{}", if do_recall { "recall" } else { "lat" })
+        + &a.opt("tag").map(|t| format!(":{t}")).unwrap_or_default();
     let rpath = results_path(a);
     if has_record(&rpath, &done_id) {
         log(format!("us-bench: {done_id} already recorded, skipping"));
@@ -377,9 +384,12 @@ pub fn cmd_us_bench(a: &Args) {
     } else {
         Vec::new()
     };
-    // Load (in-memory copy of the whole index).
+    // Load (in-memory copy of the whole index). Index::restore/view are not used: in usearch 2.26.2
+    // on Windows they seek with a 32-bit `long` (fseek/ftell, GetFileSize low word) and fail for
+    // files over 2 GiB; Index::new + load reads the file sequentially and works.
     let t0 = Instant::now();
-    let mut index = Index::restore(path.to_str().unwrap()).expect("restore");
+    let mut index = Index::new(&options(kind, d, m, efc)).expect("index");
+    index.load(path.to_str().unwrap()).expect("load");
     let load_s = t0.elapsed().as_secs_f64();
     index.reserve_capacity_and_threads(index.size(), 64).expect("reserve threads");
     let isa = index.hardware_acceleration();
@@ -387,11 +397,24 @@ pub fn cmd_us_bench(a: &Args) {
     let mi_loaded = mem_json();
     let file = std::fs::File::open(ddir.join("base_f16.bin")).unwrap();
     let mmap = unsafe { Mmap::map(&file).unwrap() };
+    register_mapping(mmap.as_ptr(), mmap.len());
+    let grid = a.opt("grid").map(|s| parse_grid(&s)).unwrap_or_else(|| default_grid(kind));
+    // Rescoring reads random rows of base_f16.bin. Pre-read it with plain reads so it sits in the
+    // OS file cache (the "f16 store resident in RAM" case) without entering our working set.
+    let prewarm_s = if grid.iter().any(|p| p.rescore) && !a.flag("noprewarm") {
+        let t = Instant::now();
+        let mut rd = BaseReader::open(&ddir, info.params.n_base, d);
+        let mut bits = Vec::new();
+        while rd.next_bits(65536, &mut bits).is_some() {}
+        Some(t.elapsed().as_secs_f64())
+    } else {
+        None
+    };
     let base16: &[u16] = unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const u16, info.params.n_base * d) };
     let codes = encode(kind, &qv, d, &mean);
     let k = 100usize;
     let search = |qi: usize, pt: &Point, filt: Option<&(dyn Fn(u64) -> bool + Sync)>| -> Vec<u64> {
-        let keys = codes.search(&index, qi, d, pt.cand.max(k), filt);
+        let keys = codes.search(&index, qi, d, pt.cand.max(k), filt, pt.ef == 0);
         if !pt.rescore {
             return keys.into_iter().take(k).collect();
         }
@@ -403,8 +426,7 @@ pub fn cmd_us_bench(a: &Args) {
         sc.sort_by(|x, y| y.0.total_cmp(&x.0));
         sc.into_iter().take(k).map(|x| x.1).collect()
     };
-    let grid = a.opt("grid").map(|s| parse_grid(&s)).unwrap_or_else(|| default_grid(kind));
-    let index_json = json!({"name": name, "kind": kind.tag(), "connectivity": m, "file_bytes": fsize,
+    let index_json = json!({"f16_store_prewarm_seconds": prewarm_s, "name": name, "kind": kind.tag(), "connectivity": m, "file_bytes": fsize,
         "size": index.size(), "memory_usage_bytes": index.memory_usage(), "isa_native": isa,
         "metric_override": mo, "metric_note": metric_note, "load_seconds": load_s, "n_base": n_base});
     // Cold: first queries after loading in this fresh process (approximate: OS file cache not dropped).
@@ -429,8 +451,9 @@ pub fn cmd_us_bench(a: &Args) {
     let n_single = a.usize("nsingle", 1000);
     let n_batch = a.usize("nbatch", 250);
     let tput_s = a.f64("tput_seconds", 5.0);
-    for pt in &grid {
-        index.change_expansion_search(pt.ef);
+    let grid_run: Vec<Point> = if a.flag("filter-only") { Vec::new() } else { grid.clone() };
+    for pt in &grid_run {
+        index.change_expansion_search(pt.ef.max(1));
         let recall = if do_recall { Some(recall_block(&gt, &qm, |qi| search(qi, pt, None), 0, info.filter_field)) } else { None };
         let mut single: Vec<u64> = (0..n_single)
             .map(|i| {
@@ -463,9 +486,8 @@ pub fn cmd_us_bench(a: &Args) {
         let fgrid: Vec<Point> = match kind {
             Kind::B1 => vec![Point { ef: 1024, cand: 1024, rescore: true }, Point { ef: 2048, cand: 2048, rescore: true }],
             _ => vec![
-                Point { ef: 256, cand: 256, rescore: true },
-                Point { ef: 512, cand: 512, rescore: true },
-                Point { ef: 1024, cand: 1024, rescore: true },
+                Point { ef: 1024, cand: 200, rescore: true },
+                Point { ef: 2048, cand: 200, rescore: true },
             ],
         };
         let ff = info.filter_field;
@@ -483,7 +505,22 @@ pub fn cmd_us_bench(a: &Args) {
                         elapsed_ns(t)
                     })
                     .collect();
+                // Latency for queries whose own field is the filtered field (the realistic case).
+                let mut single_in: Vec<u64> = if set == 1 {
+                    (2000..info.params.n_query)
+                        .filter(|&i| qm[i].field == ff)
+                        .take(300)
+                        .map(|qi| {
+                            let t = Instant::now();
+                            std::hint::black_box(search(qi, pt, Some(pred)));
+                            elapsed_ns(t)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 append_jsonl(&rpath, json!({
+                    "latency_single_query_in_field": lat_summary(&mut single_in),
                     "run_id": format!("{done_id}:filter_{label}:ef{}", pt.ef),
                     "kind": "filter_point", "candidate": "B_usearch", "index": index_json,
                     "filter": {"type": label, "value": if set == 1 { ff } else { fr }, "method": "usearch filtered_search predicate during HNSW traversal"},
@@ -493,11 +530,11 @@ pub fn cmd_us_bench(a: &Args) {
         }
     }
     append_jsonl(&rpath, json!({"run_id": done_id, "kind": "bench_done", "candidate": "B_usearch", "index": index_json, "mem_final": mem_json()}), &env, &ds);
-    log(format!("us-bench {name} t{threads}: done, peak ws {:.2} GiB", mem_info().peak_ws as f64 / GiB));
+    log(format!("us-bench {name} t{threads}: done, peak ws {:.2} GIB", mem_info().peak_ws as f64 / GIB));
 }
 
 /// Recall@10/@100 over the ground-truth queries (searches run in parallel on the rayon pool).
-pub fn recall_block(gt: &Gt, qm: &[QueryMeta], f: impl Fn(usize) -> Vec<u64> + Sync, set: usize, ff: u8) -> Value {
+pub fn recall_block(gt: &Gt, qm: &[QueryMeta], f: impl Fn(usize) -> Vec<u64> + Sync + Send, set: usize, ff: u8) -> Value {
     let lists: Vec<Vec<u64>> = (0..gt.n_q).into_par_iter().map(f).collect();
     recall_summary(gt, qm, &lists, set, ff)
 }

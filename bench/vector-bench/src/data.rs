@@ -35,6 +35,10 @@ pub struct GenParams {
     pub n_topics: usize,
     pub n_sub: usize,
     pub rank: usize,
+    /// 0 = independent random topic centres; R > 0 = centres drawn from a shared R-dim latent
+    /// space (normalize(B y), B ~ N(0, I/d) of size d x R), so related topics exist.
+    #[serde(default)]
+    pub topic_latent_rank: usize,
     pub zipf_offset: f64,
     pub zipf_exp: f64,
     pub spec_decay: f64,
@@ -65,6 +69,7 @@ impl Default for GenParams {
             n_topics: 2000,
             n_sub: 25,
             rank: 48,
+            topic_latent_rank: 64,
             zipf_offset: 20.0,
             zipf_exp: 1.0,
             spec_decay: 8.0,
@@ -78,9 +83,9 @@ impl Default for GenParams {
             dup_cos: 0.97,
             q_centre_frac: 0.15,
             q_centre_iso: 0.15,
-            q_cos_lo: 0.65,
-            q_cos_hi: 0.90,
-            q_lowrank_share: 0.6,
+            q_cos_lo: 0.55,
+            q_cos_hi: 0.80,
+            q_lowrank_share: 0.9,
         }
     }
 }
@@ -239,12 +244,25 @@ impl Model {
             *x = acc;
         }
         let topic_field: Vec<u8> = (0..nt).map(|_| r.below(p.n_fields as u64) as u8).collect();
+        let latent: Vec<f32> = (0..p.topic_latent_rank * d).map(|_| r.normal() as f32).collect();
         // Per-topic structures, each from its own stream so they can be built in parallel.
         let per_topic: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = (0..nt)
             .into_par_iter()
             .map(|t| {
                 let mut r = Rng::stream(p.seed, S_MODEL + 1, t as u64);
-                let c = unit_gaussian(&mut r, d);
+                let c = if p.topic_latent_rank == 0 {
+                    unit_gaussian(&mut r, d)
+                } else {
+                    let y: Vec<f32> = (0..p.topic_latent_rank).map(|_| r.normal() as f32).collect();
+                    let mut c = vec![0f32; d];
+                    for (i, &yi) in y.iter().enumerate() {
+                        for (cj, &bj) in c.iter_mut().zip(&latent[i * d..(i + 1) * d]) {
+                            *cj += yi * bj;
+                        }
+                    }
+                    normalize(&mut c);
+                    c
+                };
                 let sc = 1.0 / (d as f64).sqrt();
                 let b: Vec<f32> = (0..rk * d).map(|_| (r.normal() * sc) as f32).collect();
                 let s: Vec<f32> =
