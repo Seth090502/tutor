@@ -4,7 +4,11 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 
 - **Deployment stage:** Stage 1 (local; vault SSD in the main PC). Transfer planned for Monday 2026-10-05
   (exact time not confirmed yet).
-- **Current phase:** Phase 0 (explore, audit, measure, propose). Ends at the owner's approval gate.
+- **Current phase:** Phase 1 started 2026-10-01 on the owner's go-ahead, in parallel with the Phase 0 items still open
+  (GPU model matrix, vault SSD, vector benchmark). Defaults: originals copied (not moved), GROBID waits for hosting,
+  GPU extraction waits for owner windows. Stand-in vault: `E:\Stand-In Vault`.
+- **Scope additions (owner, 2026-10-01):** source code folders as a first-class delivery type; any agent (not only the
+  tutor) can reference chosen material through collections; everything state of the art and in Rust.
 - **Repository:** `C:\Users\sethy\Projects\vault` (canonical copy on the main PC). Eval directory and model
   files live outside the vault.
 
@@ -25,6 +29,11 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 - [ ] Gate: owner approves plan, Stage 1 model sizes, vector index, interface, intake mechanism, pilot composition, schedule
 
 ## Phase 1: intake, extraction, canonical store, exact access (pilot)
+- [x] Stand-in vault laid out; INSTRUCTIONS.md, AGENTS.md, category map (OpenAlex topics + overlays + crosswalks)
+- [x] vault-api contract and docs/phase1/SPEC.md
+- [ ] Wave 1 (running): vault-core foundation, libraryd + vault-client, vault-extract + PDF/EPUB spike
+- [ ] Code research and repo sweep -> code design (SPEC section 9), then vault-code
+- [ ] Wave 2: intake pipeline + `vault` CLI, grep with trigram, collections, MCP instructions + skill
 - [ ] Per-machine config (hot and cold roots); nothing machine-specific in the vault
 - [ ] Intake: format detection, routing, metadata, language, dedup, quality checks, quarantine, intake report page
 - [ ] Markdown store with structure maps and sidecars; BLAKE3 integrity manifest

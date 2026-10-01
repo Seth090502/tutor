@@ -281,6 +281,35 @@ Detection is by content: magic bytes, then container inspection.
 - Response compression (gzip or zstd) on gRPC.
 - Requests in a batch run concurrently.
 
+## 11a. Any agent, not just the tutor (owner, 2026-10-01)
+
+The vault is built for the tutor, but any agent (Claude Code, Codex, OpenCode, the owner's own agents) must be
+able to reference chosen material seamlessly.
+
+**Target use case:** an agent asked to study 5-7 folders of game source code can map them, find anything, follow
+definitions and references across files and repositories, and read exactly what it needs, in few calls.
+
+- **Collections** (planned `vault-api` addition at the wave-1 merge):
+  - Named, persistent sets of documents and repositories that the owner or an agent curates, for example
+    `gamedev` = 6 repositories + 4 books.
+  - `Filters.collection`, plus `Scope::Collection { name }` for grep.
+  - `vault collection create|add|remove|list`.
+  - Workspaces stay per session; collections persist.
+- **Agent guidance travels with the server:**
+  - libraryd sends MCP server `instructions` at initialisation: the tool loop, batching, addresses and budgets.
+  - A Claude Code skill (`vault`) carries the longer playbook ("study a codebase", "find the landmark paper",
+    "cite exactly").
+  - The tutor's own rules stay in TUTOR.md.
+- **Code navigation is first-class** in the same nine tools:
+  - `outline` returns a ranked repository map and per-file symbols.
+  - `define` finds symbol definitions.
+  - `citations` follows reference and import edges.
+  - `grep` has symbol-aware ranking.
+  - `find_docs` routes to repositories and files.
+  - The details land in section 9 from the code research (`docs/phase0/research-code-*.md`, `repos-*.md`).
+- **Everything is Rust.** Specialist non-Rust tools (MinerU, GROBID, llama.cpp, pandoc) run only as sidecar
+  processes called from Rust.
+
 ## 12. Layer A invariants for Phase 1 (`cargo test` plus an integration harness against a temp vault)
 
 | Invariant | Check |
