@@ -33,7 +33,15 @@ Read this first when resuming. Update it as work lands; commit it with each phas
 ## Phase 1: intake, extraction, canonical store, exact access (pilot)
 - [x] Stand-in vault laid out; INSTRUCTIONS.md, AGENTS.md, category map (OpenAlex topics + overlays + crosswalks)
 - [x] vault-api contract and docs/phase1/SPEC.md
-- [ ] Wave 1 (running): vault-core foundation, libraryd + vault-client, vault-extract + PDF/EPUB spike
+- [x] Wave 1 merged 2026-10-01 (e2c28ce): vault-core (canon, store, SQLite, jobs, publish, read/outline/find_docs/
+  vault_info), libraryd + vault-client (MCP and gRPC, identical results), vault-extract (detection, converters;
+  spike picks PDFium for PDF and own EPUB/DOCX/ODT converters, `docs/phase1/extract-spike.md`). 409 tests pass.
+- [ ] libraryd wired to vault-core with a blocking-pool adapter and an end-to-end test; pins hoisted to the
+  workspace; rustfmt 120 columns (worker running on wt/v-wire)
+- [ ] Wave 1 follow-ups: run PDF conversion in a child process with a timeout (PDFium is native code); pilot
+  and full targets in `CategoryCoverage`; quarantine list/show/retry queries for vault-cli; CJK tokenising for
+  `find_docs` (Phase 3); live test against a real Claude Code client; one unreproduced 60 s hang in a vault-client
+  restart test
 - [x] Code research and repo sweep -> code design (`docs/phase1/CODE-DESIGN.md`; SPEC section 9 summarises it)
 - [ ] vault-code increments C1-C7 (CODE-DESIGN section 7; about 26-32 worker-days, estimate)
 - [ ] Wave 2: intake pipeline + `vault` CLI, grep with trigram, collections, MCP instructions + skill
