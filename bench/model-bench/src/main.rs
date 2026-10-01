@@ -41,9 +41,9 @@ struct Common {
     model: PathBuf,
     #[arg(long)]
     model_name: String,
-    /// SHA-256 of the model file (from the verified download manifest).
+    /// SHA-256 of the model file; default: looked up in <models dir>/../manifest.json (verified downloads).
     #[arg(long)]
-    model_sha256: String,
+    model_sha256: Option<String>,
     #[arg(long)]
     quant: String,
     /// llama.cpp build tag, e.g. b11310.
@@ -168,10 +168,29 @@ fn load_splits(c: &Common) -> Result<Vec<data::Split>> {
     c.splits.iter().map(|s| data::load_split(&c.dataset, s)).collect()
 }
 
-fn config_json(c: &Common, role: &str, flags: &[String], batch: Value, subset: &Value) -> Value {
+/// The model's SHA-256: from the flag, else from the download manifest (which records the verified hash).
+fn resolve_sha(c: &Common) -> Result<String> {
+    if let Some(s) = &c.model_sha256 {
+        return Ok(s.clone());
+    }
+    let mpath = c.model.parent().and_then(Path::parent).map(|d| d.join("manifest.json"))
+        .context("model path has no manifest directory")?;
+    let m: Value = serde_json::from_slice(&std::fs::read(&mpath).with_context(|| format!("read {}", mpath.display()))?)?;
+    let name = c.model.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_lowercase();
+    let size = std::fs::metadata(&c.model)?.len();
+    for e in m["files"].as_object().into_iter().flat_map(|f| f.values()) {
+        let p = e["path"].as_str().unwrap_or_default().to_lowercase();
+        if p.ends_with(&name) && e["verified"] == json!(true) && e["size"].as_u64() == Some(size) {
+            return Ok(e["actual"].as_str().unwrap_or_default().to_string());
+        }
+    }
+    bail!("{} is not a verified entry in {}; pass --model-sha256", c.model.display(), mpath.display())
+}
+
+fn config_json(c: &Common, sha: &str, role: &str, flags: &[String], batch: Value, subset: &Value) -> Value {
     json!({
         "role": role, "model_name": c.model_name, "model_file": c.model.display().to_string(),
-        "model_sha256": c.model_sha256, "quantization": c.quant, "llama_cpp_build": c.build,
+        "model_sha256": sha, "quantization": c.quant, "llama_cpp_build": c.build,
         "backend": c.backend, "device": c.device, "server_bin": c.server_bin.display().to_string(),
         "server_flags": flags, "pooling": c.pooling,
         "server": {"np": c.np, "slot_ctx": c.slot_ctx, "ubatch": c.ubatch, "ngl": c.ngl, "threads": c.threads},
@@ -216,6 +235,7 @@ fn finish(c: &Common) {
 
 fn run_embed(a: &EmbedArgs) -> Result<ExitCode> {
     let c = &a.c;
+    let sha = resolve_sha(c)?;
     let splits = load_splits(c)?;
     let subset = data::load_subset_meta(&c.dataset)?;
     let sp = spec(c, Role::Embed, &c.server_bin, &c.device);
@@ -223,7 +243,7 @@ fn run_embed(a: &EmbedArgs) -> Result<ExitCode> {
     let (mut srv, mon, load_s) = start_stack(c, &sp, "embed")?;
     let np = c.np as usize;
     let (batch, conc, tune) = if a.autotune {
-        let sample = embed::sample_docs(&splits, 64, "autotune");
+        let sample = embed::sample_docs(&splits, 256, "autotune");
         let (b, k, trials) = embed::autotune(&srv.base, &sample, np)?;
         report::log(format!("autotune picked batch {b} concurrency {k}"));
         (b, k, trials)
@@ -238,7 +258,7 @@ fn run_embed(a: &EmbedArgs) -> Result<ExitCode> {
     let tps = ev.tokens as f64 / ev.seconds;
     let line = json!({
         "kind": "embed", "status": "ok", "config_id": c.config_id, "timestamp": report::iso_now(),
-        "config": config_json(c, "embedder", &flags,
+        "config": config_json(c, &sha, "embedder", &flags,
             json!({"embed_batch": batch, "concurrency": conc, "autotune_trials": tune, "query_format": a.query_format}),
             &subset),
         "metrics": ev.metrics,
@@ -262,6 +282,7 @@ fn run_embed(a: &EmbedArgs) -> Result<ExitCode> {
 
 fn run_rerank(a: &RerankArgs) -> Result<ExitCode> {
     let c = &a.c;
+    let sha = resolve_sha(c)?;
     let splits = load_splits(c)?;
     let subset = data::load_subset_meta(&c.dataset)?;
     let cands: Value = serde_json::from_slice(&std::fs::read(&a.candidates)
@@ -274,7 +295,7 @@ fn run_rerank(a: &RerankArgs) -> Result<ExitCode> {
     let t_all = Instant::now();
     let (mut srv, mon, load_s) = start_stack(c, &sp, "rerank")?;
     let flags = srv.args.clone();
-    let cfg = config_json(c, "reranker", &flags,
+    let cfg = config_json(c, &sha, "reranker", &flags,
         json!({"concurrency": a.concurrency, "candidates_file": a.candidates.display().to_string(),
                "first_stage": cands["config_id"], "top_k": cands["k"]}), &subset);
 
@@ -308,6 +329,7 @@ fn run_rerank(a: &RerankArgs) -> Result<ExitCode> {
 
 fn run_parity(a: &ParityArgs) -> Result<ExitCode> {
     let c = &a.c;
+    let sha = resolve_sha(c)?;
     let splits = load_splits(c)?;
     let subset = data::load_subset_meta(&c.dataset)?;
     let texts = embed::sample_docs(&splits, a.n, "parity");
@@ -333,7 +355,7 @@ fn run_parity(a: &ParityArgs) -> Result<ExitCode> {
         bail!("dimension mismatch between backends: {} vs {}", ea.dim, eb.dim);
     }
     let cmp = embed::parity_compare(&ea.flat, &eb.flat, ea.dim, a.threshold);
-    let mut cfg = config_json(c, "embedder-parity", fa, json!({"embed_batch": a.embed_batch, "concurrency": a.concurrency,
+    let mut cfg = config_json(c, &sha, "embedder-parity", fa, json!({"embed_batch": a.embed_batch, "concurrency": a.concurrency,
         "chunks": a.n, "sample_rule": "first n docs by FNV-1a hash of 'parity:<doc id>' across the chosen splits"}), &subset);
     cfg["backend_b"] = json!({"backend": a.backend_b, "build": a.build_b, "device": a.device_b,
         "server_bin": a.server_bin_b.display().to_string(), "server_flags": fb});

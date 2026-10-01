@@ -28,7 +28,7 @@ Detail reports are in `docs/phase0/`:
 | Delivered material | Done (M): **almost nothing delivered yet** (17 real PDFs) |
 | Project status and version pins | Done (D, crates.io and GitHub on 2026-09-30) |
 | Vector index candidates A and B on synthetic 6M | **Running** (`vector-bench.md`) |
-| Embedding and reranker matrix on the 5090 | **Prepared; waits for you to free the GPU** (about 90 min) |
+| Embedding and reranker matrix on the 5090 | **Ready; waits for you to stop Cinference** (about 84 min at a conservative estimate). Models and llama.cpp b11310 are downloaded and SHA-256 verified (29.3 GB, outside the vault); the CPU smoke test passed (`model-bench-prep.md`) |
 | Vault SSD inspection and I/O | **Waits for the SSD** (the stand-in `E:\Stand-In Vault` is measured: a USB HDD, 70 random IOPS) |
 
 ## 1. What I found that shapes the design
@@ -320,7 +320,7 @@ transfer and the checkpoint covers what is ingested by then.
 9. **text-splitter cannot keep a block whole once it exceeds the chunk size** (D: open upstream issues). We
    pre-segment into atomic blocks (code, tables, display maths, proofs) and use text-splitter only inside
    prose.
-10. **4B and 8B reranker GGUFs:** convert them ourselves from Qwen's official weights with llama.cpp's
+10. **4B and 8B reranker GGUFs:** for the Phase 0 comparison, the giladgd Q8_0 conversions are used. Their headers match ggml-org's 0.6B (rank pooling, yes/no labels, classifier tensor present), and the sanity test runs before any scoring. If 4B or 8B is chosen for production, convert them ourselves from Qwen's official weights with llama.cpp's
     converter. Verify the classifier head, and run the sanity test before any scoring. Do not use community
     conversions.
 11. **Enrichment model.** The brief asks for local generation on the 5090. Cinference serves one request at a

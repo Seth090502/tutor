@@ -56,7 +56,6 @@ impl ServerSpec {
 
 pub struct Server {
     child: Child,
-    pub port: u16,
     pub base: String,
     pub log_path: PathBuf,
     pub args: Vec<String>,
@@ -93,7 +92,7 @@ impl Server {
             cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         }
         let child = cmd.spawn().with_context(|| format!("spawn {}", spec.bin.display()))?;
-        Ok(Self { child, port, base: format!("http://127.0.0.1:{port}"), log_path, args })
+        Ok(Self { child, base: format!("http://127.0.0.1:{port}"), log_path, args })
     }
 
     pub fn pid(&self) -> u32 {

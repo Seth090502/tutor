@@ -273,7 +273,8 @@ pub fn sample_docs<'a>(splits: &'a [Split], n: usize, seed: &str) -> Vec<&'a str
 
 /// Pick the best (batch, concurrency) among a few candidates by measuring tokens/s on a small sample.
 pub fn autotune(base: &str, sample: &[&str], np: usize) -> Result<(usize, usize, Value)> {
-    let cands = [(8usize, np), (32, np), (96, np)];
+    // Each candidate keeps at least `np` tasks outstanding so the server's slots stay busy.
+    let cands = [(8usize, np), (32, (np / 4).max(2)), (128, 2)];
     let mut best = (cands[1], 0f64);
     let mut trials = Vec::new();
     // First trial doubles as warm-up and is discarded.
@@ -300,4 +301,33 @@ pub fn parity_compare(a: &[f32], b: &[f32], dim: usize, threshold: f32) -> Value
     let failures = cos.iter().filter(|&&c| c < threshold).count();
     json!({"pairs": cos.len(), "threshold": threshold, "min_cosine": min, "mean_cosine": mean,
            "failures": failures, "pass": failures == 0})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{Doc, Query};
+
+    #[test]
+    fn truncation_renormalises_to_unit_length() {
+        // two rows of 3 dims, truncated to 2: (3,4) -> (0.6,0.8); (0,12) -> (0,1)
+        let v = truncate_normalise(&[3.0, 4.0, 9.0, 0.0, 12.0, 5.0], 3, 2);
+        assert_eq!(v.len(), 4);
+        assert!((v[0] - 0.6).abs() < 1e-6 && (v[1] - 0.8).abs() < 1e-6);
+        assert!(v[2].abs() < 1e-6 && (v[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn search_ranks_by_cosine_and_skips_excluded() {
+        let mk = |id: &str| Doc { id: id.into(), content: String::new() };
+        let docs = vec![mk("a"), mk("b"), mk("c")];
+        let doc_index = docs.iter().enumerate().map(|(i, d)| (d.id.clone(), i)).collect();
+        let q = Query { id: "q".into(), query: String::new(), gold_ids: vec!["a".into()], excluded_ids: vec!["b".into()] };
+        let split = Split { name: "t".into(), docs, queries: vec![q], doc_index };
+        let flat = [1.0, 0.0, 0.0, 1.0, 0.8, 0.6]; // a, b, c as 2-d unit vectors
+        let ranked = search(&flat, &[1.0, 0.0], 2, &split, 10);
+        assert_eq!(ranked, vec![vec![0, 2]]); // b excluded; a (cos 1.0) before c (cos 0.8)
+        let (ndcg, rec) = mean_metrics(&split, &ranked);
+        assert!((ndcg - 1.0).abs() < 1e-9 && (rec - 1.0).abs() < 1e-9);
+    }
 }
