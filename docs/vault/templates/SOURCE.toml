@@ -3,7 +3,7 @@
 
 name = "example-repo"
 url = "https://github.com/owner/example-repo"
-commit = ""                      # the delivered commit; /ingest fills it from .git, which it does not copy
+commit = ""                      # owner-supplied verified commit, or unknown; file hashes bind delivered bytes
 license = "MIT"                  # SPDX id, or "owned" / "unknown"; LICENSE files are detected anyway
 categories = ["cs-ai"]           # first one is primary; e.g. ["cs-ai", "psych-cogsci"] for a PsychoPy experiment
 collections = ["gamedev"]         # named sets agents can scope to, e.g. gamedev, compilers, rust-exemplars

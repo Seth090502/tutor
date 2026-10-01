@@ -45,7 +45,7 @@ the category map is in `hot/meta/taxonomy/CATEGORIES.md`. Read them before actin
 | Re-extracting more than a handful of documents, or any GPU job (MinerU, OCR, embedding) | Takes GPU windows the owner controls |
 | Moving a tier (`cold/` to another disk), changing `vault.toml`, or changing NTFS permissions | Can strand the vault on another machine |
 | Rebuilding or retraining indexes outside the scheduled rules | Changes the pinned index version eval runs depend on |
-| Adding files to the inbox | Gathering material is the owner's job; never download books, papers or code yourself |
+| Adding files to the inbox without a delivery request | `/ingest` or an equivalent request authorises verified copies of owner-staged material; acquiring new material needs its own request |
 
 ## Hard rules
 
@@ -57,8 +57,10 @@ the category map is in `hot/meta/taxonomy/CATEGORIES.md`. Read them before actin
   - A file intake flagged `suspected_secret` stays where it was delivered; refer to it only by path and rule.
   - If you find a secret anywhere else in the vault, report its location (not its value) immediately.
 - **Paths.**
-  - Nothing inside the vault may record a machine name, drive letter or absolute path. Store paths relative to
-    a tier root.
+  - Generated vault metadata/manifests use paths relative to a tier root, never machine names, drive letters
+    or absolute paths. Original delivered content and supplied metadata stay byte-exact; do not rewrite
+    their bytes to enforce this generated-metadata rule. External delivery receipts may record local paths
+    because they stay outside the entire vault and separately configured hot/cold roots.
   - Machine settings live in `%ProgramData%\vault\libraryd.toml`, outside the vault.
 - **SQLite stays local.** Never open the vault's databases over a network share. Use libraryd or the `vault`
   tool on the machine that holds the drive.
@@ -106,15 +108,17 @@ Report numbers you measured, not remembered ones, and say what you did not check
 
 ## Source code repositories
 
-- **Scope:** open-source code, the owner's own code, and code its authors published without a licence
-  (`unknown`). Leaked proprietary source and decompilations of commercial products are not part of the vault; if
-  you find any in the inbox, report it to the owner instead of running intake on it.
+- **Scope (owner correction, 2026-10-01):** all owner-staged material for local static study, including
+  proprietary, reconstructed or decompiled code and opaque originals. Topic, licence and origin are
+  metadata, not admission gates. Unknown rights remain `unknown`, `redistributable=false`. Never execute
+  delivered code or confuse byte-preserved staging with supported semantic extraction.
 - **Each source file is its own document, stored verbatim** (UTF-8, LF), so `doc_id#L40-L72` is exactly lines
   40-72 of the original file. A generated repository document holds the README, the file tree and the symbol
   map.
-- **Excluded by rule** (VCS metadata, dependencies, build output, lockfiles, generated or minified files,
-  binaries, oversize text): never "fix" an exclusion by copying files into the vault yourself. Propose a rule
-  change, or ask the owner to re-deliver the file deliberately.
+- **Account for holds and intake exclusions separately.** The staging helper holds credential findings,
+  named VCS/dependency trees and reparse entries, while preserving other eligible bytes. Future intake
+  may exclude or quarantine unsupported text/binaries with a stated reason. Never use those indexing
+  rules to ban a staging group, edit payload to evade a hold, or write into hot/cold by hand.
 - **A new delivery of the same repository at a later commit** becomes a new snapshot. Unchanged files are
   de-duplicated by content, so their addresses carry over.
 
@@ -131,5 +135,7 @@ Report numbers you measured, not remembered ones, and say what you did not check
 - Windows 11. The vault drive's letter differs between machines: today `E:\Stand-In Vault` (stand-in), then a
   1 TB SSD, then the AI PC. Never assume a letter; read it from the machine config.
 - Process launches are expensive on the main PC. Batch work into one command.
-- The tools (`vault` CLI, libraryd, intake) arrive with Phase 1 of the build. Until then this vault is a layout
-  plus the inbox, and the only safe operations are reading and reporting.
+- Wave 1 core, libraryd and converters are built; the intake pipeline and `vault` CLI remain pending wave 2.
+  Under a delivery request use the isolated `tools/vault-stage` helper to prepare verified copies in new
+  batches without changing originals or another writer's files/processes. Report prepared and pending
+  intake separately. Use actual intake reports when the intended pipeline arrives.

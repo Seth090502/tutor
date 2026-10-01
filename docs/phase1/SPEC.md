@@ -235,8 +235,8 @@ Detection is by content: magic bytes, then container inspection.
 | JATS (`<article` with the JATS DTD or namespace) | `vault-extract` JATS converter (roxmltree, `allow_dtd`); MathML and `tex-math` become LaTeX | |
 | TEI | `vault-extract` TEI converter | GROBID output reuses it |
 | HTML and XHTML, including arXiv (LaTeXML) | `vault-extract` HTML converter; MathML `alttext` becomes LaTeX | |
-| EPUB, DOCX, ODT | xberg if it builds and passes the sample on Windows; otherwise our converters (EPUB is XHTML in a zip) | |
-| PDF, born-digital | xberg native or PDFium text with page labels, whichever wins the 20-document sample | GROBID for papers |
+| EPUB, DOCX, ODT | `vault-extract` own converters (wave 1) | |
+| PDF, born-digital | PDFium text/layout (`vault-extract` feature; matching local library required) | GROBID for papers |
 | PDF, scanned, or maths-heavy | `waiting_gpu` | MinerU |
 | arXiv LaTeX source | `waiting_tool` (pandoc not installed yet) | pandoc or xberg `.tex` |
 | Jupyter notebook | cells become Markdown, code in fences | |
@@ -252,12 +252,15 @@ Detection is by content: magic bytes, then container inspection.
 
 ## 9. Source code (summary; the full design is `docs/phase1/CODE-DESIGN.md`)
 
-**Scope (owner, 2026-10-01):** not only game code. Many state-of-the-art open-source codebases, organised in
-collections such as `gamedev` and `rust-exemplars`. An agent mid-development can look at how they solve the same
-problem, compare approaches across repositories, and read exact lines, seamlessly. **Delivered code is open
-source, the owner's own, or publicly published by its authors without a licence** (recorded `unknown`, not
-redistributable). Leaked proprietary source and decompilations of commercial products are not delivered:
-`/ingest` lists them in its report (lead decision on CODE-DESIGN 9.5, following the scope agreed with the owner).
+**Scope (owner correction, 2026-10-01):** all owner-staged material for local static study, including
+proprietary/reconstructed/decompiled source and unknown formats, across every requested group including
+`notable`. Licence/provenance are recorded, not admission bans; unknown rights are `unknown`,
+`redistributable=false`. The deterministic `/ingest` staging helper preserves eligible ordinary file bytes,
+relative paths and supplied metadata, with independent size/SHA-256 verification and named holds. Opaque
+originals may be prepared even when extraction later reports `unsupported_format` or `archive_limits`.
+The copy guarantee is separate from canonical text conversion and searchable-document outcomes. It never
+executes source material, downloads dependencies or changes other writers' work. Code collections such as
+`gamedev` and `rust-exemplars` still support comparing exact lines across repositories.
 
 **The design in brief** (section numbers refer to `CODE-DESIGN.md`, which is normative for code):
 - **Repository detection and snapshots (3.1, 3.10):** a folder with `SOURCE.toml`, `.git` or build files at the
@@ -273,7 +276,9 @@ redistributable). Leaked proprietary source and decompilations of commercial pro
   `unknown`; `redistributable` per repository; any export feature must refuse `redistributable=false`.
 - **Secret scanning (3.7)** runs before anything is stored: gitleaks rules (pinned data file, `generic-api-key`
   disabled) plus filename rules. A hit is recorded as quarantined with reason `suspected_secret` and **left in
-  place**: never copied, indexed or served.
+  place**: never copied, indexed or served. The separate pre-copy `vault-stage` layer
+  uses trusted local Gitleaks defaults plus a notes-credential rule over opaque-name byte snapshots,
+  so source config/ignore/allow comments cannot suppress it. Its pass is not exhaustive secret clearance.
 - **Macro pre-pass (3.9):** C/C++ is parsed from a shadow buffer in which export and annotation macros are blanked
   with byte length and newlines unchanged; the stored text never changes. Files that trip the hazard rule are
   flagged `parse_state = degraded` and chunked by lines.

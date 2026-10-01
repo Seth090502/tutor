@@ -13,7 +13,7 @@ or file. **E** = estimate. Report abbreviations:
 | SE, CI, AC, AL, GD | `docs/phase0/repos-search-engines.md`, `repos-code-intel.md`, `repos-agent-context.md`, `repos-agents-localization.md`, `repos-gamedev-code.md` |
 | VB | `docs/phase0/vector-bench.md` |
 | SPEC, METH | `docs/phase1/SPEC.md`, `docs/eval/METHODOLOGY.md` |
-| M1 | Read-only scan of the staged corpus `E:\Ready to Transfer` (all groups except `notable`, which `/ingest` excludes) |
+| M1 | Historical read-only scan of `E:\Ready to Transfer` excluding `notable`; these measured denominators do not cover the current all-group delivery scope |
 | M2 | tree-sitter 0.27 C/C++ parse health and tags yield on 300-file samples from 10 staged repositories |
 
 ---
@@ -151,7 +151,8 @@ Readings:
    M2 rate of about 2,000 definitions per MB of C/C++, the source holds on the order of 17 million definitions and
    several hundred million reference occurrences, E), so references are stored per document (4.1).
 2. **Content-based classification is confirmed.** A name rule loses 7,732 real source files; binary detection by
-   content handles the 28 GB of game data and archives, most of which should not be delivered at all (9.6).
+   content handles the historically measured 28 GB of game data/archives; current staging preserves eligible
+   originals while semantic intake accounts for unsupported/binary outcomes separately (9.6).
 3. **Canonicalisation changes bytes for half the files** (CRLF), and identity must survive it: `doc_id` over LF
    text dedups a file whether one repository has it as CRLF and another as LF, and a second SWHID over LF bytes is
    worth keeping (3.5).
@@ -180,12 +181,24 @@ SQLite or storage access; it returns file records, document texts and derived ro
   stay inside their parent and are classified by the rules below.
 - **Identity fields:** `name` (SOURCE.toml, else folder name), `url` and `commit` (SOURCE.toml; else read
   `.git/HEAD`, the ref file or `packed-refs`, and `.git/config` `[remote "origin"]`, as plain files). The
-  `/ingest` skill copies without `.git` and puts URL and commit in `SOURCE.toml` (D, `skills/ingest/SKILL.md`
-  step 3), so the `.git` reader is a fallback for hand deliveries. **No `gix` dependency:** the vault never needs
+  `/ingest` helper copies without `.git`, preserves supplied `SOURCE.toml`, and records bounded HEAD
+  observations externally (origin strings withheld, digest retained). It does not generate or rewrite
+  payload metadata. Intake must not assume that absent metadata was filled or that it can read the
+  external receipt; absent identity stays unknown. The `.git` reader is a fallback for hand deliveries.
+  **No `gix` dependency:** the vault never needs
   git objects (3.5 explains why), and reading three text files is about 60 lines.
 - **Snapshot key:** `(name, commit)` when a commit is known, else `(name, tree_digest)` where `tree_digest` is
   BLAKE3 over the sorted `(path, file blake3)` list of the delivery. The same key delivered twice is a duplicate
   delivery: provenance only.
+
+**Prepared-batch handoff (wave 2 acceptance):** the helper's root manifest addresses files under
+`payload/`, with original subfolder/repository structure and metadata intact. Only the root generated
+marker controls readiness; nested delivered markers are data. Repository detection walks below the
+wrapper, never labels `payload` itself as a repository. Supplied nested manifests/oa-forge sidecars must
+resolve paths relative to their own delivered root. A tree lacking repository markers has unknown
+repository identity until a supported detection/provenance path establishes it; never fabricate a
+commit or claim the external Git receipt was consumed. Add an actual staged-batch-to-intake regression
+when the pipeline ships; wave 1 and the mechanical staging eval do not establish that integration.
 
 ### 3.2 Walking
 
@@ -280,11 +293,11 @@ majority language for the ambiguous family (`.h` in a repository with `.cpp` fil
 - **`redistributable`** per repository: `true` for detected OSI licences and `owned`, `false` for `unknown`.
   Any export, sharing or publishing feature must refuse `redistributable=false` documents. Tool output shows the
   licence on repository summaries.
-- **Lead decision (2026-10-01), replacing this design's original 9.5:** delivered code is open source, the
-  owner's own, or publicly published by its authors without a licence (`unknown`). Leaked proprietary source and
-  decompilations of commercial products are not delivered; `/ingest` lists them in its report. This keeps the
-  scope agreed with the owner (books, papers and open-source code). Several staged trees fall outside it (the
-  staging index describes leaked engine trees and decompilations of commercial games).
+- **Owner correction (2026-10-01), superseding the lead's admission restriction:** all owner-staged code
+  is eligible for local static study, including proprietary, reconstructed or decompiled source and unknown
+  origins. `/ingest` includes `notable` and does not ban subject matter or provenance. Record actual licence
+  evidence; missing/uncertain rights are `unknown`, `redistributable=false`. Admission does not authorise
+  execution, redistribution or a claim that every opaque format can be semantically extracted.
 - **`SOURCE.toml` fields** as the template (`docs/vault/templates/SOURCE.toml`) plus one: `profile` (optional
   override of macro-profile detection, 3.9). Unknown keys are kept in provenance. `collections` seeds collection
   membership (5.3). Invalid TOML is reported and the file ignored, never fatal.
@@ -303,9 +316,12 @@ majority language for the ambiguous family (`.h` in a repository with `.cpp` fil
   groups them by rule and directory.
 - **Throughput:** about 2.2 MiB/s per thread with gitleaks regexes minus `generic-api-key` (CRT 4.3); for the 11.2 GB of staged text that is about 85 minutes on one thread or 7-8 minutes on 12 (E). Betterleaks
   (about 10 times faster regexes, v2 still a release candidate) is a later swap behind the same engine.
-- **Found while measuring:** the staging root's `INDEX.md` holds a plaintext web-UI login. It is not inside a
-  repository, so `/ingest` must not deliver it as a document (section 4 draft says so; the skill should list
-  staging-root notes as not delivered).
+- **Found while measuring:** the staging root's `INDEX.md` holds a plaintext login. That known file stays
+  held and is reported by path only. Ordinary staging-root notes are eligible; location is not a ban.
+- **Pre-copy boundary:** independent `tools/vault-stage` uses trusted Gitleaks defaults plus the skill's
+  notes-credential rule on an exact-byte opaque-name snapshot. Source config/ignore/allow comments cannot
+  suppress it. The source snapshot and destination path set/size/SHA-256 are independently rechecked.
+  This local preparation layer does not replace the future intake scanner or prove all secrets absent.
 
 ### 3.8 Vendored code and duplicates across repositories
 
@@ -743,7 +759,7 @@ green and its metric recorded.
 
 | # | Goal | Crates and files | Effort | Acceptance tests | Metric it moves | Risks |
 |---|---|---|---|---|---|---|
-| **C1** | Code intake: repository detection, walk, classification, language, canonical code text, SWHID, licence, SOURCE.toml, secret scan, per-file documents, dedup, repository document v1 (metadata, README, tree, exclusions), snapshots, report | `vault-code`: `detect.rs`, `walk.rs`, `classify.rs`, `lang.rs`, `canon.rs`, `swhid.rs`, `license.rs`, `secrets.rs` (+ `rules/gitleaks.toml`), `repodoc.rs`; `vault-intake` route; SQLite migration for `repos`, `repo_snapshots`, `repo_files` | 5-6 d | 6.1 line identity, dedup, re-delivery, classification, secrets, canary; every in-scope staged source repository (3.6; not `notable`, not the non-source bulk of 9.6) ingests with every file accounted for | Code is readable and greppable at all: `read` and Phase 1 `grep` work on code | Corpus size (2.1) makes intake I/O-bound; long paths; licence text edge cases |
+| **C1** | Code intake: repository detection, walk, classification, language, canonical code text, SWHID, licence, SOURCE.toml, secret scan, per-file documents, dedup, repository document v1 (metadata, README, tree, exclusions), snapshots, report | `vault-code`: `detect.rs`, `walk.rs`, `classify.rs`, `lang.rs`, `canon.rs`, `swhid.rs`, `license.rs`, `secrets.rs` (+ `rules/gitleaks.toml`), `repodoc.rs`; `vault-intake` route; SQLite migration for `repos`, `repo_snapshots`, `repo_files` | 5-6 d | 6.1 line identity, dedup, re-delivery, classification, secrets, canary; every requested staged source repository, including `notable` (3.6), has every delivered file accounted for; opaque originals have explicit extraction/exclusion outcomes (9.6) | Code is readable and greppable at all: `read` and Phase 1 `grep` work on code | Corpus size (2.1) makes intake I/O-bound; long paths; licence text edge cases |
 | **C2** | Symbols: grammars behind features, tags, own C/C++ reference queries, macro profiles, hazard flag; per-file `outline`; `define`; `Expand::Section` for code; grep enclosing-symbol annotation | `vault-code`: `parse.rs`, `profiles/*.toml`, `queries/*.scm` (vendored TS+JS, C#, Scala, Kotlin-sg; own C/C++ refs, Bash, Haskell, Julia, SQL, Zig, CMake), `symbols.rs`; `vault-core` tools | 5-6 d | 6.1 symbols and shadow-buffer tests; M2 table reproduced in CI on fixtures (class recall ≥ V2 values) | Definition and usage cases: file and symbol recall@10 | C/C++ reference query quality unmeasured; grammar crates for CMake/GLSL/HLSL/GDScript unverified; binary size (feature-gate) |
 | **C3** | Collections, scopes, grep modes and globs, MCP instructions, `vault` skill playbook v1, `vault_info` code coverage | `vault-api` additions (5.1, lead), `vault-core` scope resolution, `vault-cli collection`, `libraryd` instructions, `skills/vault/SKILL.md` | 2-3 d | collection CRUD round-trip; `grep` on a collection equals the union of per-repository greps; `counts` mode sums equal `hits` totals; parity MCP and gRPC | Tool calls per answered question (triage in one call) | API churn: land all 5.1 additions in one lead-reviewed change |
 | **C4** | Code eval v1: layer A suite, 60 cases, two baselines, runner integration | `vault-eval` (eval directory outside the vault) | 3-4 d | wiring probe, a known lookup returns its gold address, grader spot-check (METH 6 step 0.5) | Establishes the baseline every later increment is judged by | Case-writing quality; keyword-agnostic check too strict or too loose |
@@ -851,8 +867,8 @@ path on this machine (CRT 12).
 | 9.2 | SCIP precise indexes | **Not now.** Accept `.scip` files you produce yourself and drop beside a repository (C8); the vault never runs indexers | Precise references for Rust, Go, Java, TS, C#; costs a sandboxed build per repository on your side, and the staged corpus is mostly C/C++, which has no Windows SCIP indexer |
 | 9.3 | Non-commercial embedder licences (jina-code-embeddings, SFR-Embedding-Code, SweRank, CC-BY-NC-4.0) | **Permissive models only** (Qwen3, bge-code-v1, nomic-embed-code, CodeRankEmbed) | jina-code posts strong MTEB-Code numbers (78.7-78.9, D-self); a personal-use reading of NC might allow them, but it is your call |
 | 9.4 | Generated per-module summaries | **Not now; one gated experiment after dense search** (5.6) | Possible localisation gain against independent evidence of no gain and +20% cost; LLM cost for a 500k-file corpus |
-| 9.5 | Code with no licence | **Settled by the lead (3.6):** publicly published code without a licence is ingested as `unknown`, `redistributable=false`; leaked proprietary source and decompilations of commercial products are not delivered | Follows the scope agreed with the owner: books, papers and open-source code |
-| 9.6 | Non-source bulk in staging (game builds and data, multi-GB archives) | **Not delivered;** `/ingest` lists them (M1: about 20 GB in four folders, 2.1) | They would be excluded as binary anyway, at the cost of copying many GB into the inbox |
+| 9.5 | Code with absent/uncertain rights or provenance | **Owner correction (3.6):** all owner-staged code is admitted for local static study; unknown rights remain `unknown`, `redistributable=false` | Preserve provenance and enforce export permission separately; origin is not a delivery ban |
+| 9.6 | Non-source bulk in staging (game builds/data, multi-GB archives) | **Preserve eligible original bytes** in verified staging; semantic intake reports supported, excluded or quarantined outcomes without promising universal decoding | Larger deliveries require measured space; historical M1 bulk measurements remain unchanged |
 | 9.7 | Test keys in open-source repositories | **Keep the strict rule** (left in place) | A few hundred harmless test certificates (E) are lost to the vault and clutter the report, grouped by folder |
 | 9.8 | Markdown and other docs inside repositories | **Store verbatim as code text** so line numbers match the repository | They are not sentence-split, so prose `search` scores them slightly worse than prose documents |
 

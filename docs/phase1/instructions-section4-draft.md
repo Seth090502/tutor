@@ -1,8 +1,9 @@
-# Draft: replacement for INSTRUCTIONS.md section 4 (source code folders)
+# Source code delivery section: superseded draft
 
-Draft for the lead, 2026-10-01. It follows `docs/phase1/CODE-DESIGN.md` and the `/ingest` skill
-(`skills/ingest/SKILL.md`). Everything below the line replaces section 4 of `docs/vault/INSTRUCTIONS.md` as-is.
-Two neighbouring edits go with it, listed at the end.
+The original 2026-10-01 draft has been integrated. The canonical current instructions are
+`docs/vault/INSTRUCTIONS.md`, not a replacement waiting to be pasted. The section below is synchronized with
+the owner's all-content delivery correction and the deterministic helper. Future edits belong in the canonical
+file first; preserve the code-classification/parser design and distinguish staging from semantic intake.
 
 ---
 
@@ -12,7 +13,7 @@ Deliver code with `/ingest` (section 3.0), or by hand: copy each repository as *
 batch folder, then add `_BATCH_COMPLETE`. A folder of repositories is fine; each repository inside it is handled
 on its own.
 
-**(Phase 1)** Intake recognises a repository by a `SOURCE.toml` at its root (the `/ingest` skill writes one), or
+**(Phase 1)** Intake recognises a repository by a supplied `SOURCE.toml` at its root, or
 by its contents: a `.git` folder or build files such as `Cargo.toml`, `CMakeLists.txt`, `package.json`, `go.mod`,
 `*.sln`, `SConstruct` or `*.uproject`.
 
@@ -59,14 +60,16 @@ by its contents: a `.git` folder or build files such as `Cargo.toml`, `CMakeList
 
 ### `SOURCE.toml`
 
-Optional, at the repository root. `/ingest` writes it; a template is in `inbox\_templates\SOURCE.toml`.
-Every field is optional.
+Optional, at the repository root; a template is in `inbox\_templates\SOURCE.toml`. Every field is optional.
+`/ingest` preserves a supplied file byte for byte; it does not insert or rewrite metadata in the verified
+payload. Missing metadata remains unknown. Bounded Git observations stay in the external receipt until
+a supported intake provenance handoff exists; do not claim intake reads that receipt.
 
 | Field | Meaning |
 |---|---|
 | `name` | Short repository name, used in results and in `repo` filters |
 | `url` | Where it came from |
-| `commit` | The commit delivered. `/ingest` reads it from `.git` because it does not copy `.git` |
+| `commit` | Owner-supplied verified commit, or unknown. File hashes bind the actual working-tree bytes; a HEAD observation does not prove a clean checkout |
 | `license` | SPDX id (`MIT`, `GPL-2.0-only`…), `owned` for your own code, or `unknown`. Licence files are detected anyway |
 | `categories` | First one is primary; usually `cs-ai` |
 | `collections` | Named sets this repository joins, for example `gamedev`, `compilers`, `rust-exemplars` |
@@ -75,9 +78,10 @@ Every field is optional.
 | `companion` | DOI or title of a book or paper this code accompanies |
 | `profile` | Only if detection gets it wrong: `unreal`, `source-engine`, `godot` or `generic` |
 
-**Licences:** a repository with no licence (decompilations, archive copies, leaked source) is still ingested
-and searchable. It is recorded as `unknown` and marked not redistributable, and nothing the vault exports will
-include it.
+**Licences and provenance:** owner-staged material is admitted for local static study regardless of origin,
+including proprietary, reconstructed or decompiled source. Record actual licence/provenance evidence;
+public availability does not prove rights. Missing or uncertain licence is `unknown`,
+`redistributable=false`; an export must not include it without confirmed permission.
 
 ### Collections
 
@@ -120,28 +124,14 @@ folder.
 - Open-source projects often carry test keys (TLS test certificates). Those are caught too, and are listed by
   folder so the report stays readable.
 
-### What not to deliver
+### Preservation, holds and extraction limits
 
-- **Game builds and asset dumps without source.** They would only be excluded as `binary`; `/ingest` lists them
-  in its report instead of copying them.
-- **Archives over the unpack limits** (section 3.5): unpack them yourself first, or leave them out.
-- **Your own notes about where material came from,** such as an index file in the staging folder. They can hold
-  passwords or account details, and everything in the vault is readable by the tutor and other agents.
-
----
-
-## Neighbouring edits that go with this section
-
-1. **Section 8.2, tools table:** `outline(doc_ids[])` row becomes "Heading tree with line ranges and pages; for
-   a repository, the file tree and a ranked symbol map fitted to the budget; for a code file, its symbols";
-   `define(terms[])` row adds "and, for code, symbol definitions across repositories"; `citations` row adds
-   "for code: imports, includes, calls and references, both directions". Add `collection` and `repo` to the
-   filters list, and "a repository or a collection" to the `grep` scope description.
-2. **Section 3.5, formats table:** the row "Source code inside a code folder | Stored verbatim (section 4)"
-   becomes "Any text file inside a code folder, including Markdown | Stored verbatim (section 4)".
-3. **`docs/vault/templates/SOURCE.toml`:** add the optional line
-   `profile = ""   # only if detection gets it wrong: unreal | source-engine | godot | generic`, and change the
-   `commit` comment to "the delivered commit; `/ingest` fills it from `.git`, which it does not copy".
-4. **`skills/ingest/SKILL.md` step 1 (survey):** notes and index files at the staging root (for example
-   `INDEX.md`) are not material to deliver; list them in the report. The staged `INDEX.md` today holds a
-   plaintext login, which shows why.
+- **Opaque/game/build assets and archives:** `/ingest` preserves eligible ordinary files byte for byte.
+  Intake may report `binary`, `unsupported_format` or `archive_limits` instead of producing searchable text.
+  Never execute or unpack a staged program to make it eligible; bounded extraction is the intake layer's job.
+- **Notes and indexes:** ordinary notes are eligible. Hold credential-bearing files by scanner/filename reason,
+  not every note by location. The known credential-bearing `E:\Ready to Transfer\INDEX.md` must stay held;
+  report its path only. Do not print it in agent context or silently sanitize its bytes.
+- **Stage holds versus intake exclusions:** staging accounts for named VCS/dependency/reparse and credential
+  holds in its external receipt. Section 4's text-index exclusions are a separate future intake outcome;
+  they must not be used as blanket copy bans for entire staging groups or opaque originals.
