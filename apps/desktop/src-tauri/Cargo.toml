@@ -36,7 +36,7 @@ tokio = { version = "1", features = ["time"] }
 # Dual N-Back sessions (contract C6); same version as crates/rag-engine, SQLite compiled in.
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 # Text-to-speech cache file names (contract C10); already in the lockfile through Tauri.
-sha2 = "0.10"
+sha2 = "0.11"
 # The shell is Windows-only: Job Objects keep sidecar process trees tied to the app.
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
