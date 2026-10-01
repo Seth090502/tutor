@@ -12,18 +12,18 @@ async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-blake3 = { version = "=1.8.7", features = ["rayon", "mmap"] }
-chardetng = "=1.0.0"
-deunicode = "=1.6.2"
-encoding_rs = "=0.8.42"
-fs4 = "=1.1.0"
-rayon = "=1.12.0"
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
-toml = "=1.1.6"
-tracing = "=0.1.44"
-unicode-normalization = "=0.1.25"
-unicode-segmentation = "=1.13.3"
+blake3 = { workspace = true, features = ["rayon", "mmap"] }
+chardetng.workspace = true
+deunicode.workspace = true
+encoding_rs.workspace = true
+fs4.workspace = true
+rayon.workspace = true
+rusqlite = { workspace = true, features = ["bundled"] }
+toml.workspace = true
+tracing.workspace = true
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
-proptest = "=1.11.0"
-tempfile = "=3.27.0"
+proptest.workspace = true
+tempfile.workspace = true
